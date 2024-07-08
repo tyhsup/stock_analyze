@@ -14,7 +14,7 @@ import time
 class stock_table_TW:
     #def __init__(self):
     
-    def stock_number_get():
+    def stock_number_get(self):
         url='http://isin.twse.com.tw/isin/C_public.jsp?strMode=2'
         driver=webdriver.Edge()
         driver.get(url)
@@ -51,6 +51,6 @@ class stock_table_TW:
         final_data =pd.DataFrame(tds_all)
         return final_data
     
-    def upload_mySQL(data):
+    def upload_mySQL(self,data):
         connection = create_engine('mysql+pymysql://root:terryHsup9211!@localhost:3306/stock_tw_analyse') 
         data.to_sql(name = 'stock_table_tw', con = connection, schema = 'stock_tw_analyse', if_exists = 'append')
