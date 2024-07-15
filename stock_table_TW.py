@@ -35,8 +35,8 @@ class stock_table_TW:
         tds_0_name =[]
         for i in range (tds_0.shape[0]):
             data_split = str(tds_0.iloc[i]).split('\u3000')
-            data_number = data_split[0]
-            data_name = data_split[1]
+            data_number = data_split[0].strip()
+            data_name = data_split[1].strip()
             tds_0_number.append(data_number)
             tds_0_name.append(data_name)
         tds_all = {'有價證卷代號' : tds_0_number,
