@@ -43,10 +43,10 @@ class stock_table_TW:
                    '有價證卷名稱' : tds_0_name,
                    '國際證卷辨識號碼(ISIN Code)' : list(tds_1.iloc[:,0]),
                    '上市日' : list(tds_1.iloc[:,1]),
-                   '市場別' : list(tds_1.loc[:,2]),
-                   '產業別' : list(tds_1.loc[:,3]),
-                   'CFI Code' : list(tds_1.loc[:,4]),
-                   '備註' : list(tds_1.loc[:,5])
+                   '市場別' : list(tds_1.iloc[:,2]),
+                   '產業別' : list(tds_1.iloc[:,3]),
+                   'CFI Code' : list(tds_1.iloc[:,4]),
+                   '備註' : list(tds_1.iloc[:,5])
                    }
         final_data =pd.DataFrame(tds_all)
         return final_data
