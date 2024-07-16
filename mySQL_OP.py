@@ -17,7 +17,7 @@ class OP_Fun:
         return engine
     
     def upload_all(self, data, database, table_name):
-        self.engine
+        self.C_engine
         data.to_sql(name = str(table_name), con = self.engine, schema = str(database), if_exists = 'append')
         
     def sel_columns(self, table_name, columns_name):
