@@ -52,5 +52,5 @@ class stock_table_TW:
         return final_data
     
     def upload_mySQL(self,data):
-        connection = create_engine('mysql+pymysql://root:terryHsup9211!@localhost:3306/stock_tw_analyse') 
+        connection = create_engine('mysql+pymysql://user:password@localhost:host/database') #照格式填寫連線資訊
         data.to_sql(name = 'stock_table_tw', con = connection, schema = 'stock_tw_analyse', if_exists = 'append')
