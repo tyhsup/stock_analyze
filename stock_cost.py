@@ -27,7 +27,8 @@ class stock_cost():
                     stock_number.append(str1[0])
                 stock_DL.insert(0, column = 'number', value = stock_number)
                 stock_data = pd.concat([stock_data,stock_DL], ignore_index = False)
-        except:
+        except Exception as e:
+            print(e)
             stock_DL_fail.append(data[i])
         return stock_data
 
