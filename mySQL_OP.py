@@ -33,6 +33,10 @@ class OP_Fun:
             else :
                 cursor.execute('SELECT' + '`' + columns_name + '`' + 'FROM' + '`' + table_name + '`' + 'WHERE number ='
                                + stock_number + ';')
+        cols = cursor.description
+        col = []
+        for i in cols:
+            col.append(i[0])
         records = pd.DataFrame(cursor.fetchall())
         records.drop(records.columns[[-1]], axis =1, inplace = True)
         cursor.close()
