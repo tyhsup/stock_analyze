@@ -34,6 +34,7 @@ class OP_Fun:
                 cursor.execute('SELECT' + '`' + columns_name + '`' + 'FROM' + '`' + table_name + '`' + 'WHERE number ='
                                + stock_number + ';')
         records = pd.DataFrame(cursor.fetchall())
+        records.drop(records.columns[[-1]], axis =1, inplace = True)
         cursor.close()
         connection.close()
         return records
