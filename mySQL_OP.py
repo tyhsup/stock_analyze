@@ -22,7 +22,7 @@ class OP_Fun:
     def sel_cost_data(self, table_name ='NA', columns_name = 'NA', stock_number = 'NA', *args, **kwargs):
         connection = self.connection()
         cursor = connection.cursor()
-        print('請輸入要查詢的股票代碼')
+        print('請輸入要分析的股票代碼')
         stock_number = input('股票代碼:')
         if table_name == 'NA':
             print('no select table')
