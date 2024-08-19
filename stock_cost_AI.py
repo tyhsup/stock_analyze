@@ -77,7 +77,7 @@ class stock_cost_AI:
         plt.show()
         
     
-#training the model
+#collect data
 cost_AI = stock_cost_AI
 cost_data,Date_data = cost_AI.load_data('stock_cost')
 data_normalize = cost_AI.normalize(cost_data, Min = 0, Max = 1)
