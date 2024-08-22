@@ -42,6 +42,35 @@ class OP_Fun:
         cursor.close()
         connection.close()
         return records
+    
+    def sel_table_data(self, table_name, *args, **kwargs):
+        connection = self.connection()
+        cursor = connection.cursor()
+        cursor.execute('SELECT * FROM' + '`' + table_name + '`;')
+        cols = cursor.description
+        col = []
+        for i in cols:
+            col.append(i[0])
+        records = pd.DataFrame(cursor.fetchall(),columns = col)
+        records.drop(records.columns[[-1]], axis =1, inplace = True)
+        cursor.close()
+        connection.close()
+        return records
+
+    def get_cost_data(self, table_name ='NA', columns_name = 'NA', stock_number = 'NA', *args, **kwargs):
+        connection = self.connection()
+        cursor = connection.cursor()
+        cursor.execute('SELECT * FROM' + '`' + table_name + '`' + 'WHERE number ='
+                               + stock_number + ';')
+        cols = cursor.description
+        col = []
+        for i in cols:
+            col.append(i[0])
+        records = pd.DataFrame(cursor.fetchall(),columns = col)
+        records.drop(records.columns[[-1]], axis =1, inplace = True)
+        cursor.close()
+        connection.close()
+        return records
 
         
         
