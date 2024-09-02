@@ -123,7 +123,7 @@ class stock_cost_AI:
         sma_5 = mpf.make_addplot(talib.SMA(data["Close"], 5), color = 'cyan', label = 'sma_5')
         sma_20 = mpf.make_addplot(talib.SMA(data["Close"], 20), color = 'orange', label = 'sma_20')
         sma_60 = mpf.make_addplot(talib.SMA(data["Close"], 60), color = 'purple',label = 'sma_60')
-        Close = mpf.make_addplot(data.iloc[:(len(data)-pred_days)], color = 'blue',label = 'Close', type = 'candle')
+        Close = mpf.make_addplot(data.iloc[:(len(data)-pred_days)], color = 'blue', type = 'candle')
         axes = mpf.plot(data, type = 'line', style = 'yahoo', addplot = [sma_5, sma_20, sma_60, Close],
                  volume = True, volume_panel =1)
     
