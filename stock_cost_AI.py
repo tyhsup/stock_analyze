@@ -3,6 +3,7 @@ import mySQL_OP
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import mplfinance as mpf
 import time
 from sklearn.model_selection import train_test_split,GridSearchCV
 from sklearn.preprocessing import MinMaxScaler
@@ -12,6 +13,10 @@ from keras import layers,models
 from keras.models import Sequential
 from keras.layers import Dense,LSTM,Dropout
 from keras.wrappers.scikit_learn import KerasRegressor
+from keras.models import load_model
+import talib
+import datetime
+import gc
 
 
 class stock_cost_AI:
@@ -20,9 +25,27 @@ class stock_cost_AI:
         SQL_OP = mySQL_OP.OP_Fun()
         dl_cost_table = SQL_OP.sel_cost_data(table_name = table)
         cost_data = dl_cost_table[['Open','Close','High','Low','Volume']]
-        Date_data = dl_cost_table['Date']
+        Date_data = dl_cost_table[['Date']]
         return cost_data, Date_data
     
+    def load_data_c(table,stock_name):
+        SQL_OP = mySQL_OP.OP_Fun()
+        dl_cost_table = SQL_OP.get_cost_data(table_name = table,stock_number =stock_name)
+        cost_data = dl_cost_table[['Open','Close','High','Low','Volume']]
+        Date_data = dl_cost_table[['Date']]
+        return cost_data, Date_data
+    
+    def load_all_data(table):
+        SQL_OP = mySQL_OP.OP_Fun()
+        dl_cost_table = SQL_OP.sel_table_data(table_name = table)
+        return dl_cost_table
+    
+    def load_stock_number(table):
+        SQL_OP = mySQL_OP.OP_Fun()
+        dl_cost_table = SQL_OP.sel_table_data(table_name = table)
+        stock_number = dl_cost_table['number'].drop_duplicates().to_list()
+        return stock_number
+           
     def normalize(data, Min, Max):
         scaler = MinMaxScaler(feature_range= (Min, Max)).fit(data[['Open','Close','High','Low','Volume']])
         data[['Open','Close','High','Low','Volume']] = scaler.transform(data[['Open','Close','High','Low','Volume']])
@@ -32,19 +55,23 @@ class stock_cost_AI:
         number_features = len(data.columns)
         data = data.to_numpy()
         result = []
-        for i in range(len(data)-(time_frame+1)):
-            result.append(data[i: i + (time_frame+1)])
-        result = np.array(result)
-        #取train data & test data 比例
-        data_split = int(result.shape[0]*split_rate)
-        X_train = result[:data_split, :-1]
-        Y_train = result[:data_split, -1][:,3]#訓練資料中取最後一筆收盤價作為答案
-        X_test = result[data_split:, :-1]
-        Y_test = result[data_split:, -1][:,3]
-        #reshape data
-        X_train = np.reshape(X_train,(X_train.shape[0],X_train.shape[1],number_features))
-        X_test = np.reshape(X_test,(X_test.shape[0],X_test.shape[1],number_features))
-        return X_train,Y_train,X_test,Y_test
+        if len(data) > 5:
+            for i in range(len(data)-(time_frame+1)):
+                result.append(data[i: i + (time_frame+1)])
+            result = np.array(result)
+            #取train data & test data 比例
+            data_split = int(result.shape[0]*split_rate)
+            X_train = result[:data_split, :-1]
+            Y_train = result[:data_split, -1][:,3]#訓練資料中取最後一筆收盤價作為答案
+            X_test = result[data_split:, :-1]
+            Y_test = result[data_split:, -1][:,3]
+            #reshape data
+            X_train = np.reshape(X_train,(X_train.shape[0],X_train.shape[1],number_features))
+            X_test = np.reshape(X_test,(X_test.shape[0],X_test.shape[1],number_features))
+            return X_train,Y_train,X_test,Y_test
+        else:
+            pass
+
     
     def model_install(input_L, input_d):
         model = tf.keras.Sequential()
@@ -60,6 +87,22 @@ class stock_cost_AI:
         model.compile(optimizer='adam',loss='MSLE')
         return model
     
+    def model_train(table_name,time_frame,split_rate, input_L, input_d, cycle, b_size):
+        stock_list = stock_cost_AI.load_stock_number(table_name)
+        model = stock_cost_AI.model_install(input_L, input_d)
+        for i in range(len(stock_list)):
+            try:
+                cost_data,Date_data = stock_cost_AI.load_data_c(table_name, str(stock_list[i]))
+                data_normalize = stock_cost_AI.normalize(cost_data, Min = 0, Max = 1)
+                X_train,Y_train,X_test,Y_test = stock_cost_AI.data_preprocesing(data_normalize, time_frame,split_rate)
+                model.fit(X_train, Y_train, epochs = cycle, batch_size = b_size, validation_data = (X_test,Y_test))
+                print(i)
+                gc.collect()
+            except Exception as e:
+                print(e)
+                pass
+        return model
+
     def de_normalize(Ori_data, norm_value):
         original_value = Ori_data['Close'].to_numpy().reshape(-1,1)
         norm_value = norm_value.reshape(-1,1)
@@ -76,18 +119,45 @@ class stock_cost_AI:
         plt.legend()
         plt.show()
         
+    def kline_MA(data, pred_days):
+        sma_5 = mpf.make_addplot(talib.SMA(data["Close"], 5), color = 'cyan', label = 'sma_5')
+        sma_20 = mpf.make_addplot(talib.SMA(data["Close"], 20), color = 'orange', label = 'sma_20')
+        sma_60 = mpf.make_addplot(talib.SMA(data["Close"], 60), color = 'purple',label = 'sma_60')
+        Close = mpf.make_addplot(data.iloc[:(len(data)-pred_days)], color = 'blue',label = 'Close', type = 'candle')
+        axes = mpf.plot(data, type = 'line', style = 'yahoo', addplot = [sma_5, sma_20, sma_60, Close],
+                 volume = True, volume_panel =1)
     
-#collect data
-cost_AI = stock_cost_AI
-cost_data,Date_data = cost_AI.load_data('stock_cost')
-data_normalize = cost_AI.normalize(cost_data, Min = 0, Max = 1)
-X_train,Y_train,X_test,Y_test = cost_AI.data_preprocesing(data_normalize, time_frame = 5,split_rate = 0.8)
-#model install & train
-model = cost_AI.model_install(5,5)
-model.fit(X_train, Y_train, epochs = 100, batch_size = 512, validation_data = (X_test,Y_test))
-prediction = model.predict(X_test)
-de_normal_pred = cost_AI.de_normalize(cost_data, prediction)
-de_normal_real = cost_AI.de_normalize(cost_data, Y_test)
-cost_AI.cost_plt(de_normal_pred,de_normal_real)
-
-
+    def pred_cost(pred_days):
+        cost_data,cost_Date = stock_cost_AI.load_data('stock_cost')
+        new_date = []
+        date_s = pd.Timestamp(cost_Date['Date'].to_list()[-1])
+        model = load_model('model.h5')
+        cost_data_pred = cost_data.copy()
+        for i in range(pred_days):
+            cost_data_cal = cost_data_pred.copy()
+            data_normalize = stock_cost_AI.normalize(cost_data_cal, Min = 0, Max = 1)
+            X_train,Y_train,X_test,Y_test = stock_cost_AI.data_preprocesing(data_normalize, time_frame = 5,split_rate = 0.8)
+            prediction = model.predict(X_test)
+            de_normal_pred =stock_cost_AI.de_normalize(cost_data_pred, prediction).tolist()
+            open_SMA_10 = talib.SMA(cost_data_pred['Open'],10).dropna().to_list()
+            high_SMA_10 = talib.SMA(cost_data_pred['High'],10).dropna().to_list()
+            low_SMA_10 = talib.SMA(cost_data_pred['Low'],10).dropna().to_list()
+            volume_SMA_10 = talib.SMA(cost_data_pred['Volume'],10).dropna().to_list()
+            new_data = pd.DataFrame({'Open':open_SMA_10[-1:],
+                         'Close':de_normal_pred[-1],
+                         'High':high_SMA_10[-1:],
+                         'Low':low_SMA_10[-1:],
+                         'Volume':volume_SMA_10[-1:]})
+            cost_data_pred = pd.concat([cost_data_pred, new_data],ignore_index = True)
+            new_date.append(date_s+pd.Timedelta(+1,'D'))
+            date_s = date_s+pd.Timedelta(+1,'D')
+        new_date = pd.DataFrame(new_date, columns =['Date'])
+        new_date = pd.concat([cost_Date,new_date],ignore_index = True)
+        cost_data_pred = pd.concat([new_date,cost_data_pred], axis = 1)
+        cost_data_pred.index = pd.DatetimeIndex(cost_data_pred['Date'])
+        return cost_data_pred
+            
+        
+        
+Prediction = stock_cost_AI.pred_cost(15)
+stock_cost_AI.kline_MA(Prediction.tail(100), 15)
