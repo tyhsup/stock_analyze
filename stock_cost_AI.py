@@ -1,8 +1,10 @@
 import pandas as pd
-import mySQL_OP
+from stock_Django import mySQL_OP
+#import mySQL_OP
 import numpy as np
-import pandas as pd
+import matplotlib
 from matplotlib import pyplot as plt
+from matplotlib.font_manager import fontManager
 import mplfinance as mpf
 import time
 from sklearn.model_selection import train_test_split,GridSearchCV
@@ -12,7 +14,6 @@ from tensorflow import keras
 from keras import layers,models
 from keras.models import Sequential
 from keras.layers import Dense,LSTM,Dropout
-from keras.wrappers.scikit_learn import KerasRegressor
 from keras.models import load_model
 import talib
 import datetime
@@ -30,7 +31,7 @@ class stock_cost_AI:
     
     def load_data_c(table,stock_name):
         SQL_OP = mySQL_OP.OP_Fun()
-        dl_cost_table = SQL_OP.get_cost_data(table_name = table,stock_number =stock_name)
+        dl_cost_table = SQL_OP.get_cost_data(table_name = table,stock_number = stock_name)
         cost_data = dl_cost_table[['Open','Close','High','Low','Volume']]
         Date_data = dl_cost_table[['Date']]
         return cost_data, Date_data
@@ -47,8 +48,9 @@ class stock_cost_AI:
         return stock_number
            
     def normalize(data, Min, Max):
-        scaler = MinMaxScaler(feature_range= (Min, Max)).fit(data[['Open','Close','High','Low','Volume']])
-        data[['Open','Close','High','Low','Volume']] = scaler.transform(data[['Open','Close','High','Low','Volume']])
+        columns_name = data.columns.to_list()
+        scaler = MinMaxScaler(feature_range= (Min, Max)).fit(data[columns_name])
+        data[columns_name] = scaler.transform(data[columns_name])
         return data
     
     def data_preprocesing(data, time_frame,split_rate):
@@ -71,7 +73,19 @@ class stock_cost_AI:
             return X_train,Y_train,X_test,Y_test
         else:
             pass
-
+    
+    def data_index(data):
+        close_data = data['Close']
+        close_SMA_5 = talib.SMA(data['Close'],5)
+        close_SMA_10 = talib.SMA(data['Close'],10)
+        close_SMA_20 = talib.SMA(data['Close'],20)
+        close_RSI_14 = talib.RSI(data['Close'],14)
+        data_concat = pd.concat([close_data,close_SMA_5,close_SMA_10,close_SMA_20,close_RSI_14], axis = 1)
+        data_concat.columns = ['Close','SMA_5','SMA_10','SMA_20','RSI_14']
+        data_concat = data_concat.dropna()
+        data_concat = data_concat.drop_duplicates()
+        data_concat = data_concat.reset_index(drop = True)
+        return data_concat
     
     def model_install(input_L, input_d):
         model = tf.keras.Sequential()
@@ -93,7 +107,8 @@ class stock_cost_AI:
         for i in range(len(stock_list)):
             try:
                 cost_data,Date_data = stock_cost_AI.load_data_c(table_name, str(stock_list[i]))
-                data_normalize = stock_cost_AI.normalize(cost_data, Min = 0, Max = 1)
+                data = stock_cost_AI.data_index(cost_data)
+                data_normalize = stock_cost_AI.normalize(data, Min = 0, Max = 1)
                 X_train,Y_train,X_test,Y_test = stock_cost_AI.data_preprocesing(data_normalize, time_frame,split_rate)
                 model.fit(X_train, Y_train, epochs = cycle, batch_size = b_size, validation_data = (X_test,Y_test))
                 print(i)
@@ -123,15 +138,19 @@ class stock_cost_AI:
         sma_5 = mpf.make_addplot(talib.SMA(data["Close"], 5), color = 'cyan', label = 'sma_5')
         sma_20 = mpf.make_addplot(talib.SMA(data["Close"], 20), color = 'orange', label = 'sma_20')
         sma_60 = mpf.make_addplot(talib.SMA(data["Close"], 60), color = 'purple',label = 'sma_60')
-        Close = mpf.make_addplot(data.iloc[:(len(data)-pred_days)], color = 'blue', type = 'candle')
-        axes = mpf.plot(data, type = 'line', style = 'yahoo', addplot = [sma_5, sma_20, sma_60, Close],
-                 volume = True, volume_panel =1)
+        Candle = mpf.make_addplot(data.iloc[:(len(data)-pred_days)], color = 'blue', type = 'candle')
+        fig,axes = mpf.plot(data, type = 'line', style = 'yahoo', addplot = [sma_5, sma_20, sma_60, Candle],
+                 volume = True, volume_panel =1, block = False, returnfig = True)
+        return fig,axes
     
-    def pred_cost(pred_days):
-        cost_data,cost_Date = stock_cost_AI.load_data('stock_cost')
+    def pred_cost(stock_number, pred_days):
+        cost_data,cost_Date = stock_cost_AI.load_data_c('stock_cost', stock_number)
+#        cost_data,cost_Date = stock_cost_AI.load_data('stock_cost')
         new_date = []
         date_s = pd.Timestamp(cost_Date['Date'].to_list()[-1])
         model = load_model('model.h5')
+        #model = tf.keras.Sequential()
+        #model.load_weights('E:/Infinity/mydjango/demo/stock_Django/model.h5')
         cost_data_pred = cost_data.copy()
         for i in range(pred_days):
             cost_data_cal = cost_data_pred.copy()
@@ -157,7 +176,39 @@ class stock_cost_AI:
         cost_data_pred.index = pd.DatetimeIndex(cost_data_pred['Date'])
         return cost_data_pred
             
-        
-        
-Prediction = stock_cost_AI.pred_cost(15)
-stock_cost_AI.kline_MA(Prediction.tail(100), 15)
+    def last_investor_H_T(amount):
+        SQL_OP = mySQL_OP.OP_Fun()
+        investor_all = SQL_OP.sel_table_data(table_name = 'stock_investor')
+        investor_last_time = investor_all.sort_values(by = '日期', ascending = True).iloc[-1].at['日期']
+        mask_last_date = (investor_all['日期']==investor_last_time)
+        investor_lastday_data = investor_all[mask_last_date].sort_values(by = '三大法人買賣超股數', ascending = False)
+        get_data_list = ['日期','number','外陸資買賣超股數(不含外資自營商)','投信買賣超股數','自營商買賣超股數(自行買賣)',
+                     '自營商買賣超股數(避險)']
+        investor_head= investor_lastday_data.head(int(amount))[get_data_list]
+        investor_tail= investor_lastday_data.tail(int(amount))[get_data_list]
+        return investor_head,investor_tail
+    
+    def get_investor(stock,days):
+        SQL_OP = mySQL_OP.OP_Fun()
+        investor_data = SQL_OP.get_cost_data(table_name = 'stock_investor', stock_number = str(stock))
+        investor_sort = investor_data.sort_values(by = '日期', ascending = True)
+        get_data_list = ['日期','number','外陸資買賣超股數(不含外資自營商)','投信買賣超股數','自營商買賣超股數(自行買賣)',
+                     '自營商買賣超股數(避險)']
+        investor_tail = investor_sort.tail(days)[get_data_list]
+        return investor_tail
+    
+    def investor_plt(data):
+        matplotlib.rc('font', family='Noto Sans SC')
+        cols = data.columns
+        for col in cols:
+            if col =='日期':
+                data['日期'] = pd.DatetimeIndex(data['日期']).to_period('D')
+            elif col =='number':
+                pass
+            else :
+                #批量去除千位符
+                data[col] = data[col].str.replace(',','').astype(int)
+        data = data.drop(['number'],axis=1)
+        #繪製堆疊柱狀圖
+        fig = data.plot(x = '日期',kind = 'bar',stacked = True, figsize = (12,6)).get_figure()
+        return fig
