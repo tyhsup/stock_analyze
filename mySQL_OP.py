@@ -5,15 +5,15 @@ import pandas as pd
 
 class OP_Fun:
     def connection(self):
-        connection = mysql.connector.connect(host = 'localhost',
-                                     port = '3306',
-                                     user = 'root',
-                                     password = 'terryHsup9211!',
-                                     database = 'stock_tw_analyse')
+        connection = mysql.connector.connect(host = '',
+                                     port = '',
+                                     user = '',
+                                     password = '',
+                                     database = '')
         return connection
     
     def C_engine(self):
-        engine = create_engine('mysql+pymysql://root:terryHsup9211!@localhost:3306/stock_tw_analyse')
+        engine = create_engine('')
         return engine
     
     def upload_all(self, data, database, table_name):
