@@ -23,6 +23,7 @@ class economy_news_webbug:
         self.headless_mode = False
         self.gpu_acc = False
         self.news_count = 10
+        self.file_path = 'E:/Infinity/webbug/2330_news_20250602.xlsx'
         
     def scroll_controller(self, driver):
         SCROLL_PAUSE_TIME = 2
@@ -109,9 +110,70 @@ class economy_news_webbug:
                 df.to_excel(f'{self.stock_number}_news_{datetime.now().strftime("%Y%m%d")}.xlsx',index=False)
         except Exception as e:
             print(f"運行發生錯誤:{e}")
+            
+    def _read_excel(self):
+        return pd.read_excel(self.file_path)
+    
+    def _read_all(self):
+        df = self._read_excel()
+        print(df)
+    
+    def _write_excel(self, df):
+        df.to_excel(self.file_path, index = False)
+        
+    def add_news(self, url):
+        df = self._read_excel()
+        if url in df['連結'].values:
+            print('該新聞已存在')
+            return
+        article = url
+        news_data = []
+        if article :
+            driver = self.create_driver()
+            driver.get(article)
+            time.sleep(2)
+            article_soup = BeautifulSoup(driver.page_source,'html.parser')
+            title = article_soup.find('h1').get_text(strip = True)
+            date_str = article_soup.find('time').get('datetime')
+            publish_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            content_div = article_soup.find('main',id='article-container')
+            paragraphs = content_div.find_all('p')
+            content = '\n'.join(p.get_text(strip=True) for p in paragraphs)
+            news_data.append({
+                "標題": title,
+                "發布時間": publish_date.strftime("%Y-%m-%d %H:%M:%S"),
+                "內文": content,
+                "連結": article
+                })
+            df = pd.concat([df,pd.DataFrame(news_data)], ignore_index = True)
+            driver.quit()
+            self._write_excel(df)
+            print('新增news 成功')
+        else:
+            print('無法擷取新聞內容')
+            
+    def delete_news(self, identifier, by='title'):
+        df = self._read_excel()
+        if by == 'title':
+            df = df[df['標題'] != identifier]
+        elif by == 'link':
+            df = df[df['連結'] != identifier]
+        elif by == 'time':
+            df = df[df['時間'] != identifier]
+        else:
+            print("請指定正確的刪除依據：'title' 或 'link' 或 'time'")
+            return
+        self._write_excel(df)
+        print("刪除新聞成功。")
+    
+    def search_news(self,keyword,limit = 5):
+        df = self._read_excel()
+        filtered = df[df['標題'].str.contains(keyword,case=False,na=False)]
+        print(filtered.head(limit))
+        
 
 webbug = economy_news_webbug()
-webbug.get_news(webbug.stock_number)
-        
-        
-        
+#new_news = 'https://news.cnyes.com/news/id/6002622'
+#webbug.delete_news(new_news, by ='link')
+#webbug._read_all()
+webbug.search_news('台積電', limit = 5)
