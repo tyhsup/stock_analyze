@@ -10,6 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support.wait import WebDriverWait
 import time,datetime
 from datetime import datetime
+from ckiptagger import data_utils, construct_dictionary, WS, POS, NER
 
 
 class economy_news_webbug:
@@ -23,7 +24,11 @@ class economy_news_webbug:
         self.headless_mode = False
         self.gpu_acc = False
         self.news_count = 10
-        self.file_path = 'E:/Infinity/webbug/2330_news_20250602.xlsx'
+        self.file_path = 'E:/Infinity/webbug/2330_news_20250610.xlsx'
+        #self.ckiptagger_data = data_utils.download_data_gdown("./")
+        self.ws = WS("./data")
+        self.pos = POS("./data")
+        self.ner = NER("./data")
         
     def scroll_controller(self, driver):
         SCROLL_PAUSE_TIME = 2
@@ -170,10 +175,39 @@ class economy_news_webbug:
         df = self._read_excel()
         filtered = df[df['標題'].str.contains(keyword,case=False,na=False)]
         print(filtered.head(limit))
+         
+    def print_word_pos_sentence(self, word_sentence, pos_sentence):
+        assert len(word_sentence) == len(pos_sentence)
+        for word, pos in zip(word_sentence, pos_sentence):
+            print(f"{word}({pos})", end="\u3000")
+        print()
+        return
+    
+    def print_word_pos_array(self, news_number):
+        sentence_list = self._read_excel()['內文']
+        word_sentence_list = self.ws(sentence_list)
+        pos_sentence_list = self.pos(word_sentence_list)
+        entity_sentence_list = self.ner(word_sentence_list, pos_sentence_list)
+        entity_sentence_dataframe = self.word_pos_DataFrame(entity_sentence_list[news_number])
+        return entity_sentence_dataframe
+    
+    def word_pos_DataFrame(self, data):
+        dataFrame = pd.DataFrame(data).drop([0,1],axis = 1).rename(columns = {2:'詞性', 3:'文字'})
+        return dataFrame
+    
+    def print_one_hot_code(self, data):
+        one_hot_code_frame = pd.get_dummies(data['詞性'], dtype = int)
+        return one_hot_code_frame
         
 
 webbug = economy_news_webbug()
-#new_news = 'https://news.cnyes.com/news/id/6002622'
-#webbug.delete_news(new_news, by ='link')
-#webbug._read_all()
-webbug.search_news('台積電', limit = 5)
+'''webbug.get_news('2330')
+new_news = 'https://news.cnyes.com/news/id/6002622'
+webbug.delete_news(new_news, by ='link')'''
+#webbug.search_news('台積電', limit = 5)
+
+
+entity_sentence_dataframe = webbug.print_word_pos_array(news_number = 2)
+one_hot_code_data = webbug.print_one_hot_code(entity_sentence_dataframe)
+print(entity_sentence_dataframe)
+print(one_hot_code_data)
