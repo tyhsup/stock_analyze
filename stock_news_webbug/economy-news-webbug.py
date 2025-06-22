@@ -1,4 +1,4 @@
-import requests, random
+import requests, random, os, pickle, csv
 from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
@@ -11,6 +11,16 @@ from selenium.webdriver.support.wait import WebDriverWait
 import time,datetime
 from datetime import datetime
 from ckiptagger import data_utils, construct_dictionary, WS, POS, NER
+from zhconv import convert
+import tensorflow as tf
+from keras.models import Sequential
+from keras.preprocessing import sequence
+from sklearn.preprocessing import LabelBinarizer
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model,Sequential, save_model, load_model
+from tensorflow.keras.layers import SimpleRNN, Embedding, BatchNormalization, Dense, Activation, Input, Dropout, LSTM, InputLayer
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tqdm.notebook import tqdm
 
 
 class economy_news_webbug:
@@ -198,7 +208,60 @@ class economy_news_webbug:
     def print_one_hot_code(self, data):
         one_hot_code_frame = pd.get_dummies(data['詞性'], dtype = int)
         return one_hot_code_frame
-        
+    
+    def _read_stop_words(self, data_txt):
+        stopwords = []
+        file = open(data_txt, newline='' ,encoding="utf-8").readlines()
+        for lines in file:
+            target_sentence = convert(lines.strip(),'zh-tw')
+            stopwords.append(target_sentence)
+        return stopwords
+    
+    def _pre_data_label(self, data_csv):
+        dataset = []
+        with open(data_csv, newline='' ,encoding="utf-8") as csvfile:
+              # 讀取 CSV 檔案內容
+            rows = csv.reader(csvfile)
+            print(rows)
+            counter = 0
+            for row in rows:
+                counter += 1
+                if(counter == 114):
+                    break
+                print(row)
+                dataset.append(row)
+        data = []
+        label = []
+        length = []
+        for index in tqdm(range(1, len(dataset))):
+            label.append(dataset[index][0])
+            data.append(dataset[index][1])
+            length.append(len(dataset[index][1]))
+        return data,label,length
+    
+    def _data_pre_predictions(self,data_data, label_data):
+        label = np.array(label_data)
+        trainX, testX, trainY, testY = train_test_split(data_data, label_data, test_size=0.2, random_state=8787)
+        testX = tokenizer.texts_to_sequences(testX)
+        trainX = tokenizer.texts_to_sequences(trainX)
+        trainX = tf.keras.utils.pad_sequences(trainX, maxlen=50)
+        testX = tf.keras.utils.pad_sequences(testX, maxlen=50)
+        predictions = model.predict(testX)
+    
+    def _predictions(self, news_number):
+        news = self._read_excel()
+        input_news = news.loc[:,'內文'][news_number]
+        ws = WS('E:/Infinity/webbug/data')
+        word_sentence_list = ws(input_news )
+        reg = []
+        for word in word_sentence_list[0]:
+            if(word not in stopwords):
+                reg.append(word)
+        input_news  = " ".join(reg)
+        input_news  = tokenizer.texts_to_sequences([input_news])
+        input_news  = tf.keras.utils.pad_sequences(input_news, maxlen=50)
+        result = model.predict(input_news)
+        return result
 
 webbug = economy_news_webbug()
 '''webbug.get_news('2330')
@@ -207,7 +270,41 @@ webbug.delete_news(new_news, by ='link')'''
 #webbug.search_news('台積電', limit = 5)
 
 
-entity_sentence_dataframe = webbug.print_word_pos_array(news_number = 2)
+'''entity_sentence_dataframe = webbug.print_word_pos_array(news_number = 2)
 one_hot_code_data = webbug.print_one_hot_code(entity_sentence_dataframe)
 print(entity_sentence_dataframe)
-print(one_hot_code_data)
+print(one_hot_code_data)'''
+
+'''for i, sentence in enumerate(sentence_list):
+    print()
+    print(f"'{sentence}'")
+    webbug.print_word_pos_sentence(word_sentence_list[i],  pos_sentence_list[i])
+    for entity in sorted(entity_sentence_list[i]):
+        print(entity)'''
+'''------------------------NLP 分隔線--------------------------------'''
+os.chdir('E:/Infinity/webbug/')
+## read stop words
+stopwords = webbug._read_stop_words(data_txt = 'cn_stop_words.txt')
+
+# loading先訓練好的one-hot encodeing
+with open('words_to_vector_stock_news.pickle', 'rb') as handle:
+  tokenizer = pickle.load(handle)
+
+#load_model
+model = load_model('final_model_stock_news.h5')
+model.load_weights("positive_or_negative_nofunctional_stock_news.h5")
+model.summary()
+
+#讀入預訓練資料
+data, label, length = webbug._pre_data_label(data_csv = '新聞情緒資料_100.csv')
+
+#model 預訓練
+webbug._data_pre_predictions(data_data = data, label_data = label)
+
+#讀入新聞做prediction
+result = webbug._predictions(news_number = 2)
+
+if(result >= 0.5):
+    print('正面' , result)
+else:
+    print('負面' , result)
