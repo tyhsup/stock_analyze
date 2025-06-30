@@ -1,4 +1,7 @@
 import requests, random, os, pickle, csv
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
@@ -21,7 +24,8 @@ from tensorflow.keras.models import Model,Sequential, save_model, load_model
 from tensorflow.keras.layers import SimpleRNN, Embedding, BatchNormalization, Dense, Activation, Input, Dropout, LSTM, InputLayer
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tqdm.notebook import tqdm
-
+import tkinter as tk
+from tkinter import messagebox
 
 class economy_news_webbug:
     def __init__(self):
@@ -30,23 +34,31 @@ class economy_news_webbug:
                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",]
         self.stock_list = []#之後修改程式使用list + 迴圈收集不同股票的新聞
         self.stock_number = '2330'
-        self.scroll_times = 10
         self.headless_mode = False
         self.gpu_acc = False
-        self.news_count = 10
+        self.news_count = 500
         self.file_path = 'E:/Infinity/webbug/2330_news_20250610.xlsx'
         #self.ckiptagger_data = data_utils.download_data_gdown("./")
         self.ws = WS("./data")
         self.pos = POS("./data")
         self.ner = NER("./data")
+        self.model_path = 'final_model_stock_news_V2.h5'
+        self.weights_path = 'positive_or_negative_nofunctional_stock_news_V2.h5'
+        self.token_path ='words_to_vector_stock_news.pickle'
         
     def scroll_controller(self, driver):
+        SCROLL_PAUSE_TIME = 2
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(SCROLL_PAUSE_TIME)
+        
+    def scroll_controller_last_position(self, driver):
         SCROLL_PAUSE_TIME = 2
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(SCROLL_PAUSE_TIME)
             new_height = driver.execute_script("return document.body.scrollHeight")
+            time.sleep(SCROLL_PAUSE_TIME)
             if new_height == last_height:
                 break
             last_height = new_height
@@ -63,40 +75,52 @@ class economy_news_webbug:
         options.add_experimental_option('detach', True)
         return webdriver.Edge(options=options)
     
-    def input_stock_number(self, driver, stock_number):
+    def input_stock_number(self, driver):
         search_input = driver.find_element(By.TAG_NAME, 'input')
-        search_input.send_keys(stock_number)
+        search_input.send_keys(self.stock_number)
         time.sleep(1)
         search_input.send_keys(Keys.ENTER)
         time.sleep(3)
         
     def get_news_link(self, driver):
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        articles = soup.find_all("a", href=True)
         news_links = set()
+        articles = soup.find_all("a", href=True)
         for article in articles:
             href = article['href']
             if '/news/id/' in href:
                 full_url = href if href.startswith("http") else f"https://www.cnyes.com{href}"
                 news_links.add(full_url)
         news_links = list(news_links)
-        news_links_count = news_links[:self.news_count]
-        return news_links_count
+        return news_links
     
-    def get_news(self, stock_number):
+    def get_news(self):
         try:
             driver = self.create_driver()
             driver.get(self.url)
+            driver.maximize_window()
             driver.implicitly_wait(5)
             time.sleep(2)
-            #操作scroll 元素持續往下滑帶出更多新聞
-            #self.scroll_controller(driver)
-            #輸入股票代碼或名稱進行搜尋
-            self.input_stock_number(driver, stock_number)
+            #輸入股票代碼或名稱與新聞數量進行搜尋
+            self.stock_number = input_number.get()
+            self.news_count = int(news_count.get())
+            self.input_stock_number(driver)
             search_input = driver.find_element(By.CSS_SELECTOR, '[data-key="news"]').click()
             time.sleep(2)
-            #提取10筆新聞連結
-            news_links = self.get_news_link(driver)
+            while True:
+                #提取新聞連結
+                last_height = driver.execute_script("return document.body.scrollHeight")
+                news_links = self.get_news_link(driver)
+                if len(news_links) >= self.news_count:
+                    news_links = news_links[:self.news_count]
+                    break
+                else:
+                    #操作scroll 元素持續往下滑帶出更多新聞
+                    self.scroll_controller(driver)
+                    new_height = driver.execute_script("return document.body.scrollHeight")
+                    if new_height == last_height:
+                        print(f'已拉到最底層, 新聞總數 : {len(news_links)}')
+                        break
             #提取新聞內文
             news_data = []
             for link in news_links:
@@ -118,7 +142,7 @@ class economy_news_webbug:
                     })
                 except Exception as e:
                     print(f"錯誤擷取新聞：{e}, 連結：{link}")
-                    continue
+                    pass
             driver.quit()
             if news_data:
                 df = pd.DataFrame(news_data)
@@ -220,15 +244,15 @@ class economy_news_webbug:
     def _pre_data_label(self, data_csv):
         dataset = []
         with open(data_csv, newline='' ,encoding="utf-8") as csvfile:
-              # 讀取 CSV 檔案內容
+            # 讀取 CSV 檔案內容
             rows = csv.reader(csvfile)
-            print(rows)
+            #print(rows)
             counter = 0
             for row in rows:
                 counter += 1
-                if(counter == 114):
+                if(counter == 1201):
                     break
-                print(row)
+                #print(row)
                 dataset.append(row)
         data = []
         label = []
@@ -239,7 +263,7 @@ class economy_news_webbug:
             length.append(len(dataset[index][1]))
         return data,label,length
     
-    def _data_pre_predictions(self,data_data, label_data):
+    def _data_pre_predictions(self,data_data, label_data, tokenizer, model):
         label = np.array(label_data)
         trainX, testX, trainY, testY = train_test_split(data_data, label_data, test_size=0.2, random_state=8787)
         testX = tokenizer.texts_to_sequences(testX)
@@ -248,11 +272,11 @@ class economy_news_webbug:
         testX = tf.keras.utils.pad_sequences(testX, maxlen=50)
         predictions = model.predict(testX)
     
-    def _predictions(self, news_number):
+    def _predictions(self, news_number, tokenizer, model, stopwords):
         news = self._read_excel()
         input_news = news.loc[:,'內文'][news_number]
         ws = WS('E:/Infinity/webbug/data')
-        word_sentence_list = ws(input_news )
+        word_sentence_list = ws(input_news)
         reg = []
         for word in word_sentence_list[0]:
             if(word not in stopwords):
@@ -262,13 +286,80 @@ class economy_news_webbug:
         input_news  = tf.keras.utils.pad_sequences(input_news, maxlen=50)
         result = model.predict(input_news)
         return result
+    
+    def GB_analyze(self, news_number):
+        os.chdir('E:/Infinity/webbug/')
+        ## read stop words
+        stopwords = webbug._read_stop_words(data_txt = 'cn_stop_words.txt')
+        # loading先訓練好的one-hot encodeing
+        with open(self.token_path, 'rb') as handle:
+            tokenizer = pickle.load(handle)
+        #load_model
+        model = load_model(self.model_path)
+        model.load_weights(self.weights_path)
+        model.summary()
+        #讀入預訓練資料
+        data, label, length = webbug._pre_data_label(data_csv = '測試資料_繁體.csv')
+        #model 預訓練
+        webbug._data_pre_predictions(data_data = data, label_data = label, tokenizer = tokenizer, model = model)
+        #讀入新聞做prediction
+        result = webbug._predictions(news_number, tokenizer = tokenizer, model = model, stopwords = stopwords)
+        return result
+        '''if(result >= 0.5):
+            print('正面' , result)
+        else:
+            print('負面' , result)'''
+    
+    def _result_plot(self):
+        pos = 0
+        neg = 0
+        for i in range(10):
+            result = webbug.GB_analyze(news_number = i)
+            if (result >= 0.5):
+                pos += 1
+            else:
+                neg += 1
+        attribute = ['positive','Negative']
+        news_analytz_result = [pos,neg]
+        data = {'attribute': attribute, 'news_analytz_result' : news_analytz_result}
+        df = pd.DataFrame(data)
+        explode = [0.2,0]
+        fig ,ax = plt.subplots(figsize=(12,8))
+        ax.pie(df.loc[:,'news_analytz_result'],
+              labels=df.loc[:,'attribute'],
+              autopct='%.1f%%', # 比例格式
+              explode=explode,  # 凸顯
+              shadow = True),   # 陰影
+        ax.set_title("news analytz Positive & Negative",fontsize=20)
+        ax.legend(attribute, loc=3, fontsize='small')
+        #photo = plt.savefig("my_plot.png")
+        return fig
+        
+    def test(self):
+        self.get_news()
+        self.file_path = f'E:/Infinity/webbug/{self.stock_number}_news_{datetime.now().strftime("%Y%m%d")}.xlsx'
+        fig = self._result_plot()
+        canvas = FigureCanvasTkAgg(fig, master=window)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+          
 
 webbug = economy_news_webbug()
-'''webbug.get_news('2330')
-new_news = 'https://news.cnyes.com/news/id/6002622'
-webbug.delete_news(new_news, by ='link')'''
+#webbug.get_news('2330')
+#new_news = 'https://news.cnyes.com/news/id/6002622'
+#webbug.delete_news(new_news, by ='link')
 #webbug.search_news('台積電', limit = 5)
-
+#webbug._result_plot()
+window = tk.Tk()
+window.title('news_analytz')
+window.geometry('760x800')
+window.resizable(False, False)
+input_number = tk.Entry(text = 'stock_number')
+input_number.pack(side = 'top')
+news_count = tk.Entry(text = 'news_count')
+news_count.pack(side = 'top')
+execute = tk.Button(text = '開始', command = webbug.test)
+execute.pack(side = 'top')
+window.mainloop()
 
 '''entity_sentence_dataframe = webbug.print_word_pos_array(news_number = 2)
 one_hot_code_data = webbug.print_one_hot_code(entity_sentence_dataframe)
@@ -281,30 +372,3 @@ print(one_hot_code_data)'''
     webbug.print_word_pos_sentence(word_sentence_list[i],  pos_sentence_list[i])
     for entity in sorted(entity_sentence_list[i]):
         print(entity)'''
-'''------------------------NLP 分隔線--------------------------------'''
-os.chdir('E:/Infinity/webbug/')
-## read stop words
-stopwords = webbug._read_stop_words(data_txt = 'cn_stop_words.txt')
-
-# loading先訓練好的one-hot encodeing
-with open('words_to_vector_stock_news.pickle', 'rb') as handle:
-  tokenizer = pickle.load(handle)
-
-#load_model
-model = load_model('final_model_stock_news.h5')
-model.load_weights("positive_or_negative_nofunctional_stock_news.h5")
-model.summary()
-
-#讀入預訓練資料
-data, label, length = webbug._pre_data_label(data_csv = '新聞情緒資料_100.csv')
-
-#model 預訓練
-webbug._data_pre_predictions(data_data = data, label_data = label)
-
-#讀入新聞做prediction
-result = webbug._predictions(news_number = 2)
-
-if(result >= 0.5):
-    print('正面' , result)
-else:
-    print('負面' , result)
