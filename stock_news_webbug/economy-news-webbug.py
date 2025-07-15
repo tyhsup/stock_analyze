@@ -26,6 +26,11 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tqdm.notebook import tqdm
 import tkinter as tk
 from tkinter import messagebox
+from transformers import BertTokenizer, BertModel, BertForSequenceClassification, Trainer, TrainingArguments,pipeline
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+import torch
+from datasets import load_dataset
 
 class economy_news_webbug:
     def __init__(self):
@@ -37,14 +42,16 @@ class economy_news_webbug:
         self.headless_mode = False
         self.gpu_acc = False
         self.news_count = 500
-        self.file_path = 'E:/Infinity/webbug/2330_news_20250610.xlsx'
+        self.file_path = f'E:/Infinity/webbug/{self.stock_number}_news.xlsx'
         #self.ckiptagger_data = data_utils.download_data_gdown("./")
         self.ws = WS("./data")
         self.pos = POS("./data")
         self.ner = NER("./data")
-        self.model_path = 'final_model_stock_news_V2.h5'
-        self.weights_path = 'positive_or_negative_nofunctional_stock_news_V2.h5'
+        self.model_path = 'final_model_stock_news_BERT.h5'
+        self.weights_path = 'ositive_or_negative_nofunctional_stock_news_BERT.h5'
         self.token_path ='words_to_vector_stock_news.pickle'
+        self.bert_tokenizer = BertTokenizer.from_pretrained('final_tokenizer_stock_news_BERT_1w')
+        self.bert_model = BertForSequenceClassification.from_pretrained('final_model_stock_news_BERT_1w')
         
     def scroll_controller(self, driver):
         SCROLL_PAUSE_TIME = 2
@@ -146,16 +153,13 @@ class economy_news_webbug:
             driver.quit()
             if news_data:
                 df = pd.DataFrame(news_data)
-                df.to_excel(f'{self.stock_number}_news_{datetime.now().strftime("%Y%m%d")}.xlsx',index=False)
+                #df.to_excel(f'{self.stock_number}_news_{datetime.now().strftime("%Y%m%d")}.xlsx',index=False)
+            return df
         except Exception as e:
             print(f"運行發生錯誤:{e}")
             
     def _read_excel(self):
         return pd.read_excel(self.file_path)
-    
-    def _read_all(self):
-        df = self._read_excel()
-        print(df)
     
     def _write_excel(self, df):
         df.to_excel(self.file_path, index = False)
@@ -184,15 +188,15 @@ class economy_news_webbug:
                 "內文": content,
                 "連結": article
                 })
-            df = pd.concat([df,pd.DataFrame(news_data)], ignore_index = True)
+            df = pd.concat([df,pd.DataFrame(news_data)])#, ignore_index = True)
             driver.quit()
             self._write_excel(df)
             print('新增news 成功')
         else:
             print('無法擷取新聞內容')
             
-    def delete_news(self, identifier, by='title'):
-        df = self._read_excel()
+    def delete_news(self,df, identifier, by='title'):
+        #df = self._read_excel()
         if by == 'title':
             df = df[df['標題'] != identifier]
         elif by == 'link':
@@ -202,13 +206,26 @@ class economy_news_webbug:
         else:
             print("請指定正確的刪除依據：'title' 或 'link' 或 'time'")
             return
-        self._write_excel(df)
+        #self._write_excel(df)
         print("刪除新聞成功。")
+        return df
     
     def search_news(self,keyword,limit = 5):
         df = self._read_excel()
         filtered = df[df['標題'].str.contains(keyword,case=False,na=False)]
         print(filtered.head(limit))
+        
+    def _update_database(self):
+        data = self.get_news()
+        titles = list(data.loc[:,'標題'])
+        df = self._read_excel()
+        for title in titles:
+            if title in df['標題'].values:
+                print('該新聞已存在')
+                data = self.delete_news(data, identifier = title, by = 'title')
+        df = pd.concat([df,data])
+        self._write_excel(df)
+        print('update news database成功')
          
     def print_word_pos_sentence(self, word_sentence, pos_sentence):
         assert len(word_sentence) == len(pos_sentence)
@@ -287,7 +304,25 @@ class economy_news_webbug:
         result = model.predict(input_news)
         return result
     
-    def GB_analyze(self, news_number):
+    def _predictions_BERT(self, text):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = self.bert_tokenizer
+        model = self.bert_model.to(device)
+        model.eval()
+        inputs = tokenizer(
+            text,
+            return_tensors = "pt",
+            padding = "max_length",
+            truncation = True,
+            max_length = 50
+        ).to(device)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            score = torch.sigmoid(outputs.logits)[0].item()
+            print(score)
+        return 1 if score >= 0.5 else 0
+    
+    def GB_analyze_LSTM(self, news_number):
         os.chdir('E:/Infinity/webbug/')
         ## read stop words
         stopwords = webbug._read_stop_words(data_txt = 'cn_stop_words.txt')
@@ -310,11 +345,27 @@ class economy_news_webbug:
         else:
             print('負面' , result)'''
     
+    def GB_analyze_BERT(self, news_number):
+        os.chdir('E:/Infinity/webbug/')
+        # 載入新聞
+        news_df = self._read_excel()
+        content = news_df.loc[:,'內文'][news_number]
+        # 去除停用詞（可選）
+        stopwords = self._read_stop_words('cn_stop_words.txt')
+        ws = WS('E:/Infinity/webbug/data')
+        word_sentence_list = ws([content])
+        filtered_words = [w for w in word_sentence_list[0] if w not in stopwords]
+        clean_text = " ".join(filtered_words)
+        # 預測
+        score = self._predictions_BERT(clean_text)
+        #print(f'新聞第 {news_number} 篇 預測分數: {score:.3f}')
+        return score
+    
     def _result_plot(self):
         pos = 0
         neg = 0
         for i in range(10):
-            result = webbug.GB_analyze(news_number = i)
+            result = webbug.GB_analyze_BERT(news_number = i)
             if (result >= 0.5):
                 pos += 1
             else:
@@ -332,12 +383,13 @@ class economy_news_webbug:
               shadow = True),   # 陰影
         ax.set_title("news analytz Positive & Negative",fontsize=20)
         ax.legend(attribute, loc=3, fontsize='small')
+        print("分析結果（正面/負面）:", pos, "/", neg)
         #photo = plt.savefig("my_plot.png")
         return fig
         
-    def test(self):
-        self.get_news()
-        self.file_path = f'E:/Infinity/webbug/{self.stock_number}_news_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    def _run_analyze(self):
+        self.stock_number = input_number.get()
+        self.news_count = int(news_count.get())
         fig = self._result_plot()
         canvas = FigureCanvasTkAgg(fig, master=window)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -349,17 +401,25 @@ webbug = economy_news_webbug()
 #webbug.delete_news(new_news, by ='link')
 #webbug.search_news('台積電', limit = 5)
 #webbug._result_plot()
+#------------------------------------------------------------
 window = tk.Tk()
 window.title('news_analytz')
 window.geometry('760x800')
 window.resizable(False, False)
-input_number = tk.Entry(text = 'stock_number')
+input_number = tk.Entry()
 input_number.pack(side = 'top')
-news_count = tk.Entry(text = 'news_count')
+label = tk.Label(window, text = 'stock_number')
+label.place(x=220, y=0)
+news_count = tk.Entry()
 news_count.pack(side = 'top')
-execute = tk.Button(text = '開始', command = webbug.test)
+labe2 = tk.Label(window, text = 'news_count')
+labe2.place(x=220, y=15)
+execute = tk.Button(text = '開始', command = webbug._run_analyze)
+execute.pack(side = 'top')
+execute = tk.Button(text = 'update database', command = webbug._update_database)
 execute.pack(side = 'top')
 window.mainloop()
+
 
 '''entity_sentence_dataframe = webbug.print_word_pos_array(news_number = 2)
 one_hot_code_data = webbug.print_one_hot_code(entity_sentence_dataframe)
