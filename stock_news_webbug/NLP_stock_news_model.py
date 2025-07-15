@@ -20,22 +20,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
-os.chdir('E:/Infinity/webbug/')
+os.chdir('E:/Infinity/webbug/NLP 情緒正負向分類/NLP 情緒正負向分類')
 
 dataset = []
-with open('新聞情緒資料_100.csv', newline='' ,encoding="utf-8") as csvfile:
+with open('deal_ch_auto.csv', newline='' ,encoding="utf-8") as csvfile:
 
   # 讀取 CSV 檔案內容
     rows = csv.reader(csvfile)
-    print(rows)
+    #print(rows)
 
     counter = 0
 
     for row in rows:
       counter += 1
-      if(counter == 114):
+      if(counter == 70002):
         break
-      print(row)
+      #print(row)
       dataset.append(row)
 #print(dataset[2][0])
 
@@ -148,8 +148,8 @@ hist = model.fit(trainX, trainY, batch_size=100, epochs=1000,
                    callbacks=[stop_alg, reduce_lr], shuffle=False,
                    validation_data=(testX, testY))
 
-model.save_weights("positive_or_negative_nofunctional_stock_news.h5")
-model.save("final_model_stock_news.h5")
+model.save_weights("positive_or_negative_nofunctional_stock_news_V3.h5")
+model.save("final_model_stock_news_V3.h5")
 
 ### 【Code Block講解】
 ### 測試model 精準度
