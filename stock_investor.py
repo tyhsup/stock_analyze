@@ -1,129 +1,145 @@
-import requests
-from bs4 import BeautifulSoup
 import pandas as pd
-import numpy as np
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import Select
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from selenium.common.exceptions import StaleElementReferenceException
 import time
-import gc
+import random
+import logging
 import mySQL_OP
 import re
+from datetime import datetime, timedelta
+from sqlalchemy import text
 
-class stock_investor():
-    
-    def get_day(driver):
-        date_p = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/h2/span[1]')
-        date_t = re.split('\年|\月|\日', date_p.text)
-        day = date_t[2]
-        return day
-    
-    def get_month(driver):
-        date_p = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/h2/span[1]')
-        date_t = re.split('\年|\月|\日', date_p.text)
-        month = date_t[1]
-        return month
-    
-    def get_year(driver):
-        date_p = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/h2/span[1]')
-        date_t = re.split('\年|\月|\日', date_p.text)
-        year = date_t[0]
-        year = str(int(year)+1911)
-        return year
-    
-    def get_date(driver):
-        date_p = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/h2/span[1]')
-        date_t = re.split('\年|\月|\日', date_p.text)
-        year = date_t[0]
-        month = date_t[1]
-        day = date_t[2]
-        year = str(int(year)+1911)
-        date = year + '/' + month + '/' + day
-        date_list = []
-        for i in range(list_r):
-            date_list.append(date)
-        return date_list
+# --- 日誌設定 ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("stock_investor_final.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class StockInvestorManager:
+    def __init__(self):
+        self.sql = mySQL_OP.OP_Fun()
+        self.url = 'https://www.twse.com.tw/zh/trading/foreign/t86.html'
+
+    def get_last_date(self):
+        try:
+            query = "SELECT 日期 FROM stock_investor ORDER BY 日期 DESC LIMIT 1"
+            with self.sql.engine.connect() as conn:
+                result = conn.execute(text(query)).fetchone()
+                if result:
+                    d_str = result[0].replace('/', '-')
+                    return datetime.strptime(d_str, '%Y-%m-%d').date()
+        except:
+            pass
+        return (datetime.today() - timedelta(days=2920)).date()
+
+    def get_twse_date(self, driver):
+        try:
+            date_p = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/h2/span[1]')
+            date_t = re.split('年|月|日', date_p.text)
+            year = str(int(date_t[0]) + 1911)
+            month = date_t[1].zfill(2)
+            day = date_t[2].zfill(2)
+            return f"{year}/{month}/{day}"
+        except:
+            return None
+
+    def update_investor_data(self):
+        start_date = self.get_last_date() + timedelta(days=1)
+        now_date = datetime.today().date()
         
-    
-    def get_html_table_h(table):
-        ths = []
-        for th in table.find('thead').find_all('th'):
-            th = th.get_text()
-            ths.append(th)
-        ths.insert(0, '日期')
-        return ths
-    
-    def get_html_table_d(table):
-        data_g = []
-        for row in table.find('tbody').find_all('tr'):
-            data = [td.get_text() for td in row.find_all("td")]
-            data_g.append(data)
-        data_g = pd.DataFrame(data_g)
-        return data_g
-        
-    def get_data_cycle():
-        url='https://www.twse.com.tw/zh/trading/foreign/t86.html'
+        if start_date > now_date:
+            logger.info("資料已是最新。")
+            return
+
+        # --- 1. 瀏覽器效能參數優化 ---
         options = webdriver.EdgeOptions()
-        #options.add_argument('--headless=new')						#無頭模式
-        #options.add_argument('--disable-gpu')						#禁用GPU加速
-        options.add_experimental_option('detach', True)				#不自動關閉瀏覽器
-        options.add_argument('--memory-model-cache-size-mb=512')	#設定瀏覽器記憶體大小
-        driver=webdriver.Edge(options=options)
-        driver.get(url)
-        driver.implicitly_wait(5)
-        select_e_y = Select(driver.find_element(By.NAME, 'yy'))
-        select_e_m = Select(driver.find_element(By.NAME, 'mm'))
-        select_e_d = Select(driver.find_element(By.NAME, 'dd'))
-        y_cycle = len(select_e_y.options)
-        m_cycle = len(select_e_m.options)
-        d_cycle = len(select_e_d.options)
-        tds = pd.DataFrame()
-        for i in range(y_cycle):
-            for j in range(m_cycle):
-                for k in range(d_cycle):
-                    try:
-                        select_e_y.select_by_index(i)
-                        select_e_m.select_by_index(j)
-                        select_e_d.select_by_index(k)
-                        select_element = Select(driver.find_element(By.NAME, 'selectType'))
-                        select_element.select_by_value('ALL')
-                        select_click = driver.find_element(By.CLASS_NAME, 'submit')
-                        select_click .click()
-                        time.sleep(2)
-                        select_element = driver.find_element(By.XPATH, '//*[@id="reports"]/hgroup/div/div[1]/select/option[5]')
-                        select_element.click()
-                        time.sleep(2)
-                        soup = BeautifulSoup(driver.page_source,"lxml")
-                        data_table = soup.find('table')
-                        data_g = stock_investor.get_html_table_d(table = data_table)
-                        date_list = stock_investor.get_date(driver = driver, list_r = data_g.shape[0])
-                        data_g.insert(0, column = 'data', value = date_list)
-                        data_g = data_g.set_axis(list(range(data_g.shape[1])),axis="columns")
-                        tds = pd.concat([tds,data_g], ignore_index = True)
-                        ths = stock_investor.get_html_table_h(table = data_table)
-                        time.sleep(2)
-                        driver.refresh()
-                        time.sleep(5)
-                        driver.delete_all_cookies()
-                        driver.execute_script("window.localStorage.clear();")
-                        driver.execute_script("window.sessionStorage.clear();")
-                        gc.collect()
-                        select_e_y = Select(driver.find_element(By.NAME, 'yy'))
-                        select_e_m = Select(driver.find_element(By.NAME, 'mm'))
-                        select_e_d = Select(driver.find_element(By.NAME, 'dd'))
-                    except Exception as e:
-                        print(e)
-                        continue
-            data = tds.set_axis(ths,axis = 'columns')
-            data.drop_duplicates()
-            data.dropna()
-            mySQL_OP.OP_Fun().upload_all(data, 'stock_tw_analyse', 'stock_investor_data' + '-' + str(stock_investor.get_year(driver)))
-            ths = []
-            tds = pd.DataFrame()
-        driver.quit()
+        options.add_argument('--headless') 
+        options.add_argument('--disable-gpu')
+        options.add_argument('--blink-settings=imagesEnabled=false') # 禁圖提升 30% 速度
+        
+        driver = webdriver.Edge(options=options)
+        wait = WebDriverWait(driver, 20)
+        
+        current_date = start_date
+        while current_date <= now_date:
+            if current_date.weekday() >= 5:
+                current_date += timedelta(days=1)
+                continue
 
+            try:
+                driver.get(self.url)
+                
+                # 填寫條件並查詢
+                wait.until(EC.presence_of_element_located((By.NAME, 'yy')))
+                Select(driver.find_element(By.NAME, 'yy')).select_by_value(str(current_date.year))
+                Select(driver.find_element(By.NAME, 'mm')).select_by_value(str(current_date.month))
+                Select(driver.find_element(By.NAME, 'dd')).select_by_value(str(current_date.day))
+                Select(driver.find_element(By.NAME, 'selectType')).select_by_value('ALL')
+                driver.find_element(By.CLASS_NAME, 'submit').click()
+                
+                # --- 2. 展開全部與彈性監測 ---
+                select_all_btn = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="reports"]/hgroup/div/div[1]/select/option[5]')))
+                select_all_btn.click()
+                
+                logger.info(f"正在展開 {current_date} 並偵測渲染...")
+                
+                # 每秒檢查一次表格行數，達成即跳出，不需死等
+                for i in range(15):
+                    soup = BeautifulSoup(driver.page_source, "lxml")
+                    table = soup.find('table')
+                    if table and len(table.find_all('tr')) > 500:
+                        break
+                    time.sleep(1)
+
+                if not table or "查詢無資料" in soup.text:
+                    logger.info(f"{current_date} 證交所無資料，跳過。")
+                    current_date += timedelta(days=1)
+                    continue
+
+                # --- 3. 高效解析與表頭對齊 ---
+                header_tr = table.find('thead').find_all('tr')[-1]
+                ths = [th.get_text().strip() for th in header_tr.find_all('th')]
+                ths.insert(0, '日期')
+                
+                # 一次性提取所有資料列
+                rows = [[td.get_text().strip().replace(',', '') for td in tr.find_all('td')] 
+                        for tr in table.find('tbody').find_all('tr') if len(tr.find_all('td')) > 1]
+
+                # --- 4. Pandas 向量化清洗 (極速處理) ---
+                df = pd.DataFrame(rows)
+                actual_date = self.get_twse_date(driver) or current_date.strftime('%Y/%m/%d')
+                df.insert(0, '日期_temp', actual_date)
+                df.columns = ths
+                df.rename(columns={'證券代號': 'number'}, inplace=True)
+                
+                # 向量化轉換數值，取代迴圈
+                df.replace(['', 'None'], 0, inplace=True)
+                num_cols = [c for c in df.columns if any(k in c for k in ['買', '賣', '超', '持股', '金額', '張數'])]
+                df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+
+                # --- 5. 執行優化後的批量寫入 ---
+                self.sql.upload_investor_bulk(df, 'stock_investor')
+                logger.info(f"✅ {actual_date} 成功寫入 {len(df)} 筆。")
+
+                time.sleep(random.uniform(2, 4)) # 友善間隔
+                current_date += timedelta(days=1)
+
+            except Exception as e:
+                logger.error(f"❌ {current_date} 異常: {e}")
+                time.sleep(5)
+                current_date += timedelta(days=1)
+
+        driver.quit()
+        logger.info("所有程序執行完畢。")
+
+if __name__ == "__main__":
+    manager = StockInvestorManager()
+    manager.update_investor_data()
