@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+{% load stock_filters %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2 class="fw-bold"><i class="bi bi-calculator me-2"></i> Fair Value Calculator: {{ ticker|upper }}</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'index' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Valuation: {{ ticker|upper }}</li>
+                </ol>
+            </nav>
+        </div>
+        <div class="col-md-4 text-end">
+            <form action="" method="get" class="row g-2 justify-content-end">
+                <div class="col-auto">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white">Stock Ticker:</span>
+                        <input type="text" name="ticker" class="form-control" placeholder="e.g., 2330.TW or NVDA"
+                            value="{{ ticker }}" style="width: 180px;">
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-search me-1"></i> Calculate
+                        </button>
+                    </div>
+                    <span class="text-muted small mt-1 d-block">
+                        Format: <code>XXXX.TW</code> for Taiwan, <code>TICKER</code> for US.
+                    </span>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Weight Adjustment UI -->
+<div class="row mb-4 container mx-auto">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 bg-light">
+            <div class="card-body py-3">
+                <form id="weightForm" action="" method="get" class="row g-3 align-items-center">
+                    <div class="col-md-auto">
+                        <span class="fw-bold text-muted small"><i class="bi bi-sliders me-1"></i> METHOD WEIGHTS:</span>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between mb-1 small">
+                            <span>DCF: <span id="dcfLabel" class="fw-bold">{{ dcf_weight_pct }}%</span></span>
+                            <span>Market: <span id="marketLabel" class="fw-bold">{{ market_weight_pct }}%</span></span>
+                        </div>
+                        <input type="range" class="form-range" id="weightRange" min="0" max="100" step="5"
+                            value="{{ dcf_weight_pct|default:50 }}" oninput="updateWeights(this.value)">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="hidden" name="ticker" value="{{ ticker }}">
+                        <input type="hidden" name="dcf_weight" id="dcf_weight_input"
+                            value="{{ dcf_weight_pct|default:50 }}">
+                        <input type="hidden" name="market_weight" id="market_weight_input"
+                            value="{{ market_weight_pct|default:50 }}">
+                        <button type="submit" class="btn btn-primary btn-sm w-100 py-2">
+                            <i class="bi bi-arrow-repeat me-1"></i> Apply & Recalculate
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function updateWeights(val) {
+        const marketVal = 100 - val;
+        document.getElementById('dcfLabel').textContent = val + '%';
+        document.getElementById('marketLabel').textContent = marketVal + '%';
+        document.getElementById('dcf_weight_input').value = val;
+        document.getElementById('market_weight_input').value = marketVal;
+    }
+</script>
+
+<div class="container">
+    {% if error %}
+    <div class="alert alert-danger shadow-sm">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
+    </div>
+    {% if error_detail %}
+    <div class="alert alert-warning shadow-sm">
+        <i class="bi bi-info-circle me-2"></i> <strong>How to fix:</strong> {{ error_detail }}
+        <hr>
+        <p class="mb-0 small">
+            To load financial data for this stock, run the data scraper script.
+            For Taiwan stocks, use the ticker format <code>XXXX.TW</code> (e.g., <code>2330.TW</code> for TSMC).
+        </p>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if valuation %}
+    {% with dcf=valuation.dcf market_approach=valuation.market_approach assumptions=valuation.assumptions %}
+    <div class="row">
+        <!-- Summary Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header bg-primary text-white py-3">
+                    <h5 class="m-0 fw-bold"><i class="bi bi-gem me-2"></i> Valuation Summary</h5>
+                </div>
+                <div class="card-body d-flex flex-column justify-content-center">
+                    <h2 class="display-4 text-center fw-bold text-primary mb-3">
+                        {{ valuation.fair_value|floatformat:2 }}
+                        <small class="fs-6 text-muted">
+                            {{ valuation.currency }}
+                        </small>
+                    </h2>
+                    <div class="px-4">
+                        <div class="d-flex justify-content-between border-bottom py-2">
+                            <span class="text-muted">Current Price:</span>
+                            <span class="fw-bold">{{ valuation.current_price|floatformat:2 }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between border-bottom py-2">
+                            <span class="text-muted">Upside / Downside:</span>
+                            <span
+                                class="fw-bold {% if valuation.upside > 0 %}text-success{% else %}text-danger{% endif %} text-center">
+                                <i
+                                    class="bi {% if valuation.upside > 0 %}bi-arrow-up-right{% else %}bi-arrow-down-right{% endif %} me-1"></i>
+                                {{ valuation.upside|to_percentage }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breakdown Card -->
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header bg-dark text-white py-3">
+                    <h5 class="m-0 fw-bold"><i class="bi bi-diagram-3 me-2"></i> Methodology Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush mb-4">
+                        <li class="list-group-item d-flex justify-content-between align-items-start border-0 px-0">
+                            <div class="ms-2 me-auto">
+                                <div class="fw-bold">DCF Approach ({{ dcf_weight_pct|default:50 }}%)</div>
+                                <small class="text-muted">Intrinsic value based on projected cash flows</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill p-2">
+                                {{ dcf.implied_price|floatformat:2 }}
+                            </span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-start border-0 px-0">
+                            <div class="ms-2 me-auto">
+                                <div class="fw-bold">Market Approach ({{ market_weight_pct|default:50 }}%)</div>
+                                <small class="text-muted">Relative value based on PE/EBITDA multiples</small>
+                            </div>
+                            <span class="badge bg-info rounded-pill p-2">
+                                {{ market_approach.implied_price_avg|floatformat:2 }}
+                            </span>
+                        </li>
+                    </ul>
+                    <div class="p-3 bg-light rounded-2 mt-2">
+                        <h6 class="small fw-bold text-uppercase text-muted mb-2">Key Assumptions (Next 5Y)</h6>
+                        <div class="row g-2 text-center">
+                            <div class="col-4">
+                                <div class="small text-muted">WACC</div>
+                                <div class="fw-bold">{{ assumptions.wacc|default:0.1|to_percentage:1 }}</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="small text-muted">Ex-Growth</div>
+                                <div class="fw-bold">{{ assumptions.exit_growth_rate|default:0.03|to_percentage:1 }}
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="small text-muted">Tax Rate</div>
+                                <div class="fw-bold">{{ assumptions.tax_rate|default:0.2|to_percentage:1 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DCF Projections Table -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-light py-3">
+                    <h5 class="m-0 fw-bold"><i class="bi bi-table me-2"></i> DCF Projections (5-Year Forecast)</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Metric ({{ valuation.currency }})</th>
+                                    {% for year in dcf.projected_fcf.years %}
+                                    <th class="text-end">Year {{ forloop.counter }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="fw-bold">Projected Revenue</td>
+                                    {% for val in dcf.projected_fcf.revenues %}
+                                    <td class="text-end">{{ val|sci_notation }}</td>
+                                    {% endfor %}
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-primary">Free Cash Flow (FCF)</td>
+                                    {% for val in dcf.projected_fcf.fcfs %}
+                                    <td class="text-end fw-bold text-primary">{{ val|sci_notation }}</td>
+                                    {% endfor %}
+                                </tr>
+                                <tr class="table-info">
+                                    <td class="fw-bold">Discounted FCF</td>
+                                    {% for val in dcf.projected_fcf.discounted_fcfs %}
+                                    <td class="text-end">{{ val|sci_notation }}</td>
+                                    {% endfor %}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-white py-3 text-muted small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    DCF Terminal Value: <strong>{{ dcf.terminal_value|sci_notation }}</strong>
+                    (Discounted: <strong>{{ dcf.pv_terminal_value|sci_notation }}</strong>)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% endwith %}
+    {% endif %}
+</div>
+{% endblock %}

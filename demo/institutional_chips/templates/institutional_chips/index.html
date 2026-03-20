@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}Institutional Chips Analysis - StockAIG{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center bg-white p-4 rounded shadow-sm border-0">
+            <div>
+                <h2 class="display-6 fw-bold mb-1"><i class="bi bi-person-check text-primary me-2"></i>Institutional Investor Dashboard</h2>
+                <p class="text-muted mb-0">Analysis of daily buy/sell activity from Foreign, Trust, and Dealer institutions.</p>
+            </div>
+            <div id="refresh-controls" class="d-flex align-items-center">
+                <div id="refresh-progress-container" class="me-3" style="display: none; min-width: 200px;">
+                    <div class="d-flex justify-content-between mb-1 small">
+                        <span id="refresh-status-text">Updating...</span>
+                        <span id="refresh-percent">0%</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div id="refresh-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <button id="btn-refresh-tw" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm hover-scale me-2">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Update TW Data
+                </button>
+                <button id="btn-refresh-us" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm hover-scale">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Update US Data
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Market Selector Tabs -->
+<ul class="nav nav-pills mb-4" id="market-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active rounded-pill px-4 me-2 bg-white shadow-sm border" id="tw-tab" data-bs-toggle="pill" data-bs-target="#tw-content" type="button" role="tab" aria-selected="true">
+            <span class="fs-5">🇹🇼 Taiwan Market</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 bg-white shadow-sm border" id="us-tab" data-bs-toggle="pill" data-bs-target="#us-content" type="button" role="tab" aria-selected="false">
+            <span class="fs-5">🇺🇸 USA Market</span>
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="market-tabs-content">
+    <!-- Taiwan Content -->
+    <div class="tab-pane fade show active" id="tw-content" role="tabpanel" aria-labelledby="tw-tab">
+        <div class="d-flex justify-content-end mb-3">
+            {% if buysell_json %}
+            <span class="badge bg-light text-dark border p-2 rounded-pill shadow-sm">
+                <i class="bi bi-calendar-event me-1 text-primary"></i> TW Latest Date: {{ buysell_json.latest_date }}
+            </span>
+            {% endif %}
+        </div>
+
+{% if error %}
+<div class="alert alert-danger shadow-sm border-0 d-flex align-items-center" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+    <div>{{ error }}</div>
+</div>
+{% endif %}
+
+<!-- Section 1: Market Leaders & Laggards (Top 10 Buyers/Sellers) -->
+<div class="row mb-4">
+    <div class="col-12 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                    <i class="bi bi-graph-up-arrow text-success fs-5"></i>
+                </div>
+                <h5 class="card-title fw-bold mb-0">Institutional Buy - Top 10 Buyers</h5>
+            </div>
+            <div class="card-body">
+                <div id="top-buyers-chart" style="min-height: 500px;"></div>
+                <div class="mt-3 small text-muted">Showing combined net buying volume from the 3 major institutions (TW Market).</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                <div class="bg-danger bg-opacity-10 p-2 rounded me-3">
+                    <i class="bi bi-graph-down-arrow text-danger fs-5"></i>
+                </div>
+                <h5 class="card-title fw-bold mb-0">Institutional Sell - Top 10 Sellers</h5>
+            </div>
+            <div class="card-body">
+                <div id="top-sellers-chart" style="min-height: 500px;"></div>
+                <div class="mt-3 small text-muted">Showing combined net selling volume from the 3 major institutions (TW Market).</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 2: TOP 5 Institutional Chips - Last 5 Days (Individual Charts) -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                    <i class="bi bi-layers-half text-primary fs-5"></i>
+                </div>
+                <h5 class="card-title fw-bold mb-0">TOP 5 Institutional Investor Activity - Last 5 Days</h5>
+            </div>
+            <div class="card-body">
+                <div class="row" id="top-5-container">
+                    <!-- JavaScript will inject charts here -->
+                    <div class="col-12 text-center py-5" id="top-5-loader">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading charts...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Generating per-stock chip analysis...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    </div>
+
+    <!-- USA Content -->
+    <div class="tab-pane fade" id="us-content" role="tabpanel" aria-labelledby="us-tab">
+        <div class="row">
+            <div class="col-12 py-5 text-center bg-white rounded shadow-sm">
+                <div class="bg-light p-5 rounded-circle d-inline-block mb-3">
+                    <i class="bi bi-building-gear text-secondary display-1"></i>
+                </div>
+                <h3>USA Institutional Holders</h3>
+                <p class="text-muted mb-0">Institutional data for US markets (Stockzoa) is loading...</p>
+                <div id="us-charts-container" class="mt-4 row">
+                    <!-- US Charts will be injected here via JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ buysell_json|json_script:"buysell-data" }}
+{{ comparison_json|json_script:"comparison-data" }}
+{{ us_investor_json|json_script:"us-investor-data" }}
+
+<style>
+    .card {
+        border-radius: 1rem;
+        overflow: hidden;
+    }
+
+    .card-header {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .hover-scale {
+        transition: transform 0.2s;
+    }
+
+    .hover-scale:hover {
+        transform: scale(1.02);
+    }
+
+    .chart-box {
+        min-height: 350px;
+    }
+
+    .stock-chip-card {
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        background: #f8f9fa;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const buySellData = JSON.parse(document.getElementById('buysell-data').textContent);
+        const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
+        const usInvestorData = JSON.parse(document.getElementById('us-investor-data').textContent);
+
+        // --- Data Refresh Logic ---
+        const btnTw = document.getElementById('btn-refresh-tw');
+        const btnUs = document.getElementById('btn-refresh-us');
+        const progressContainer = document.getElementById('refresh-progress-container');
+        const progressBar = document.getElementById('refresh-progress-bar');
+        const statusText = document.getElementById('refresh-status-text');
+        const percentText = document.getElementById('refresh-percent');
+
+        let isPolling = false;
+
+        function updateProgress(status, progress, message) {
+            progressContainer.style.display = 'block';
+            progressBar.style.width = progress + '%';
+            percentText.innerText = progress + '%';
+            statusText.innerText = message || 'Updating...';
+
+            if (status === 'done') {
+                progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                progressBar.classList.add('bg-success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else if (status === 'error') {
+                progressBar.classList.add('bg-danger');
+                isPolling = false;
+            }
+        }
+
+        async function pollStatus(market) {
+            if (!isPolling) return;
+            try {
+                const res = await fetch(`api/refresh-status/${market}/`);
+                const data = await res.json();
+                updateProgress(data.status, data.progress, data.message);
+                if (data.status === 'running') {
+                    setTimeout(() => pollStatus(market), 2000);
+                } else {
+                    isPolling = false;
+                }
+            } catch (e) {
+                console.error("Polling failed", e);
+                isPolling = false;
+            }
+        }
+
+        btnTw.addEventListener('click', async () => {
+            if (isPolling) return;
+            if (!confirm("確定要更新台灣(上市+上櫃)法人資料嗎？這可能需要 1-2 分鐘。")) return;
+            
+            try {
+                const res = await fetch('api/refresh/tw/', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    isPolling = true;
+                    pollStatus('tw');
+                } else {
+                    alert(data.error || "觸發失敗");
+                }
+            } catch (e) { alert("請求失敗: " + e); }
+        });
+
+        btnUs.addEventListener('click', async () => {
+            if (isPolling) return;
+            if (!confirm("確定要更新美股熱門股法人持股嗎？")) return;
+            
+            try {
+                const res = await fetch('api/refresh/us/', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    isPolling = true;
+                    pollStatus('us');
+                } else {
+                    alert(data.error || "觸發失敗");
+                }
+            } catch (e) { alert("請求失敗: " + e); }
+        });
+
+        // --- Taiwan Market Charts ---
+        if (buySellData) {
+            // ... (keep leadersOptions and laggardsOptions as updated)
+            const leadersOptions = {
+                series: buySellData.leaders.series,
+                chart: { type: 'bar', height: 500, stacked: true, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+                xaxis: {
+                    categories: buySellData.leaders.categories,
+                    labels: { style: { fontSize: '18px', fontWeight: 600 }, formatter: val => (val / 1000).toFixed(0) + 'K' }
+                },
+                yaxis: {
+                    labels: { style: { fontSize: '18px' } }
+                },
+                title: { text: 'Cumulative Buy (Shares)', align: 'left', style: { fontSize: '22px' } },
+                legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a']
+            };
+            new ApexCharts(document.querySelector("#top-buyers-chart"), leadersOptions).render();
+
+            const laggardsOptions = {
+                series: buySellData.laggards.series,
+                chart: { type: 'bar', height: 500, stacked: true, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+                xaxis: {
+                    categories: buySellData.laggards.categories,
+                    labels: { style: { fontSize: '18px', fontWeight: 600 }, formatter: val => (val / 1000).toFixed(0) + 'K' }
+                },
+                yaxis: {
+                    labels: { style: { fontSize: '18px' } }
+                },
+                title: { text: 'Cumulative Sell (Shares)', align: 'left', style: { fontSize: '22px' } },
+                legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a']
+            };
+            new ApexCharts(document.querySelector("#top-sellers-chart"), laggardsOptions).render();
+        }
+
+        // --- US Market Charts ---
+        if (usInvestorData && usInvestorData.length > 0) {
+            const usContainer = document.getElementById('us-charts-container');
+            usContainer.innerHTML = '';
+            
+            usInvestorData.forEach((data, idx) => {
+                const col = document.createElement('div');
+                col.className = 'col-lg-6 mb-4';
+                col.innerHTML = `
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="fw-bold mb-0">${data.symbol} Institutional Holders</h5>
+                            <span class="badge bg-primary rounded-pill">Ownership: ${data.total_institutional_pct}%</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="us-chart-${idx}" style="min-height: 400px;"></div>
+                            <div class="row mt-3 text-center small divider-top pt-2">
+                                <div class="col-6 border-end">
+                                    <div class="text-muted">Buy Sentiment</div>
+                                    <div class="fw-bold text-success">${data.sentiment.ratio.toFixed(2)}x</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="text-muted">Top 10 Conc.</div>
+                                    <div class="fw-bold">${((data.concentration[0].value / data.total_shares_held)*100).toFixed(1)}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                usContainer.appendChild(col);
+                
+                const options = {
+                    series: [{ name: 'Shares', data: data.shares }],
+                    chart: { type: 'bar', height: 400, toolbar: { show: false } },
+                    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 4 } },
+                    xaxis: { categories: data.categories, labels: { show: false } },
+                    yaxis: { labels: { style: { fontSize: '14px' } } },
+                    colors: data.bar_colors,
+                    legend: { show: false },
+                    tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } }
+                };
+                new ApexCharts(document.querySelector(`#us-chart-${idx}`), options).render();
+            });
+        }
+
+        if (comparisonData && comparisonData.leaders) {
+            const container = document.getElementById('top-5-container');
+            document.getElementById('top-5-loader').remove();
+
+            const cats = comparisonData.leaders.categories;
+            const series = comparisonData.leaders.series;
+
+            // Group categories by ticker (each ticker has N days)
+            // Format: "Name\nYYYY-MM-DD"
+            const stocks = {};
+            cats.forEach((cat, idx) => {
+                const name = cat.split('\n')[0];
+                if (!stocks[name]) stocks[name] = { categories: [], series: [] };
+                stocks[name].categories.push(cat.split('\n')[1]);
+            });
+
+            series.forEach(s => {
+                let currentIdx = 0;
+                Object.keys(stocks).forEach(name => {
+                    const count = stocks[name].categories.length;
+                    if (!stocks[name].series) stocks[name].series = [];
+                    stocks[name].series.push({
+                        name: s.name,
+                        data: s.data.slice(currentIdx, currentIdx + count)
+                    });
+                    currentIdx += count;
+                });
+            });
+
+            // Create a separate chart for each stock
+            Object.keys(stocks).forEach((name, i) => {
+                const col = document.createElement('div');
+                col.className = 'col-12';
+                col.innerHTML = `
+                <div class="stock-chip-card hover-scale">
+                    <h6 class="fw-bold mb-3 border-bottom pb-2">${name}</h6>
+                    <div id="chart-top5-${i}" class="chart-box"></div>
+                </div>
+            `;
+                container.appendChild(col);
+
+                const options = {
+                    series: stocks[name].series,
+                    chart: { type: 'bar', height: 450, stacked: true, toolbar: { show: false } },
+                    xaxis: {
+                        categories: stocks[name].categories,
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    yaxis: {
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    plotOptions: { bar: { borderRadius: 4 } },
+                    dataLabels: { enabled: false },
+                    colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                    title: { text: 'Inst. Buy/Sell (Last 5 Days)', style: { fontSize: '22px' } },
+                    legend: { fontSize: '18px' }
+                };
+                new ApexCharts(document.querySelector(`#chart-top5-${i}`), options).render();
+            });
+        }
+    });
+</script>
+{% endblock %}

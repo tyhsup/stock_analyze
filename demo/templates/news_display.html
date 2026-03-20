@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+
+{% block title %}Stock News - StockAIG{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8 mx-auto text-center">
+        <h2 class="display-6 fw-bold mb-3">Market Intelligence & News</h2>
+        <p class="text-muted">Filter historical stock news and sentiment analysis results.</p>
+
+        <form method="get" class="card p-4 shadow-sm bg-white border-0">
+            <div class="row g-3 align-items-center justify-content-center">
+                <div class="col-md-5">
+                    <div class="form-floating">
+                        {{ form.news_query }}
+                        <label for="{{ form.news_query.id_for_label }}">Symbol or Keyword</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-floating">
+                        {{ form.news_days }}
+                        <label for="{{ form.news_days.id_for_label }}">Max Results</label>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-lg w-100 py-3">
+                        <i class="bi bi-filter"></i> Filter
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if data %}
+<div class="row">
+    <div class="col-md-10 mx-auto">
+        {% if quantity_warning %}
+        <div class="alert alert-info alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            <i class="bi bi-info-circle-fill me-2"></i>
+            <strong>通知：</strong> 目前抓取的新聞數量已達最大上限，無法完全滿足您要求的 {{ request.GET.news_days }} 筆新聞，僅顯示目前可取得的最大新聞量（共 {{
+            data|length }} 筆）。
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h4 class="mb-0">Search Results for "{{ request.GET.news_query }}"</h4>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                    <span class="badge bg-secondary">{{ data|length }} items found</span>
+                    <select id="news-per-page" class="form-select form-select-sm border-0 shadow-sm"
+                        style="width: auto;" onchange="changePerPage(this.value)">
+                        <option value="10">10 per page</option>
+                        <option value="50" selected>50 per page</option>
+                        <option value="100">100 per page</option>
+                    </select>
+                </div>
+            </div>
+            {% if request.GET.news_query %}
+            <button id="btn-refresh-news" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm"
+                onclick="refreshNews('{{ request.GET.news_query|escapejs }}')">
+                <i class="bi bi-arrow-clockwise me-1"></i> Refresh From Cnyes
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- sentiment pie chart -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-0">
+                <div class="row align-items-center g-0">
+                    <div class="col-md-6 border-end">
+                        <div id="sentiment-pie-chart" style="min-height: 280px;"></div>
+                    </div>
+                    <div class="col-md-6 p-4">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-bar-chart-fill text-primary me-2"></i>Sentiment
+                            Distribution</h6>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small"><i class="bi bi-circle-fill text-success mb-1 me-2"
+                                        style="font-size: 8px;"></i>Positive News:</span>
+                                <span id="count-pos" class="fw-bold text-success">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small"><i class="bi bi-circle-fill text-danger mb-1 me-2"
+                                        style="font-size: 8px;"></i>Negative News:</span>
+                                <span id="count-neg" class="fw-bold text-danger">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small"><i class="bi bi-circle-fill text-secondary mb-1 me-2"
+                                        style="font-size: 8px;"></i>Neutral News:</span>
+                                <span id="count-neu" class="fw-bold text-secondary">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="news-list-container">
+            <!-- News items will be rendered here by JavaScript -->
+        </div>
+
+        <!-- Pagination Controls -->
+        <nav aria-label="News page navigation" class="mt-4 mb-5">
+            <ul class="pagination justify-content-center" id="news-pagination">
+                <!-- Pagination links will be rendered here -->
+            </ul>
+        </nav>
+    </div>
+</div>
+</div>
+
+{{ data|json_script:"news-data" }}
+{% elif request.GET.news_query %}
+<div class="row">
+    <div class="col-md-8 mx-auto text-center mt-5">
+        <div class="p-5 bg-white rounded shadow-sm">
+            <i class="bi bi-search text-muted display-1"></i>
+            <h5 class="mt-4">No news found for "{{ request.GET.news_query }}"</h5>
+            <p class="text-muted">Try a different ticker code or keyword.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<style>
+    .hover-shadow:hover {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1) !important;
+        transform: translateY(-2px);
+    }
+
+    .transition {
+        transition: all 0.3s ease;
+    }
+
+    .form-floating>.form-control {
+        border-radius: 0.75rem;
+    }
+</style>
+
+<!-- Feature 4/6: News Refresh Progress UI -->
+<div class="row mb-4">
+    <div class="col-md-10 mx-auto">
+        <div id="refresh-progress-container" style="display: none;">
+            <div class="card border-0 shadow-sm p-3 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold" id="refresh-ticker-label">Updating News...</span>
+                    <span class="badge bg-primary px-3" id="refresh-percentage">0%</span>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div id="refresh-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                        role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="refresh-message" class="mt-2 small text-muted text-start">Fetching data from 鉅亨網...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Feature 6: Polling for news refresh status
+    const initialQuery = "{{ request.GET.news_query }}";
+    if (initialQuery) {
+        checkNewsRefreshStatus(initialQuery);
+    }
+
+    function checkNewsRefreshStatus(ticker) {
+        if (!ticker) return;
+        fetch(`/api/refresh-status/${ticker}/`)
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('refresh-progress-container');
+                if (data.status === 'running') {
+                    console.log(`Polling ${ticker}: ${data.progress}% - ${data.message}`);
+                    container.style.display = 'block';
+                    document.getElementById('refresh-ticker-label').textContent = `Fetching news for ${ticker}...`;
+                    document.getElementById('refresh-bar').style.width = data.progress + '%';
+                    document.getElementById('refresh-percentage').textContent = data.progress + '%';
+                    document.getElementById('refresh-message').textContent = data.message;
+                    setTimeout(() => checkNewsRefreshStatus(ticker), 2000);
+                } else if (data.status === 'done' && data.progress === 100) {
+                    // Only show 100% if news was actually part of the message
+                    if (data.message.includes('新聞')) {
+                        container.style.display = 'block';
+                        document.getElementById('refresh-bar').style.width = '100%';
+                        document.getElementById('refresh-bar').classList.remove('progress-bar-animated');
+                        document.getElementById('refresh-bar').classList.add('bg-success');
+                        document.getElementById('refresh-percentage').textContent = 'Done';
+                        document.getElementById('refresh-message').innerHTML = data.message +
+                            ' <a href="javascript:location.reload()" class="btn btn-sm btn-link p-0 text-primary fw-bold">Page will reload in 3s...</a>';
+                        
+                        // P1: Auto reload when news refresh finishes successfully
+                        setTimeout(() => location.reload(), 3000);
+                    }
+                } else if (data.status === 'error') {
+                    container.style.display = 'block';
+                    document.getElementById('refresh-bar').classList.add('bg-danger');
+                    document.getElementById('refresh-message').className = 'mt-2 small text-danger';
+                    document.getElementById('refresh-message').textContent = data.message;
+                }
+            })
+            .catch(err => console.error('Refresh API Error:', err));
+    }
+    function refreshNews(ticker) {
+        if (!ticker) return;
+        const btn = document.getElementById('btn-refresh-news');
+        const icon = btn.querySelector('i');
+
+        btn.disabled = true;
+        icon.classList.add('bi-spin'); // Optional animation helper
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Refreshing...';
+
+        fetch(`/api/news-refresh/${ticker}/`)
+            .then(r => r.json())
+            .then(data => {
+                alert(`News refresh for ${ticker} triggered! Please check back in a few seconds.`);
+                setTimeout(() => location.reload(), 3000);
+            })
+            .catch(err => {
+                console.error(err);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Refresh News';
+            });
+    }
+
+    // Pagination Logic
+    let currentPage = 1;
+    let itemsPerPage = 50;
+    let allNews = [];
+
+    function renderNewsPage(page) {
+        const container = document.getElementById('news-list-container');
+        const pagination = document.getElementById('news-pagination');
+        if (!container || !allNews.length) return;
+
+        currentPage = page;
+        const start = (page - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageItems = allNews.slice(start, end);
+
+        // Render Items
+        container.innerHTML = '';
+        pageItems.forEach(item => {
+            const sentimentClass = item.正負分析 === '正面' ? 'bg-success' : (item.正負分析 === '負面' ? 'bg-danger' : 'bg-secondary');
+            const summary = item.內容 ? (item.內容.length > 120 ? item.內容.substring(0, 120) + '...' : item.內容) : '無內容摘要';
+            const card = document.createElement('div');
+            card.className = 'card mb-3 border-0 shadow-sm hover-shadow transition';
+            card.innerHTML = `
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title fw-bold mb-0">${item.標題}</h5>
+                        <span class="badge bg-light text-dark border small">${item.日期}</span>
+                    </div>
+                    <div class="mb-3 text-muted small">
+                        ${summary}
+                    </div>
+                    <div class="d-flex align-items-center mt-3">
+                        <span class="badge ${sentimentClass} me-2">${item.正負分析 || '中性'}</span>
+                        <span class="badge bg-light text-muted border small"><i class="bi bi-tag me-1"></i>${item.來源 || '未知來源'}</span>
+                        <a href="${item.連結}" target="_blank" class="btn btn-link btn-sm p-0 ms-auto text-decoration-none">
+                            Read More <i class="bi bi-box-arrow-up-right ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+        // Render Pagination Controls
+        pagination.innerHTML = '';
+        const totalPages = Math.ceil(allNews.length / itemsPerPage);
+
+        if (totalPages <= 1) return;
+
+        const maxVisible = 5;
+        let startPage = Math.max(1, page - 2);
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+
+        // Prev
+        pagination.innerHTML += `<li class="page-item ${page === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="renderNewsPage(${page - 1}); return false;">Previous</a></li>`;
+
+        for (let i = startPage; i <= endPage; i++) {
+            pagination.innerHTML += `<li class="page-item ${i === page ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="renderNewsPage(${i}); return false;">${i}</a></li>`;
+        }
+
+        // Next
+        pagination.innerHTML += `<li class="page-item ${page === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="renderNewsPage(${page + 1}); return false;">Next</a></li>`;
+
+        window.scrollTo({ top: container.offsetTop - 100, behavior: 'smooth' });
+    }
+
+    function changePerPage(val) {
+        itemsPerPage = parseInt(val);
+        renderNewsPage(1);
+    }
+
+    // Sentiment Chart Logic
+    document.addEventListener('DOMContentLoaded', function () {
+        const newsDataEl = document.getElementById('news-data');
+        if (!newsDataEl) return;
+
+        const rawText = newsDataEl.textContent.replace(/nan/gi, 'null');
+        allNews = JSON.parse(rawText);
+        renderNewsPage(1); // Initialize pagination
+
+        if (allNews && allNews.length > 0) {
+            const counts = { '正面': 0, '負面': 0, '中性': 0 };
+            allNews.forEach(item => {
+                const label = item.正負分析 || '中性';
+                if (counts.hasOwnProperty(label)) counts[label]++;
+                else counts['中性']++;
+            });
+
+            document.getElementById('count-pos').textContent = counts['正面'];
+            document.getElementById('count-neg').textContent = counts['負面'];
+            document.getElementById('count-neu').textContent = counts['中性'];
+
+            const validSeries = [];
+            const validLabels = [];
+            const validColors = [];
+
+            if (counts['正面'] > 0) { validSeries.push(counts['正面']); validLabels.push('Positive'); validColors.push('#198754'); }
+            if (counts['負面'] > 0) { validSeries.push(counts['負面']); validLabels.push('Negative'); validColors.push('#dc3545'); }
+            if (counts['中性'] > 0) { validSeries.push(counts['中性']); validLabels.push('Neutral'); validColors.push('#6c757d'); }
+
+            // Fallback if somehow all are 0
+            if (validSeries.length === 0) {
+                validSeries.push(1); validLabels.push('No Data'); validColors.push('#e9ecef');
+            }
+
+            const options = {
+                series: validSeries,
+                chart: { type: 'donut', height: 400 },
+                labels: validLabels,
+                colors: validColors,
+                plotOptions: {
+                    pie: {
+                        donut: {
+                            size: '70%',
+                            labels: {
+                                show: true,
+                                name: { style: { fontSize: '16px' } },
+                                value: { style: { fontSize: '16px' } },
+                                total: {
+                                    show: true,
+                                    label: 'Total',
+                                    style: { fontSize: '16px' },
+                                    formatter: () => allNews.length
+                                }
+                            }
+                        }
+                    }
+                },
+                legend: { show: false },
+                dataLabels: { enabled: false },
+                stroke: { width: 1 }
+            };
+            new ApexCharts(document.querySelector("#sentiment-pie-chart"), options).render();
+        }
+    });
+</script>
+{% endblock %}
+```

@@ -1,0 +1,1714 @@
+{% extends "base.html" %}
+{% load stock_filters %}
+
+{% block title %}Dashboard - StockAIG{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-10 mx-auto text-center">
+        <h2 class="display-6 fw-bold mb-3">Stock Market Insight Dashboard</h2>
+        <p class="text-muted">Analyze historical price trends and institutional investor chips.</p>
+
+        <form method="post" class="card p-4 shadow-sm bg-white border-0"
+            onsubmit="document.getElementById('refresh-progress-container').style.display='block'; 
+                      document.getElementById('refresh-ticker-label').textContent='Initializing update...'; 
+                      document.getElementById('refresh-message').textContent='Contacting background workers...';
+                      document.getElementById('refresh-bar').style.width='0%';
+                      document.getElementById('refresh-percentage').textContent='0%';">
+            {% csrf_token %}
+            <div class="row g-3 align-items-center justify-content-center">
+                <div class="col-md-4">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-hash"></i></span>
+                        <input type="text" name="stock_number" id="id_stock_number" class="form-control border-start-0"
+                            placeholder="Stock Ticker (e.g. 2330)" value="{{ form.stock_number.value|default:'' }}"
+                            required>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-calendar-range"></i></span>
+                        <input type="number" name="days" id="id_days" class="form-control border-start-0"
+                            placeholder="30" value="{{ form.days.value|default:'' }}" required>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-lg w-100 py-2 fw-bold">
+                        <i class="bi bi-search me-2"></i> Analyze
+                    </button>
+                </div>
+            </div>
+            {% if form.errors %}
+            <div class="alert alert-danger mt-3 mb-0">
+                Please check your input values.
+            </div>
+            {% endif %}
+            {% if error %}
+            <div class="alert alert-warning mt-3 mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i> {{ error }}
+            </div>
+            {% endif %}
+        </form>
+
+        <!-- Feature 4: Automatic Data Refresh Progress UI -->
+        <div id="refresh-progress-container" class="mt-4" style="display: none;">
+            <div class="card border-0 shadow-sm p-3 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold" id="refresh-ticker-label">Updating Data...</span>
+                    <span class="badge bg-primary px-3" id="refresh-percentage">0%</span>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div id="refresh-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                        role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="mt-2 small text-muted text-start" id="refresh-message">Initializing background tasks...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if kline_json %}
+<!-- Feature: Financial Metrics Overview -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm bg-light">
+            <div class="card-header bg-white border-0 py-3 fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-bar-chart-line-fill me-2 text-primary"></i> Financial Overview: {{ financial_summary.short_name|default:number }} ({{ number }})</span>
+                <span class="badge bg-secondary">Data from yfinance</span>
+            </div>
+            {% if financial_summary.data_status %}
+            <div class="alert alert-warning border-0 rounded-0 m-0 py-2 small d-flex align-items-center animate__animated animate__fadeIn">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <span><strong>注意：</strong>目前僅有 {{ financial_summary.data_status }} 財報資料，TTM 數據(EPS/PE)可能不準。系統已自動啟動背景更新以補齊最近4季資料。</span>
+            </div>
+            {% endif %}
+            <div class="card-body p-3">
+                {% if financial_summary %}
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4 border-primary">
+                            <div class="text-muted small mb-1">P/E Ratio</div>
+                            <div class="h5 mb-0 fw-bold text-dark">{{ financial_summary.pe|default:"--" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4 border-info">
+                            <div class="text-muted small mb-1">P/B Ratio</div>
+                            <div class="h5 mb-0 fw-bold text-dark">{{ financial_summary.pb|default:"--" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4 border-success">
+                            <div class="text-muted small mb-1">EPS (Trailing)</div>
+                            <div class="h5 mb-0 fw-bold text-success">{{ financial_summary.eps|default:"--" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4 border-warning">
+                            <div class="text-muted small mb-1">Market Cap</div>
+                            <div class="h5 mb-0 fw-bold text-dark">{{ financial_summary.marketCap|default:"--" }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4 border-danger">
+                            <div class="text-muted small mb-1">ROE</div>
+                            <div
+                                class="h5 mb-0 fw-bold {% if financial_summary.roe > 0 %}text-success{% elif financial_summary.roe < 0 %}text-danger{% endif %}">
+                                {% if financial_summary.roe %}{{ financial_summary.roe|floatformat:2 }}%{% else %}--{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4"
+                            style="border-color: #6f42c1 !important;">
+                            <div class="text-muted small mb-1">Gross Margin</div>
+                            <div class="h5 mb-0 fw-bold">
+                                {% if financial_summary.gross_margin %}{{ financial_summary.gross_margin|floatformat:2 }}%{% else %}--{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4"
+                            style="border-color: #fd7e14 !important;">
+                            <div class="text-muted small mb-1">Revenue Growth</div>
+                            <div
+                                class="h5 mb-0 fw-bold {% if financial_summary.revenue_growth > 0 %}text-success{% elif financial_summary.revenue_growth < 0 %}text-danger{% endif %}">
+                                {% if financial_summary.revenue_growth %}{{ financial_summary.revenue_growth|floatformat:2 }}%{% else %}--{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4"
+                            style="border-color: #20c997 !important;">
+                            <div class="text-muted small mb-1">52W High</div>
+                            <div class="h5 mb-0 fw-bold text-dark">{{ financial_summary.fiftyTwoWeekHigh|default:"--" }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if sentiment_summary %}
+                <!-- P0-A: Sentiment Analysis Dashboard Section -->
+                <div class="row g-3 mt-1">
+                    <div class="col-md-12">
+                        <div class="card border-0 shadow-sm bg-white overflow-hidden">
+                            <div class="card-header bg-white border-0 py-3 fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-chat-heart-fill me-2 text-info"></i> Market Sentiment Summary</span>
+                                <a href="{% url 'news' %}?news_query={{ number }}&news_days=50" class="btn btn-sm btn-link text-decoration-none">
+                                    View Full Analysis <i class="bi bi-arrow-right-short"></i>
+                                </a>
+                            </div>
+                            <div class="card-body p-4 pt-0">
+                                <div class="row align-items-center">
+                                    <div class="col-md-4 text-center">
+                                        <div class="display-5 fw-bold {% if sentiment_summary.label == '正面' %}text-success{% elif sentiment_summary.label == '負面' %}text-danger{% else %}text-secondary{% endif %}">
+                                            {{ sentiment_summary.label }}
+                                        </div>
+                                        <div class="text-muted small mt-1">Based on {{ sentiment_summary.total }} recent news</div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <div class="progress mb-2" style="height: 25px; border-radius: 12px;">
+                                            <div class="progress-bar bg-success" role="progressbar" style="width: {{ sentiment_summary.positive|divide:sentiment_summary.total|multiply:100 }}%" title="Positive"></div>
+                                            <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ sentiment_summary.neutral|divide:sentiment_summary.total|multiply:100 }}%" title="Neutral"></div>
+                                            <div class="progress-bar bg-danger" role="progressbar" style="width: {{ sentiment_summary.negative|divide:sentiment_summary.total|multiply:100 }}%" title="Negative"></div>
+                                        </div>
+                                        <div class="d-flex justify-content-between small px-1">
+                                            <span class="text-success fw-bold"><i class="bi bi-arrow-up-circle-fill me-1"></i> {{ sentiment_summary.positive }} Positive</span>
+                                            <span class="text-secondary fw-bold">{{ sentiment_summary.neutral }} Neutral</span>
+                                            <span class="text-danger fw-bold">{{ sentiment_summary.negative }} Negative <i class="bi bi-arrow-down-circle-fill ms-1"></i></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if fair_value_data %}
+                <div class="row g-3 mt-1">
+                    <div class="col-md-12">
+                        <div class="p-3 bg-primary bg-opacity-10 rounded shadow-xs border-start border-4 border-primary d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="text-muted small mb-1">Estimated Fair Value</div>
+                                <div class="h4 mb-0 fw-bold text-primary">{{ fair_value_data.fair_value|default:"--" }}</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="badge {% if 'Undervalued' in fair_value_data.rating %}bg-success{% elif 'Overvalued' in fair_value_data.rating %}bg-danger{% else %}bg-warning{% endif %} fs-6">
+                                    {{ fair_value_data.rating }}
+                                </div>
+                                <div class="small fw-bold mt-1 {% if fair_value_data.upside > 0 %}text-success{% else %}text-danger{% endif %}">
+                                    Upside: {{ fair_value_data.upside }}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-info-circle me-2"></i> No fundamental data available from yfinance for this ticker.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-lg-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span><i class="bi bi-graph-up-arrow me-2"></i> Historical Price &amp; Volume (OHLCV)</span>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-light active" id="btn-day"
+                                onclick="setPeriod('D')">Day</button>
+                            <button type="button" class="btn btn-outline-light" id="btn-week"
+                                onclick="setPeriod('W')">Week</button>
+                            <button type="button" class="btn btn-outline-light" id="btn-month"
+                                onclick="setPeriod('M')">Month</button>
+                        </div>
+                        <button class="btn btn-outline-light btn-sm" onclick="resetBrushZoom()"><i
+                                class="bi bi-arrow-counterclockwise me-1"></i> Reset Brush</button>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" data-bs-auto-close="outside">
+                                <i class="bi bi-sliders me-1"></i> Indicators
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end p-3" id="indicators-dropdown"
+                                style="min-width:320px;max-height:600px;overflow-y:auto;z-index:1050;">
+                                <li class="text-center p-3 text-muted">Loading indicators...</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="kline-main" style="min-height: 450px;"></div>
+                <div id="kline-volume" style="min-height: 160px;"></div>
+                <div id="kline-rsi-wrap" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center px-3 pt-2">
+                        <strong class="small text-muted">RSI (14)</strong>
+                        <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('rsi')">↺
+                            Reset Zoom</button>
+                    </div>
+                    <div id="kline-rsi" style="min-height: 220px;"></div>
+                </div>
+                <div id="kline-macd-wrap" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center px-3 pt-2">
+                        <strong class="small text-muted">MACD (12,26,9)</strong>
+                        <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('macd')">↺
+                            Reset Zoom</button>
+                    </div>
+                    <div id="kline-macd" style="min-height: 220px;"></div>
+                </div>
+                <!-- Other oscillator panels placeholder -->
+                <div id="kline-stoch-wrap" style="display:none;">
+                    <div id="kline-stoch"></div>
+                </div>
+                <div id="kline-cci-wrap" style="display:none;">
+                    <div id="kline-cci"></div>
+                </div>
+                <div id="kline-williamsr-wrap" style="display:none;">
+                    <div id="kline-williamsr"></div>
+                </div>
+                <div id="kline-atr-wrap" style="display:none;">
+                    <div id="kline-atr"></div>
+                </div>
+                <div id="kline-obv-wrap" style="display:none;">
+                    <div id="kline-obv"></div>
+                </div>
+                <div id="kline-ad-wrap" style="display:none;">
+                    <div id="kline-ad"></div>
+                </div>
+                <div id="kline-cycle-wrap" style="display:none;">
+                    <div id="kline-cycle"></div>
+                </div>
+                <div id="kline-stats-wrap" style="display:none;">
+                    <div id="kline-stats"></div>
+                </div>
+                <div id="kline-math-wrap" style="display:none;">
+                    <div id="kline-math"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+            <div class="card-body p-3">
+                <div id="investor-chart-container" {% if not investor_json and not us_investor_json %}style="display:none;"{% endif %}>
+                    <div id="investor-chart" style="min-height: 400px;"></div>
+                </div>
+                
+                {% if not investor_json and not us_investor_json and number %}
+                <div class="text-center py-5" id="no-investor-data-msg">
+                    <div class="mb-3"><i class="bi bi-info-circle display-4 text-muted"></i></div>
+                    <p class="text-muted">No institutional investor data available for this ticker yet.</p>
+                    <button class="btn btn-primary" onclick="triggerManualRefresh()">
+                        <i class="bi bi-arrow-clockwise me-2"></i> Try Refreshing Data
+                    </button>
+                </div>
+                {% endif %}
+
+                {% if us_investor_json or investor_json %}
+                <div class="row mt-3 border-top pt-3">
+                    {% if us_investor_json %}
+                    <div class="col-md-4 border-end text-center">
+                        <h6 class="text-muted small">Institutional Concentration</h6>
+                        <div id="us-investor-concentration" style="min-height: 250px;"></div>
+                    </div>
+                    <div class="col-md-4 border-end text-center">
+                        <h6 class="text-muted small">Total Inst. Ownership</h6>
+                        <div class="h2 mb-0 fw-bold text-primary" id="us-total-inst-pct">--</div>
+                        <div class="small text-muted" id="us-total-inst-shares">--</div>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <h6 class="text-muted small">Q/Q Sentiment Ratio</h6>
+                        <div class="h2 mb-0 fw-bold" id="us-inst-sentiment">--</div>
+                        <div class="small text-muted">Buys vs Sells</div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+{% if number %}
+<div class="row mt-4 mb-5">
+    <div class="col-12 text-center">
+        <div class="card border-primary shadow-sm">
+            <div class="card-body py-4">
+                <h4 class="fw-bold mb-3">Is {{ number }} fairly valued?</h4>
+                <p class="text-muted mb-4">Run a detailed DCF and Market-based valuation to find out.</p>
+                <a href="/valuation/{{ valuation_symbol }}/" class="btn btn-primary btn-lg px-5 py-3 fw-bold" id="fair-value-btn">
+                    <i class="bi bi-calculator me-2"></i> Calculate Fair Value for {{ number }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    // Save current ticker to session storage for auto-load on other pages
+    sessionStorage.setItem('last_searched_ticker', '{{ valuation_symbol }}');
+    
+    function triggerManualRefresh() {
+        document.getElementById('refresh-progress-container').style.display = 'block';
+        // The form submission already triggers refresh logic via views/services
+        window.location.reload(); 
+    }
+</script>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if kline_json %}
+{{ kline_json|json_script:"kline-data" }}
+{% endif %}
+{% if investor_json %}
+{{ investor_json|json_script:"investor-data" }}
+{% endif %}
+{% if investor_comparison_json %}
+{{ investor_comparison_json|json_script:"investor-comparison-data" }}
+{% endif %}
+{% if us_investor_json %}
+{{ us_investor_json|json_script:"us-investor-data" }}
+{% endif %}
+{% if investor_tw_json %}
+{{ investor_tw_json|json_script:"tw-investor-summary-data" }}
+{% endif %}
+{% if ta_json %}
+{{ ta_json|json_script:"ta-data" }}
+{% endif %}
+
+<script>
+    // ============================================================
+    // KLINE CHART GLOBALS
+    // ============================================================
+    let _rawKlineConfig = null;   // Original daily config from backend
+    let _mainChart = null;        // ApexCharts main candle chart instance
+    let _volChart = null;         // ApexCharts volume chart instance
+    let _rsiChart = null;
+    let _macdChart = null;
+    let _stochChart = null;
+    let _cciChart = null;
+    let _williamsrChart = null;
+    let _atrChart = null;
+    let _obvChart = null;
+    let _adChart = null;
+    let _cycleChart = null;
+    let _statsChart = null;
+    let _mathChart = null;
+    let _investorChart = null;    // Specific Ticker Investor Trend chart
+    let _currentPeriod = 'D';     // 'D', 'W', 'M'
+    let _comparisonChart = null;
+    let _comparisonData = null;
+    let _taConfig = null;
+    // Currency from backend: 'TWD' for TW stocks, 'USD' for US stocks
+    const _currency = "{{ currency|default:'TWD' }}";
+
+    // ============================================================
+    // PERIOD RESAMPLE (JS-side)
+    // ============================================================
+    function resampleOHLCV(data, period) {
+        // data = array of {x: timestamp_ms, y: [O,H,L,C]}
+        // volume = array of {x: timestamp_ms, y: vol, fillColor: ...}
+        // Returns {candles, volume}
+        if (period === 'D') return null;  // use raw data
+
+        const periodMs = period === 'W' ? 7 * 86400000 : 30 * 86400000;
+
+        function getBucket(ts) {
+            const d = new Date(ts);
+            if (period === 'W') {
+                // Start of week (Monday)
+                const day = d.getDay(); // 0=Sun
+                const diff = (day === 0 ? -6 : 1 - day);
+                const mon = new Date(d);
+                mon.setDate(d.getDate() + diff);
+                mon.setHours(0, 0, 0, 0);
+                return mon.getTime();
+            } else {
+                // Start of month
+                return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+            }
+        }
+
+        const buckets = {};
+        const volBuckets = {};
+
+        _rawKlineConfig.candlestick.data.forEach((pt, i) => {
+            const key = getBucket(pt.x);
+            const [o, h, l, c] = pt.y;
+            if (!buckets[key]) {
+                buckets[key] = { x: key, open: o, high: h, low: l, close: c };
+                volBuckets[key] = { x: key, vol: 0 };
+            } else {
+                buckets[key].high = Math.max(buckets[key].high, h);
+                buckets[key].low = Math.min(buckets[key].low, l);
+                buckets[key].close = c;
+            }
+            const vPt = _rawKlineConfig.volume.data[i];
+            if (vPt) volBuckets[key].vol += vPt.y;
+        });
+
+        const sortedKeys = Object.keys(buckets).map(Number).sort((a, b) => a - b);
+        const candles = sortedKeys.map(k => ({
+            x: k,
+            y: [buckets[k].open, buckets[k].high, buckets[k].low, buckets[k].close]
+        }));
+        const volumes = sortedKeys.map(k => {
+            const b = buckets[k];
+            // green=up, red=down (standard international convention)
+            const isUp = b.close >= b.open;
+            return { x: k, y: volBuckets[k].vol, fillColor: isUp ? '#26a69a' : '#ef5350' };
+        });
+        return { candles, volumes };
+    }
+
+    function setPeriod(period) {
+        _currentPeriod = period;
+        ['day', 'week', 'month'].forEach(p => {
+            const btn = document.getElementById('btn-' + p);
+            if (btn) btn.classList.remove('active');
+        });
+        const map = { D: 'day', W: 'week', M: 'month' };
+        const activBtn = document.getElementById('btn-' + map[period]);
+        if (activBtn) activBtn.classList.add('active');
+        renderKlineCharts();
+    }
+
+    // ============================================================
+    // COMPUTE INDICATORS (JS-side)
+    // ============================================================
+    function simpleMA(prices, period) {
+        return prices.map((_, i) => {
+            if (i < period - 1) return null;
+            const slice = prices.slice(i - period + 1, i + 1);
+            return slice.reduce((a, b) => a + b, 0) / period;
+        });
+    }
+
+    function bollingerBands(prices, period = 20, multiplier = 2) {
+        const ma = simpleMA(prices, period);
+        const upper = [], lower = [];
+        prices.forEach((_, i) => {
+            if (i < period - 1) { upper.push(null); lower.push(null); return; }
+            const slice = prices.slice(i - period + 1, i + 1);
+            const mean = ma[i];
+            const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
+            upper.push(mean + multiplier * std);
+            lower.push(mean - multiplier * std);
+        });
+        return { ma, upper, lower };
+    }
+
+    function computeRSI(prices, period = 14) {
+        const rsi = [];
+        for (let i = 0; i < prices.length; i++) {
+            if (i < period) { rsi.push(null); continue; }
+            let gains = 0, losses = 0;
+            for (let j = i - period + 1; j <= i; j++) {
+                const delta = prices[j] - prices[j - 1];
+                if (delta > 0) gains += delta; else losses -= delta;
+            }
+            const rs = losses === 0 ? 100 : gains / losses;
+            rsi.push(100 - 100 / (1 + rs));
+        }
+        return rsi;
+    }
+
+    function computeMACD(prices, fast = 12, slow = 26, signal = 9) {
+        function ema(arr, period) {
+            const k = 2 / (period + 1);
+            const result = new Array(arr.length).fill(null);
+            let prev = null;
+            arr.forEach((v, i) => {
+                if (v === null) return;
+                if (prev === null) {
+                    const slice = arr.slice(0, i + 1).filter(x => x !== null);
+                    if (slice.length < period) return;
+                    const s = slice.reduce((a, b) => a + b, 0) / period;
+                    result[i] = s; prev = s;
+                } else {
+                    const e = v * k + prev * (1 - k);
+                    result[i] = e; prev = e;
+                }
+            });
+            return result;
+        }
+        const emaFast = ema(prices, fast);
+        const emaSlow = ema(prices, slow);
+        const macdLine = prices.map((_, i) => (emaFast[i] !== null && emaSlow[i] !== null) ? emaFast[i] - emaSlow[i] : null);
+        const signalLine = ema(macdLine, signal);
+        const histogram = macdLine.map((v, i) => (v !== null && signalLine[i] !== null) ? v - signalLine[i] : null);
+        return { macdLine, signalLine, histogram };
+    }
+
+    // EMA (used standalone for EMA5/20/60 overlays)
+    function computeEMA(prices, period) {
+        const k = 2 / (period + 1);
+        const result = new Array(prices.length).fill(null);
+        let prev = null;
+        for (let i = 0; i < prices.length; i++) {
+            if (i < period - 1) continue;
+            if (i === period - 1) {
+                prev = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+                result[i] = prev;
+            } else {
+                prev = prices[i] * k + prev * (1 - k);
+                result[i] = prev;
+            }
+        }
+        return result;
+    }
+
+    // VWAP (Volume-Weighted Average Price, cumulative for each period)
+    function computeVWAP(highs, lows, closes, volumes) {
+        const vwap = [];
+        let cumPV = 0, cumVol = 0;
+        for (let i = 0; i < closes.length; i++) {
+            const tp = (highs[i] + lows[i] + closes[i]) / 3;
+            cumPV += tp * volumes[i];
+            cumVol += volumes[i];
+            vwap.push(cumVol > 0 ? cumPV / cumVol : null);
+        }
+        return vwap;
+    }
+
+    // Stochastic K/D
+    function computeStoch(highs, lows, closes, kPeriod = 14, dPeriod = 3) {
+        const kLine = closes.map((c, i) => {
+            if (i < kPeriod - 1) return null;
+            const slice_h = highs.slice(i - kPeriod + 1, i + 1);
+            const slice_l = lows.slice(i - kPeriod + 1, i + 1);
+            const hh = Math.max(...slice_h);
+            const ll = Math.min(...slice_l);
+            return hh === ll ? 50 : ((c - ll) / (hh - ll)) * 100;
+        });
+        const dLine = kLine.map((_, i) => {
+            if (i < kPeriod - 1 + dPeriod - 1) return null;
+            const slice = kLine.slice(i - dPeriod + 1, i + 1).filter(v => v !== null);
+            return slice.length === dPeriod ? slice.reduce((a, b) => a + b, 0) / dPeriod : null;
+        });
+        return { kLine, dLine };
+    }
+
+    // CCI (20)
+    function computeCCI(highs, lows, closes, period = 20) {
+        return closes.map((_, i) => {
+            if (i < period - 1) return null;
+            const tps = closes.slice(i - period + 1, i + 1).map((c, j) =>
+                (highs[i - period + 1 + j] + lows[i - period + 1 + j] + c) / 3);
+            const mean = tps.reduce((a, b) => a + b, 0) / period;
+            const mad = tps.reduce((a, b) => a + Math.abs(b - mean), 0) / period;
+            return mad === 0 ? 0 : (tps[tps.length - 1] - mean) / (0.015 * mad);
+        });
+    }
+
+    // Williams %R (14)
+    function computeWilliamsR(highs, lows, closes, period = 14) {
+        return closes.map((c, i) => {
+            if (i < period - 1) return null;
+            const hh = Math.max(...highs.slice(i - period + 1, i + 1));
+            const ll = Math.min(...lows.slice(i - period + 1, i + 1));
+            return hh === ll ? -50 : ((hh - c) / (hh - ll)) * -100;
+        });
+    }
+
+    // ATR (14) — Average True Range
+    function computeATR(highs, lows, closes, period = 14) {
+        const tr = closes.map((c, i) => {
+            if (i === 0) return highs[0] - lows[0];
+            const prevC = closes[i - 1];
+            return Math.max(highs[i] - lows[i], Math.abs(highs[i] - prevC), Math.abs(lows[i] - prevC));
+        });
+        return simpleMA(tr, period);
+    }
+
+    // OBV — On-Balance Volume
+    function computeOBV(closes, volumes) {
+        const obv = [];
+        let cum = 0;
+        for (let i = 0; i < closes.length; i++) {
+            if (i === 0) { obv.push(volumes[0]); cum = volumes[0]; continue; }
+            if (closes[i] > closes[i - 1]) cum += volumes[i];
+            else if (closes[i] < closes[i - 1]) cum -= volumes[i];
+            obv.push(cum);
+        }
+        return obv;
+    }
+
+    // WMA — Weighted Moving Average
+    function computeWMA(prices, period) {
+        const result = new Array(prices.length).fill(null);
+        const weightSum = (period * (period + 1)) / 2;
+        for (let i = period - 1; i < prices.length; i++) {
+            let sum = 0;
+            for (let j = 0; j < period; j++) {
+                sum += prices[i - j] * (period - j);
+            }
+            result[i] = sum / weightSum;
+        }
+        return result;
+    }
+
+    // ============================================================
+    // RENDER CHARTS
+    // ============================================================
+    function renderKlineCharts() {
+        if (!_rawKlineConfig) return;
+
+        // Determine candle/volume data based on period
+        let candleData = _rawKlineConfig.candlestick.data;
+        let volData = _rawKlineConfig.volume.data;
+
+        if (_currentPeriod !== 'D') {
+            const resampled = resampleOHLCV(null, _currentPeriod);
+            if (resampled) {
+                candleData = resampled.candles;
+                volData = resampled.volumes;
+            }
+        }
+
+        // Extract close prices and timestamps for indicators
+        const timestamps = candleData.map(d => d.x);
+        const closes = candleData.map(d => d.y[3]);
+
+        // Build series for main chart
+        const mainSeries = [
+            { name: _rawKlineConfig.candlestick.name || 'OHLC', type: 'candlestick', data: candleData }
+        ];
+
+        // MA series (from raw backend data, or recompute)
+        const maConfigs = [
+            { id: 'ind-ma5', period: 5, color: '#29b6f6', name: 'MA5' },
+            { id: 'ind-ma20', period: 20, color: '#ffa726', name: 'MA20' },
+            { id: 'ind-ma60', period: 60, color: '#ab47bc', name: 'MA60' },
+        ];
+        const maWidths = [1];
+        const maColors = ['#000'];
+
+        maConfigs.forEach(({ id, period, color, name }) => {
+            const checkbox = document.getElementById(id);
+            if (checkbox && checkbox.checked) {
+                const maValues = simpleMA(closes, period);
+                const maSeries = timestamps.map((ts, i) => ({ x: ts, y: maValues[i] !== null ? parseFloat(maValues[i].toFixed(2)) : null }));
+                mainSeries.push({ name, type: 'line', data: maSeries });
+                maWidths.push(2);
+                maColors.push(color);
+            }
+        });
+
+        // Bollinger Bands
+        const bbChecked = document.getElementById('ind-bb') && document.getElementById('ind-bb').checked;
+        if (bbChecked) {
+            // Use TA-Lib data if available, fallback to JS compute
+            let upper, middle, lower;
+            if (_taConfig && _taConfig.overlap && _taConfig.overlap.BB_UPPER) {
+                upper = _taConfig.overlap.BB_UPPER;
+                middle = _taConfig.overlap.BB_MIDDLE;
+                lower = _taConfig.overlap.BB_LOWER;
+            } else {
+                const bb = bollingerBands(closes);
+                upper = bb.upper; middle = bb.ma; lower = bb.lower;
+            }
+            const bbUpper = timestamps.map((ts, i) => ({ x: ts, y: upper[i] !== null ? parseFloat(upper[i].toFixed(2)) : null }));
+            const bbMiddle = timestamps.map((ts, i) => ({ x: ts, y: middle[i] !== null ? parseFloat(middle[i].toFixed(2)) : null }));
+            const bbLower = timestamps.map((ts, i) => ({ x: ts, y: lower[i] !== null ? parseFloat(lower[i].toFixed(2)) : null }));
+            mainSeries.push({ name: 'BB Upper', type: 'line', data: bbUpper });
+            mainSeries.push({ name: 'BB Middle', type: 'line', data: bbMiddle });
+            mainSeries.push({ name: 'BB Lower', type: 'line', data: bbLower });
+            maWidths.push(1, 1.5, 1);
+            maColors.push('#90caf9', '#64b5f6', '#90caf9');
+        }
+
+        // Parabolic SAR
+        const sarChecked = document.getElementById('ind-sar') && document.getElementById('ind-sar').checked;
+        if (sarChecked && _taConfig && _taConfig.overlap && _taConfig.overlap.SAR) {
+            const sarSer = timestamps.map((ts, i) => ({ x: ts, y: _taConfig.overlap.SAR[i] !== null ? parseFloat(_taConfig.overlap.SAR[i].toFixed(2)) : null }));
+            mainSeries.push({ name: 'SAR', type: 'scatter', data: sarSer });
+            maWidths.push(4);
+            maColors.push('#000000');
+        }
+
+        // EMA overlays
+        const emaConfigs = [
+            { id: 'ind-ema5', period: 5, color: '#80deea', name: 'EMA5' },
+            { id: 'ind-ema20', period: 20, color: '#ffcc02', name: 'EMA20' },
+            { id: 'ind-ema60', period: 60, color: '#ce93d8', name: 'EMA60' },
+        ];
+        emaConfigs.forEach(({ id, period, color, name }) => {
+            const cb = document.getElementById(id);
+            if (cb && cb.checked) {
+                const emaVals = computeEMA(closes, period);
+                const emaSer = timestamps.map((ts, i) => ({ x: ts, y: emaVals[i] !== null ? parseFloat(emaVals[i].toFixed(2)) : null }));
+                mainSeries.push({ name, type: 'line', data: emaSer });
+                maWidths.push(1.5);
+                maColors.push(color);
+            }
+        });
+
+        // WMA overlay
+        const wmaChecked = document.getElementById('ind-wma20') && document.getElementById('ind-wma20').checked;
+        if (wmaChecked) {
+            const wmaVals = computeWMA(closes, 20);
+            const wmaSer = timestamps.map((ts, i) => ({ x: ts, y: wmaVals[i] !== null ? parseFloat(wmaVals[i].toFixed(2)) : null }));
+            mainSeries.push({ name: 'WMA20', type: 'line', data: wmaSer });
+            maWidths.push(1.5);
+            maColors.push('#ff7043');
+        }
+
+        // VWAP overlay
+        const vwapChecked = document.getElementById('ind-vwap') && document.getElementById('ind-vwap').checked;
+        if (vwapChecked) {
+            const highs = candleData.map(d => d.y[1]);
+            const lows = candleData.map(d => d.y[2]);
+            const volumes = volData.map(d => d.y);
+            const vwapVals = computeVWAP(highs, lows, closes, volumes);
+            const vwapSer = timestamps.map((ts, i) => ({ x: ts, y: vwapVals[i] !== null ? parseFloat(vwapVals[i].toFixed(2)) : null }));
+            mainSeries.push({ name: 'VWAP', type: 'line', data: vwapSer });
+            maWidths.push(2);
+            maColors.push('#e91e63');
+        }
+
+        const mainOptions = {
+            series: mainSeries,
+            chart: {
+                type: 'candlestick',
+                height: 450,
+                id: 'candles',
+                animations: { enabled: false },
+                toolbar: { show: true },
+            },
+            xaxis: {
+                type: 'datetime',
+                labels: { style: { fontSize: '18px', fontWeight: 600 } }
+            },
+            yaxis: {
+                tooltip: { enabled: true },
+                title: {
+                    text: _currency,
+                    style: { fontSize: '22px', fontWeight: 700 }
+                },
+                labels: {
+                    style: { fontSize: '18px', fontWeight: 600 },
+                    formatter: function (val) {
+                        if (val === null || val === undefined) return '';
+                        // Integer display — no decimals for TWD, 2 decimals for USD if < 100
+                        if (_currency === 'USD' && val < 100) {
+                            return '$' + val.toFixed(2);
+                        }
+                        return Math.round(val).toLocaleString();
+                    }
+                }
+            },
+            stroke: { width: maWidths, curve: 'smooth' },
+            colors: maColors,
+            legend: {
+                show: true,
+                position: 'top',
+                fontSize: '18px',
+                itemMargin: { horizontal: 20, vertical: 10 }
+            },
+            tooltip: {
+                shared: false,
+                y: {
+                    formatter: function (val) {
+                        if (val === null || val === undefined) return '';
+                        if (_currency === 'USD') return '$' + val.toFixed(2);
+                        return Math.round(val).toLocaleString() + ' TWD';
+                    }
+                }
+            },
+            annotations: {
+                points: [] // For patterns
+            }
+        };
+
+        // Pattern Recognition (Scatter markers on candles)
+        const patternsChecked = document.getElementById('ind-patterns') && document.getElementById('ind-patterns').checked;
+        if (patternsChecked && _taConfig && _taConfig.pattern_recognition) {
+            Object.entries(_taConfig.pattern_recognition).forEach(([pName, pData]) => {
+                pData.forEach((val, i) => {
+                    if (val !== 0) { // +100 or -100
+                        const highs = candleData.map(d => d.y[1]);
+                        const lows = candleData.map(d => d.y[2]);
+                        mainOptions.annotations.points.push({
+                            x: timestamps[i],
+                            y: val > 0 ? lows[i] * 0.98 : highs[i] * 1.02,
+                            marker: { size: 6, fillColor: val > 0 ? '#00e676' : '#ff1744', strokeColor: '#fff', shape: 'circle' },
+                            label: { text: pName, style: { color: '#fff', background: val > 0 ? '#00c853' : '#d50000' } }
+                        });
+                    }
+                });
+            });
+        }
+
+        if (_mainChart) {
+            _mainChart.destroy();
+        }
+        _mainChart = new ApexCharts(document.querySelector("#kline-main"), mainOptions);
+        _mainChart.render();
+
+        // Volume chart (with Reset Brush button area)
+        const volumeOptions = {
+            series: [{ name: 'Volume', data: volData }],
+            chart: {
+                type: 'bar',
+                height: 160,
+                id: 'vol-brush',
+                brush: { enabled: true, target: 'candles' },
+                animations: { enabled: false },
+                toolbar: { show: false },
+                selection: {
+                    enabled: true,
+                    xaxis: {
+                        min: volData.length > 40 ? volData[volData.length - 40].x : (volData.length > 0 ? volData[0].x : undefined),
+                        max: volData.length > 0 ? volData[volData.length - 1].x : undefined
+                    }
+                }
+            },
+            colors: [function ({ dataPointIndex }) {
+                return volData[dataPointIndex] ? volData[dataPointIndex].fillColor : '#777';
+            }],
+            xaxis: { type: 'datetime' },
+            yaxis: { labels: { show: false } },
+        };
+
+        if (_volChart) {
+            _volChart.destroy();
+        }
+        _volChart = new ApexCharts(document.querySelector("#kline-volume"), volumeOptions);
+        _volChart.render();
+
+        // RSI Chart
+        const rsiWrap = document.getElementById('kline-rsi-wrap');
+        const rsiEl = document.getElementById('kline-rsi');
+        const rsiChecked = document.getElementById('ind-rsi') && document.getElementById('ind-rsi').checked;
+        if (rsiWrap && rsiEl) {
+            if (rsiChecked) {
+                rsiWrap.style.display = '';
+                const rsiValues = computeRSI(closes);
+                const rsiSeries = timestamps.map((ts, i) => ({ x: ts, y: rsiValues[i] !== null ? parseFloat(rsiValues[i].toFixed(2)) : null }));
+                if (_rsiChart) _rsiChart.destroy();
+                _rsiChart = new ApexCharts(rsiEl, {
+                    series: [{ name: 'RSI (14)', data: rsiSeries }],
+                    chart: {
+                        type: 'line', height: 220,
+                        animations: { enabled: false },
+                        toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                        zoom: { enabled: true, type: 'x' }
+                    },
+                    xaxis: {
+                        type: 'datetime',
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    yaxis: {
+                        min: 0, max: 100, tickAmount: 5,
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    stroke: { width: 3 },
+                    colors: ['#ff5722'],
+                    legend: { fontSize: '18px' },
+                    annotations: {
+                        yaxis: [
+                            { y: 70, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought', style: { color: '#fff', background: '#f44336' } } },
+                            { y: 30, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold', style: { color: '#fff', background: '#4caf50' } } },
+                        ]
+                    },
+                });
+                _rsiChart.render();
+            } else {
+                rsiWrap.style.display = 'none';
+                if (_rsiChart) { _rsiChart.destroy(); _rsiChart = null; }
+            }
+        }
+
+        // MACD Chart
+        const macdWrap = document.getElementById('kline-macd-wrap');
+        const macdEl = document.getElementById('kline-macd');
+        const macdChecked = document.getElementById('ind-macd') && document.getElementById('ind-macd').checked;
+        if (macdWrap && macdEl) {
+            if (macdChecked) {
+                macdWrap.style.display = '';
+                const { macdLine, signalLine, histogram } = computeMACD(closes);
+                const macdSer = timestamps.map((ts, i) => ({ x: ts, y: macdLine[i] !== null ? parseFloat(macdLine[i].toFixed(4)) : null }));
+                const sigSer = timestamps.map((ts, i) => ({ x: ts, y: signalLine[i] !== null ? parseFloat(signalLine[i].toFixed(4)) : null }));
+                const histSer = timestamps.map((ts, i) => ({ x: ts, y: histogram[i] !== null ? parseFloat(histogram[i].toFixed(4)) : null }));
+                if (_macdChart) _macdChart.destroy();
+                _macdChart = new ApexCharts(macdEl, {
+                    series: [
+                        { name: 'MACD', type: 'line', data: macdSer },
+                        { name: 'Signal', type: 'line', data: sigSer },
+                        { name: 'Histogram', type: 'bar', data: histSer },
+                    ],
+                    chart: {
+                        height: 220,
+                        animations: { enabled: false },
+                        toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                        zoom: { enabled: true, type: 'x' }
+                    },
+                    xaxis: {
+                        type: 'datetime',
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    yaxis: {
+                        labels: {
+                            style: { fontSize: '18px' },
+                            formatter: v => (v !== null && v !== undefined) ? v.toFixed(2) : ''
+                        },
+                        forceNiceScale: true
+                    },
+                    stroke: { width: [2.5, 2.5, 0] },
+                    colors: ['#03a9f4', '#ff5722', '#4caf50'],
+                    legend: { fontSize: '18px' },
+                });
+                _macdChart.render();
+            } else {
+                macdWrap.style.display = 'none';
+                if (_macdChart) { _macdChart.destroy(); _macdChart = null; }
+            }
+        }
+
+        // Helper to create simple oscillator chart
+        function renderOscPanel(wrapId, chartEl, instance, checked, seriesConfig, yaxisConfig, annotations) {
+            const wrap = document.getElementById(wrapId);
+            if (!wrap || !chartEl) return instance;
+            if (checked) {
+                wrap.style.display = '';
+                if (instance) instance.destroy();
+                return new ApexCharts(chartEl, {
+                    series: seriesConfig,
+                    chart: {
+                        height: 200, animations: { enabled: false },
+                        toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                        zoom: { enabled: true, type: 'x' }
+                    },
+                    xaxis: {
+                        type: 'datetime',
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    yaxis: {
+                        ...(yaxisConfig || {}),
+                        labels: {
+                            ...(yaxisConfig?.labels || {}),
+                            style: { fontSize: '18px' }
+                        }
+                    },
+                    stroke: { width: seriesConfig.map(s => s.type === 'bar' ? 0 : 2) },
+                    legend: { fontSize: '18px' },
+                    dataLabels: { enabled: false },
+                    annotations: annotations || {},
+                });
+            } else {
+                wrap.style.display = 'none';
+                if (instance) instance.destroy();
+                return null;
+            }
+        }
+
+        // Stochastic K/D
+        const stochChecked = document.getElementById('ind-stoch') && document.getElementById('ind-stoch').checked;
+        const highs_raw = candleData.map(d => d.y[1]);
+        const lows_raw = candleData.map(d => d.y[2]);
+        const volumes_raw = volData.map(d => d.y);
+        {
+            const stochEl = document.getElementById('kline-stoch');
+            const { kLine, dLine } = computeStoch(highs_raw, lows_raw, closes);
+            const kSer = timestamps.map((ts, i) => ({ x: ts, y: kLine[i] !== null ? parseFloat(kLine[i].toFixed(2)) : null }));
+            const dSer = timestamps.map((ts, i) => ({ x: ts, y: dLine[i] !== null ? parseFloat(dLine[i].toFixed(2)) : null }));
+            _stochChart = renderOscPanel('kline-stoch-wrap', stochEl, _stochChart, stochChecked,
+                [{ name: '%K', type: 'line', data: kSer }, { name: '%D', type: 'line', data: dSer }],
+                { min: 0, max: 100, tickAmount: 4 },
+                { yaxis: [{ y: 80, borderColor: '#ef5350', label: { text: 'OB' } }, { y: 20, borderColor: '#26a69a', label: { text: 'OS' } }] });
+            if (_stochChart) _stochChart.render();
+        }
+
+        // CCI
+        const cciChecked = document.getElementById('ind-cci') && document.getElementById('ind-cci').checked;
+        {
+            const cciEl = document.getElementById('kline-cci');
+            const cciVals = computeCCI(highs_raw, lows_raw, closes);
+            const cciSer = timestamps.map((ts, i) => ({ x: ts, y: cciVals[i] !== null ? parseFloat(cciVals[i].toFixed(2)) : null }));
+            _cciChart = renderOscPanel('kline-cci-wrap', cciEl, _cciChart, cciChecked,
+                [{ name: 'CCI (20)', type: 'line', data: cciSer }],
+                { labels: { formatter: v => v !== null ? v.toFixed(0) : '' } },
+                { yaxis: [{ y: 100, borderColor: '#ef5350', label: { text: '+100' } }, { y: -100, borderColor: '#26a69a', label: { text: '-100' } }] });
+            if (_cciChart) _cciChart.render();
+        }
+
+        // Williams %R
+        const wRChecked = document.getElementById('ind-williamsr') && document.getElementById('ind-williamsr').checked;
+        {
+            const wrEl = document.getElementById('kline-williamsr');
+            const wrVals = computeWilliamsR(highs_raw, lows_raw, closes);
+            const wrSer = timestamps.map((ts, i) => ({ x: ts, y: wrVals[i] !== null ? parseFloat(wrVals[i].toFixed(2)) : null }));
+            _williamsrChart = renderOscPanel('kline-williamsr-wrap', wrEl, _williamsrChart, wRChecked,
+                [{ name: 'Williams %R', type: 'line', data: wrSer }],
+                { min: -100, max: 0, tickAmount: 4 },
+                { yaxis: [{ y: -20, borderColor: '#ef5350', label: { text: 'OB (-20)' } }, { y: -80, borderColor: '#26a69a', label: { text: 'OS (-80)' } }] });
+            if (_williamsrChart) _williamsrChart.render();
+        }
+
+        // ATR
+        const atrChecked = document.getElementById('ind-atr') && document.getElementById('ind-atr').checked;
+        {
+            const atrEl = document.getElementById('kline-atr');
+            const atrVals = computeATR(highs_raw, lows_raw, closes);
+            const atrSer = timestamps.map((ts, i) => ({ x: ts, y: atrVals[i] !== null ? parseFloat(atrVals[i].toFixed(2)) : null }));
+            _atrChart = renderOscPanel('kline-atr-wrap', atrEl, _atrChart, atrChecked,
+                [{ name: 'ATR (14)', type: 'line', data: atrSer }],
+                { labels: { formatter: v => v !== null ? v.toFixed(2) : '' } }, {});
+            if (_atrChart) _atrChart.render();
+        }
+
+        // OBV
+        const obvChecked = document.getElementById('ind-obv') && document.getElementById('ind-obv').checked;
+        {
+            const obvEl = document.getElementById('kline-obv');
+            const obvVals = _taConfig && _taConfig.volume ? _taConfig.volume.OBV : computeOBV(closes, volumes_raw);
+            const obvSer = timestamps.map((ts, i) => ({ x: ts, y: obvVals[i] !== undefined ? obvVals[i] : null }));
+            _obvChart = renderOscPanel('kline-obv-wrap', obvEl, _obvChart, obvChecked,
+                [{ name: 'OBV', type: 'line', data: obvSer }],
+                { labels: { formatter: v => v !== null ? (v / 1e6).toFixed(1) + 'M' : '' } }, {});
+            if (_obvChart) _obvChart.render();
+        }
+
+        // AD (Accumulation/Distribution)
+        const adChecked = document.getElementById('ind-ad') && document.getElementById('ind-ad').checked;
+        if (adChecked && _taConfig && _taConfig.volume) {
+            const adEl = document.getElementById('kline-ad');
+            const adVals = _taConfig.volume.AD;
+            const adSer = timestamps.map((ts, i) => ({ x: ts, y: adVals[i] !== undefined ? adVals[i] : null }));
+            _adChart = renderOscPanel('kline-ad-wrap', adEl, _adChart, adChecked,
+                [{ name: 'AD', type: 'line', data: adSer }],
+                { labels: { formatter: v => v !== null ? (v / 1e9).toFixed(1) + 'B' : '' } }, {});
+            if (_adChart) _adChart.render();
+        }
+
+        // Cycle Indicators (HT)
+        const isChecked = (id) => {
+            const el = document.getElementById(id);
+            return el && el.checked;
+        };
+
+        const cycleChecked = isChecked('ind-ht_dcperiod') ||
+            isChecked('ind-ht_dcphase') ||
+            isChecked('ind-ht_trendmode') ||
+            isChecked('ind-ht_phasor') ||
+            isChecked('ind-ht_sine');
+
+        console.log("Cycle Indicators check:", { cycleChecked, hasConfig: !!_taConfig, hasCycle: !!(_taConfig && _taConfig.cycle_indicators) });
+        if (_taConfig && _taConfig.cycle_indicators) {
+            console.log("Cycle Indicators data keys:", Object.keys(_taConfig.cycle_indicators));
+        }
+
+        if (cycleChecked && _taConfig && _taConfig.cycle_indicators) {
+            const cycleEl = document.getElementById('kline-cycle');
+            const seriesData = [];
+
+            if (cyclePeriodChecked && _taConfig.cycle_indicators.HT_DCPERIOD) {
+                const dcSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_DCPERIOD[i] === 'number' ? _taConfig.cycle_indicators.HT_DCPERIOD[i] : null }));
+                seriesData.push({ name: 'DC Period', type: 'line', data: dcSer });
+            }
+            if (cyclePhaseChecked && _taConfig.cycle_indicators.HT_DCPHASE) {
+                const phaseSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_DCPHASE[i] === 'number' ? _taConfig.cycle_indicators.HT_DCPHASE[i] : null }));
+                seriesData.push({ name: 'DC Phase', type: 'line', data: phaseSer });
+            }
+            if (cyclePhasorChecked && _taConfig.cycle_indicators.HT_PHASOR) {
+                const inPhaseSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_PHASOR[0][i] === 'number' ? _taConfig.cycle_indicators.HT_PHASOR[0][i] : null }));
+                const quadSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_PHASOR[1][i] === 'number' ? _taConfig.cycle_indicators.HT_PHASOR[1][i] : null }));
+                seriesData.push({ name: 'InPhase', type: 'line', data: inPhaseSer });
+                seriesData.push({ name: 'Quadrature', type: 'line', data: quadSer });
+            }
+            if (cycleTrendChecked && _taConfig.cycle_indicators.HT_TRENDMODE) {
+                const tmSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_TRENDMODE[i] === 'number' ? _taConfig.cycle_indicators.HT_TRENDMODE[i] : null }));
+                seriesData.push({ name: 'Trend Mode', type: 'line', data: tmSer });
+            }
+            if (cycleSineChecked && _taConfig.cycle_indicators.HT_SINE) {
+                const sineSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_SINE[0][i] === 'number' ? _taConfig.cycle_indicators.HT_SINE[0][i] : null }));
+                const leadSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_SINE[1][i] === 'number' ? _taConfig.cycle_indicators.HT_SINE[1][i] : null }));
+                seriesData.push({ name: 'Sine', type: 'line', data: sineSer });
+                seriesData.push({ name: 'Lead Sine', type: 'line', data: leadSer });
+            }
+
+            _cycleChart = renderOscPanel('kline-cycle-wrap', cycleEl, _cycleChart, cycleChecked, seriesData,
+                { labels: { formatter: v => (v !== null && v !== undefined) ? v.toFixed(2) : '' } }, {});
+            if (_cycleChart) _cycleChart.render();
+        } else {
+            const wrap = document.getElementById('kline-cycle-wrap');
+            if (wrap) wrap.style.display = 'none';
+        }
+
+        // Statistics
+        const statsChecked = document.getElementById('ind-stats') && document.getElementById('ind-stats').checked;
+        if (statsChecked && _taConfig && _taConfig.statistics) {
+            const statsEl = document.getElementById('kline-stats');
+            const bSer = timestamps.map((ts, i) => ({ x: ts, y: _taConfig.statistics.BETA[i] }));
+            const cSer = timestamps.map((ts, i) => ({ x: ts, y: _taConfig.statistics.CORREL[i] }));
+            _statsChart = renderOscPanel('kline-stats-wrap', statsEl, _statsChart, statsChecked,
+                [{ name: 'Beta', type: 'line', data: bSer }, { name: 'Correlation', type: 'line', data: cSer }],
+                { labels: { formatter: v => v ? v.toFixed(2) : '' } }, {});
+            if (_statsChart) _statsChart.render();
+        }
+
+        // Math
+        const mathChecked = document.getElementById('ind-math') && document.getElementById('ind-math').checked;
+        if (mathChecked && _taConfig && _taConfig.math_transform) {
+            const mathEl = document.getElementById('kline-math');
+            const logSer = timestamps.map((ts, i) => ({ x: ts, y: _taConfig.math_transform.LOG10[i] }));
+            _mathChart = renderOscPanel('kline-math-wrap', mathEl, _mathChart, mathChecked,
+                [{ name: 'Log10', type: 'line', data: logSer }],
+                { labels: { formatter: v => v ? v.toFixed(2) : '' } }, {});
+            if (_mathChart) _mathChart.render();
+        }
+
+        // --- DYNAMIC RENDERING FOR ALL OTHER TA-LIB INDICATORS ---
+        if (_taConfig) {
+            renderDynamicTA(timestamps, _taConfig);
+        }
+    }
+
+    let _dynamicCharts = {};
+    function renderDynamicTA(timestamps, taConfig) {
+        const wrap = document.getElementById('dynamic-indicators-wrap');
+        if (!wrap) return;
+
+        const HARDCODED = [
+            'ma5', 'ma20', 'ma60', 'ema5', 'ema20', 'ema60', 'bb', 'sar', 'wma20', 'vwap', 'patterns',
+            'rsi', 'macd', 'stoch', 'cci', 'williamsr', 'atr', 'obv', 'ad',
+            'ht_dcperiod', 'ht_dcphase', 'ht_trendmode', 'ht_phasor', 'ht_sine',
+            'stats', 'math'
+        ];
+
+        Object.entries(taConfig).forEach(([groupName, groupFuncs]) => {
+            Object.keys(groupFuncs).forEach(funcName => {
+                const lowName = funcName.toLowerCase();
+                if (HARDCODED.includes(lowName) || ['bb_upper', 'bb_middle', 'bb_lower', 'macd_signal', 'macd_hist', 'stoch_k', 'stoch_d'].includes(lowName)) return;
+
+                const id = `ind-${lowName}`;
+                const cb = document.getElementById(id);
+                const chartId = `chart-${lowName}`;
+
+                if (cb && cb.checked) {
+                    let containerWrap = document.getElementById(chartId + '-wrap');
+                    if (!containerWrap) {
+                        const newDiv = document.createElement('div');
+                        newDiv.id = chartId + '-wrap';
+                        newDiv.className = 'mt-3 border-top';
+                        newDiv.innerHTML = `
+                            <div class="d-flex justify-content-between align-items-center px-3 pt-2">
+                                <strong class="small text-muted">${funcName} (${groupName.replace(/_/g, ' ')})</strong>
+                                <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('${lowName}', true)">↺</button>
+                            </div>
+                            <div id="${chartId}" style="min-height: 200px;"></div>
+                        `;
+                        wrap.appendChild(newDiv);
+                        containerWrap = newDiv;
+                    }
+                    containerWrap.style.display = '';
+
+                    const rawData = groupFuncs[funcName];
+                    let series = [];
+                    if (Array.isArray(rawData[0])) {
+                        rawData.forEach((part, idx) => {
+                            series.push({
+                                name: `${funcName} ${idx}`,
+                                data: timestamps.map((ts, i) => ({ x: ts, y: part[i] !== null ? parseFloat(part[i].toFixed(4)) : null }))
+                            });
+                        });
+                    } else {
+                        series.push({
+                            name: funcName,
+                            data: timestamps.map((ts, i) => ({ x: ts, y: rawData[i] !== null ? parseFloat(rawData[i].toFixed(4)) : null }))
+                        });
+                    }
+
+                    if (_dynamicCharts[lowName]) _dynamicCharts[lowName].destroy();
+                    _dynamicCharts[lowName] = new ApexCharts(document.getElementById(chartId), {
+                        series: series,
+                        chart: { height: 220, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
+                        xaxis: { type: 'datetime', labels: { style: { fontSize: '16px' } } },
+                        yaxis: { labels: { style: { fontSize: '16px' }, formatter: v => v ? v.toFixed(2) : '' }, forceNiceScale: true },
+                        stroke: { width: 2 },
+                        colors: ['#00bcd4', '#ff9800', '#4caf50', '#e91e63'],
+                        legend: { fontSize: '16px' }
+                    });
+                    _dynamicCharts[lowName].render();
+                } else {
+                    const containerWrap = document.getElementById(chartId + '-wrap');
+                    if (containerWrap) containerWrap.style.display = 'none';
+                }
+            });
+        });
+    }
+
+    function updateIndicators() {
+        renderKlineCharts();
+    }
+
+    // Reset zoom on oscillator charts
+    function resetOscillatorZoom(type, isDynamic = false) {
+        const charts = {
+            rsi: _rsiChart,
+            macd: _macdChart,
+            stoch: _stochChart,
+            cci: _cciChart,
+            williamsr: _williamsrChart,
+            atr: _atrChart,
+            obv: _obvChart,
+            ad: _adChart,
+            cycle: _cycleChart,
+            stats: _statsChart,
+            math: _mathChart,
+            investor: _investorChart,
+            comparison: _comparisonChart
+        };
+        const c = isDynamic ? _dynamicCharts[type] : charts[type];
+        if (c) { c.resetSeries(); c.updateOptions({ xaxis: {} }); }
+    }
+
+    // Reset the main candlestick + volume brush to show all data
+    function resetBrushZoom() {
+        if (_mainChart) {
+            _mainChart.resetSeries();
+        }
+        if (_volChart) {
+            // Re-render to reset brush selection
+            renderKlineCharts();
+        }
+    }
+
+    // ============================================================
+    // INVESTOR COMPARISON CHART
+    // ============================================================
+    function showComparison(side) {
+        if (!_comparisonData) return;
+        const cfg = _comparisonData[side];
+
+        const btnLeaders = document.getElementById('comp-btn-leaders');
+        const btnLaggards = document.getElementById('comp-btn-laggards');
+
+        if (btnLeaders && btnLeaders.classList) {
+            btnLeaders.classList.toggle('active', side === 'leaders');
+            btnLeaders.classList.toggle('btn-outline-primary', true);
+        }
+        if (btnLaggards && btnLaggards.classList) {
+            btnLaggards.classList.toggle('active', side === 'laggards');
+            btnLaggards.classList.toggle('btn-outline-danger', true);
+        }
+
+        const compEl = document.getElementById('investor-comparison-chart');
+        if (!compEl) return;
+
+        if (_comparisonChart) _comparisonChart.destroy();
+        _comparisonChart = new ApexCharts(compEl, {
+            series: cfg.series,
+            chart: {
+                type: 'bar',
+                height: 360,
+                stacked: true,
+                animations: { enabled: false },
+                toolbar: { show: true, tools: { download: true, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                zoom: { enabled: true, type: 'x' }
+            },
+            plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
+            xaxis: { categories: cfg.categories, labels: { rotate: -45, style: { fontSize: '10px' } } },
+            yaxis: { labels: { formatter: v => (v / 1000).toFixed(0) + 'K' } },
+            legend: { position: 'top', fontSize: '11px' },
+            dataLabels: { enabled: false },
+            tooltip: { y: { formatter: v => v.toLocaleString() + ' shares' } },
+            colors: ['#42a5f5', '#26a69a', '#ffa726', '#ab47bc'],
+            title: { text: side === 'leaders' ? 'Top 5 Buyers — Last 5 Days' : 'Top 5 Sellers — Last 5 Days', align: 'left' }
+        });
+        _comparisonChart.render();
+    }
+
+    // ============================================================
+    // INIT ON LOAD
+    // ============================================================
+    window.addEventListener('load', function () {
+        // 1. K-line & Volume
+        const klineScript = document.getElementById('kline-data');
+        if (klineScript) {
+            try {
+                _rawKlineConfig = JSON.parse(klineScript.textContent);
+                console.log("ApexCharts Config loaded:", _rawKlineConfig.candlestick.data.length, "candles");
+                renderKlineCharts();
+            } catch (e) {
+                console.error("ApexCharts render error:", e);
+                document.querySelector("#kline-main").innerHTML = '<div class="p-3 text-danger">Chart error: ' + e.message + '</div>';
+            }
+        }
+
+
+        // 2. Investor Trend Chart (TW stocks)
+        const investorScript = document.getElementById('investor-data');
+        if (investorScript) {
+            try {
+                const config = JSON.parse(investorScript.textContent);
+                const investorEl = document.querySelector('#investor-chart');
+                if (investorEl) {
+                    if (_investorChart) _investorChart.destroy();
+                    _investorChart = new ApexCharts(investorEl, {
+                        series: config.series,
+                        chart: {
+                            type: 'bar', height: 420, stacked: true,
+                            animations: { enabled: false },
+                            toolbar: { show: true, tools: { download: true, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                            zoom: { enabled: true, type: 'x' },
+                            id: 'investor-trend'
+                        },
+                        plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
+                        dataLabels: { enabled: false },
+                        xaxis: {
+                            categories: config.categories,
+                            labels: { rotate: -45, style: { fontSize: '18px', fontWeight: 600 } }
+                        },
+                        yaxis: {
+                            labels: {
+                                style: { fontSize: '18px' },
+                                formatter: val => (val / 1000).toFixed(0) + 'K'
+                            }
+                        },
+                        legend: { position: 'top', fontSize: '18px' },
+                        title: {
+                            text: config.symbol + ' Investor Trend',
+                            align: 'left',
+                            style: { fontSize: '22px' }
+                        },
+                        tooltip: {
+                            y: { formatter: val => val.toLocaleString() + ' shares' },
+                            style: { fontSize: '16px' }
+                        },
+                        colors: ['#42a5f5', '#26a69a', '#ffa726', '#ab47bc'],
+                    });
+                    _investorChart.render();
+                }
+            } catch (e) {
+                console.error('Investor chart error:', e);
+            }
+        }
+
+        // 3. Investor Comparison Chart
+        const compScript = document.getElementById('investor-comparison-data');
+        if (compScript) {
+            try {
+                _comparisonData = JSON.parse(compScript.textContent);
+                showComparison('leaders');
+            } catch (e) {
+                console.error('Comparison chart error:', e);
+            }
+        }
+
+        // 4. US Institutional Investors Chart & Advanced Analysis
+        const usInvScript = document.getElementById('us-investor-data');
+        if (usInvScript) {
+            try {
+                const usData = JSON.parse(usInvScript.textContent);
+                const usEl = document.getElementById('investor-chart');
+                if (usEl && usData.categories && usData.shares) {
+                    const usChart = new ApexCharts(usEl, {
+                        series: [{ name: 'Shares Held', data: usData.shares }],
+                        chart: {
+                            type: 'bar', height: 420, animations: { enabled: false },
+                            toolbar: { show: true, tools: { download: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
+                        },
+                        plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
+                        dataLabels: { enabled: false },
+                        xaxis: { labels: { formatter: v => (v / 1e6).toFixed(1) + 'M' } },
+                        yaxis: { categories: usData.categories, labels: { style: { fontSize: '11px' } } },
+                        colors: [function ({ dataPointIndex }) {
+                            return usData.bar_colors ? usData.bar_colors[dataPointIndex] : '#42a5f5';
+                        }],
+                        tooltip: {
+                            y: { formatter: function (val) { return (val || 0).toLocaleString() + " shares"; } },
+                            custom: function ({ series, seriesIndex, dataPointIndex, w }) {
+                                const pct = (usData.pct_out && usData.pct_out.length > dataPointIndex) ? (usData.pct_out[dataPointIndex] || 0) : 0;
+                                const chg = (usData.changes && usData.changes.length > dataPointIndex) ? (usData.changes[dataPointIndex] || 0) : 0;
+                                const chgP = (usData.change_pcts && usData.change_pcts.length > dataPointIndex) ? (usData.change_pcts[dataPointIndex] || 0) : 0;
+                                const shares = (usData.shares && usData.shares.length > dataPointIndex) ? (usData.shares[dataPointIndex] || 0) : 0;
+                                const chgStr = chg > 0 ? '+' + chg.toLocaleString() : chg.toLocaleString();
+                                const chgPStr = chgP > 0 ? '+' + chgP + '%' : chgP + '%';
+                                return `<div class="p-2 small">
+                                    <b>${usData.categories[dataPointIndex]}</b><br>
+                                    Shares: ${shares.toLocaleString()}<br>
+                                    % Float: ${pct}%<br>
+                                    Change: ${chgPStr} (${chgStr})
+                                </div>`;
+                            }
+                        },
+                        title: { text: usData.symbol + ' — Institutional Holders', align: 'left' },
+                        legend: { show: false },
+                    });
+                    usChart.render();
+
+                    // NEW: Concentration Chart
+                    if (usData.concentration && usData.concentration.length > 0) {
+                        new ApexCharts(document.getElementById('us-investor-concentration'), {
+                            series: usData.concentration.map(c => c.value || 0),
+                            chart: { type: 'donut', height: 250 },
+                            labels: usData.concentration.map(c => c.label),
+                            colors: ['#1e88e5', '#bbdefb'],
+                            legend: { position: 'bottom', fontSize: '11px' },
+                            dataLabels: { enabled: true, formatter: (val) => (val || 0).toFixed(1) + "%" }
+                        }).render();
+                    }
+
+                    // NEW: Sentiment & Summary Metrics
+                    if (usData.total_institutional_pct !== undefined && usData.total_institutional_pct !== null) {
+                        const pctEl = document.getElementById('us-total-inst-pct');
+                        if (pctEl) pctEl.textContent = usData.total_institutional_pct.toFixed(2) + '%';
+                    }
+                    if (usData.total_shares_held !== undefined && usData.total_shares_held !== null) {
+                        const sharesEl = document.getElementById('us-total-inst-shares');
+                        if (sharesEl) sharesEl.textContent = (usData.total_shares_held / 1e6).toFixed(1) + 'M';
+                    }
+                    if (usData.sentiment) {
+                        const sEl = document.getElementById('us-inst-sentiment');
+                        if (sEl) {
+                            sEl.textContent = usData.sentiment.ratio.toFixed(2);
+                            sEl.classList.add(usData.sentiment.ratio > 1 ? 'text-success' : 'text-danger');
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('US investor chart error:', e);
+            }
+        }
+
+        // 5. TA Data Load & Dropdown Build
+        const taScript = document.getElementById('ta-data');
+        if (taScript) {
+            try {
+                // Safety net: replace NaN with null case-insensitively in the text before parsing
+                let taText = taScript.textContent.replace(/nan/gi, 'null');
+                _taConfig = JSON.parse(taText);
+                buildIndicatorsDropdown();
+                renderKlineCharts();
+            } catch (e) {
+                console.error('TA Data error:', e);
+            }
+        }
+
+        function buildIndicatorsDropdown() {
+            const dropdown = document.getElementById('indicators-dropdown');
+            if (!dropdown || !_taConfig) return;
+
+            dropdown.innerHTML = '';
+            // Default hardcoded ones that we already support in renderKlineCharts
+            const defaults = [
+                { id: 'ind-ma5', name: 'SMA 5', checked: true, color: '#29b6f6' },
+                { id: 'ind-ma20', name: 'SMA 20', checked: true, color: '#ffa726' },
+                { id: 'ind-ma60', name: 'SMA 60', checked: false, color: '#ab47bc' },
+                { id: 'ind-bb', name: 'Bollinger Bands', checked: true, color: '' },
+                { id: 'ind-rsi', name: 'RSI (14)', checked: true, color: '' },
+                { id: 'ind-macd', name: 'MACD', checked: true, color: '' }
+            ];
+
+            const createItem = (id, name, checked, color) => {
+                const li = document.createElement('li');
+                li.innerHTML = `<label class="form-check-label d-flex gap-2 mb-1">
+                    <input class="form-check-input" type="checkbox" id="${id}" ${checked ? 'checked' : ''} onchange="updateIndicators()">
+                    <span style="${color ? 'color:' + color : ''}">${name}</span>
+                </label>`;
+                return li;
+            };
+
+            defaults.forEach(d => dropdown.appendChild(createItem(d.id, d.name, d.checked, d.color)));
+            dropdown.appendChild(document.createElement('li')).innerHTML = '<hr class="dropdown-divider">';
+
+            // Exogenous indicators from TA-Lib categories
+            Object.entries(_taConfig).forEach(([group, funcs]) => {
+                const header = document.createElement('li');
+                header.className = 'mb-1 fw-bold text-muted small text-uppercase mt-2';
+                header.textContent = group.replace(/_/g, ' ');
+                dropdown.appendChild(header);
+
+                Object.keys(funcs).sort().forEach(f => {
+                    // Avoid duplicates with defaults
+                    if (['BB_UPPER', 'BB_MIDDLE', 'BB_LOWER', 'MACD', 'MACD_SIGNAL', 'MACD_HIST', 'STOCH_K', 'STOCH_D', 'RSI'].includes(f)) return;
+
+                    const id = `ind-${f.toLowerCase()}`;
+                    // Avoid duplicating hardcoded ma/ema
+                    if (['ma5', 'ma20', 'ma60', 'ema5', 'ema20', 'ema60', 'sar', 'wma20', 'vwap'].includes(f.toLowerCase())) return;
+
+                    dropdown.appendChild(createItem(id, f, false, ''));
+                });
+                dropdown.appendChild(document.createElement('li')).innerHTML = '<hr class="dropdown-divider">';
+            });
+        }
+
+        // 6. TW Institutional Summary Chart
+        const twSummaryScript = document.getElementById('tw-investor-summary-data');
+        if (twSummaryScript) {
+            try {
+                const twData = JSON.parse(twSummaryScript.textContent);
+                if (twData && twData.categories) {
+                    new ApexCharts(document.getElementById('tw-investor-summary-chart'), {
+                        series: [{ name: 'Net Position', data: twData.shares }],
+                        chart: { type: 'bar', height: 400, animations: { enabled: false }, toolbar: { show: true } },
+                        plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+                        xaxis: { categories: twData.categories, labels: { formatter: v => (v / 1e3).toFixed(0) + 'K' } },
+                        colors: [function ({ dataPointIndex }) { return twData.bar_colors[dataPointIndex]; }],
+                        title: { text: twData.symbol + ' — Institutional Summary', align: 'left' },
+                    }).render();
+
+                    if (twData.concentration) {
+                        new ApexCharts(document.getElementById('tw-investor-concentration'), {
+                            series: twData.concentration.map(c => c.value),
+                            chart: { type: 'donut', height: 250 },
+                            labels: twData.concentration.map(c => c.label),
+                            colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                            legend: { position: 'bottom', fontSize: '11px' },
+                        }).render();
+                    }
+
+                    if (twData.total_shares_held !== undefined) {
+                        const sharesEl = document.getElementById('tw-total-inst-shares');
+                        if (sharesEl) sharesEl.textContent = (twData.total_shares_held / 1e3).toFixed(1) + 'K';
+                    }
+                    if (twData.sentiment) {
+                        const sEl = document.getElementById('tw-inst-sentiment');
+                        if (sEl) {
+                            sEl.textContent = twData.sentiment.ratio.toFixed(2);
+                            sEl.className = twData.sentiment.ratio > 1 ? 'text-success' : 'text-danger';
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('TW summary chart error:', e);
+            }
+        }
+
+        // Initialize page load time for refresh logic (millisecond precision)
+        window._pageLoadTime = Date.now();
+        const currentTicker = "{{ number }}";
+        if (currentTicker && currentTicker !== "None") {
+            checkRefreshStatus(currentTicker);
+        }
+
+        function checkRefreshStatus(ticker) {
+            fetch(`/api/refresh-status/${ticker}/`)
+                .then(r => r.json())
+                .then(data => {
+                    const container = document.getElementById('refresh-progress-container');
+                    const barEl = document.getElementById('refresh-bar');
+                    const msgEl = document.getElementById('refresh-message');
+                    if (data.status === 'running') {
+                        container.style.display = 'block';
+                        document.getElementById('refresh-ticker-label').textContent = `Updating ${ticker}...`;
+                        if (barEl) {
+                            barEl.style.width = data.progress + '%';
+                            document.getElementById('refresh-percentage').textContent = data.progress + '%';
+                        }
+                        if (msgEl) msgEl.textContent = data.message;
+                        // Poll every 1.5 seconds
+                        setTimeout(() => checkRefreshStatus(ticker), 1500);
+                    } else if (data.status === 'done') {
+                        container.style.display = 'block';
+                        if (barEl) {
+                            barEl.style.width = '100%';
+                            barEl.classList.remove('progress-bar-animated');
+                            barEl.classList.add('bg-success');
+                        }
+                        const percentageEl = document.getElementById('refresh-percentage');
+                        if (percentageEl) percentageEl.textContent = 'Done';
+                        
+                        if (msgEl) {
+                            // Precise timestamp comparison using milliseconds
+                            const taskTimestampMs = data.timestamp_ms || 0;
+                            
+                            if (data.status === 'done' || data.status === 'success') {
+                                // Check if we have already reloaded for this specific task completion
+                                const sessionKey = `reloaded_${ticker}_${taskTimestampMs}`;
+                                if (!sessionStorage.getItem(sessionKey)) {
+                                    sessionStorage.setItem(sessionKey, 'true');
+                                    console.log(`[RefreshSync] New data for ${ticker} at ${taskTimestampMs}. Reloading...`);
+                                    msgEl.textContent = data.message + ' (Updating Dashboard...)';
+                                    
+                                    if (!window._reloading) {
+                                        window._reloading = true;
+                                        setTimeout(() => {
+                                            const form = document.querySelector('form');
+                                            if (form) form.submit();
+                                            else location.reload();
+                                        }, 1500);
+                                    }
+                                } else {
+                                    msgEl.textContent = data.message;
+                                }
+                            } else {
+                                msgEl.textContent = data.message;
+                            }
+                        }
+                    } else if (data.status === 'error') {
+                        container.style.display = 'block';
+                        if (barEl) barEl.classList.add('bg-danger');
+                        if (msgEl) {
+                            msgEl.className = 'mt-2 small text-danger';
+                            msgEl.textContent = data.message;
+                        }
+                    }
+                })
+                .catch(err => console.error('Refresh API Error:', err));
+        }
+    });
+
+    // Toggle investor chart between stacked/grouped mode
+    function toggleInvestorChartMode(mode) {
+        if (!_investorChart) return;
+        _investorChart.updateOptions({ chart: { stacked: mode === 'stacked' } });
+        const btnS = document.getElementById('inv-btn-stacked');
+        const btnG = document.getElementById('inv-btn-grouped');
+        if (btnS) btnS.classList.toggle('active', mode === 'stacked');
+        if (btnG) btnG.classList.toggle('active', mode === 'grouped');
+    }
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    input[type="text"],
+    input[type="number"] {
+        display: block;
+        width: 100%;
+        padding: .375rem .75rem;
+        font-size: 1rem;
+        font-weight: 400;
+        line-height: 1.5;
+        color: #212529;
+        background-color: #fff;
+        background-clip: padding-box;
+        border: 1px solid #ced4da;
+        appearance: none;
+        border-radius: .375rem;
+        transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+    }
+
+    input:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 .25rem rgba(13, 110, 253, .25);
+    }
+
+    .table {
+        font-size: 0.80rem;
+    }
+
+    .table thead {
+        background-color: #f8f9fa;
+    }
+
+    /* Dropdown keep open on click inside */
+    .dropdown-menu .form-check-input {
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
