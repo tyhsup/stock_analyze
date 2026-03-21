@@ -59,6 +59,7 @@ news_data/
 .agent/
 .agents/
 .gemini/
+.gitignore
 
 # 輸出與截圖
 *.png
