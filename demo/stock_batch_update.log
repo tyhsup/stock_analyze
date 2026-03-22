@@ -1,0 +1,11 @@
+2026-02-28 21:15:13,732 [INFO] 財報資料表初始化完成
+2026-02-28 21:15:14,273 [ERROR] Failed to get ticker '6442.TWO' reason: Expecting value: line 1 column 1 (char 0)
+2026-02-28 21:15:14,572 [ERROR] 
+1 Failed download:
+2026-02-28 21:15:14,572 [ERROR] ['6442.TWO']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+2026-02-28 21:44:31,495 [INFO] 財報資料表初始化完成
+2026-02-28 21:44:31,495 [INFO] 正在抓取上市與上櫃股票清單...
+2026-02-28 21:44:31,691 [WARNING] The msedgedriver version (144.0.3719.82) detected in PATH at E:\webbug\msedgedriver.exe might not be compatible with the detected MicrosoftEdge version (145.0.3800.70); currently, msedgedriver 145.0.3800.82 is recommended for MicrosoftEdge 145.*, so it is advised to delete the driver in PATH and retry
+2026-02-28 21:44:49,330 [INFO] 成功取得上市股票清單，共 1080 支
+2026-02-28 21:44:49,401 [WARNING] The msedgedriver version (144.0.3719.82) detected in PATH at E:\webbug\msedgedriver.exe might not be compatible with the detected MicrosoftEdge version (145.0.3800.70); currently, msedgedriver 145.0.3800.82 is recommended for MicrosoftEdge 145.*, so it is advised to delete the driver in PATH and retry
+2026-02-28 21:45:01,364 [INFO] 成功取得上櫃股票清單，共 879 支

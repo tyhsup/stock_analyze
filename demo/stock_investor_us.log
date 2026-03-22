@@ -1,0 +1,124 @@
+2026-02-21 09:34:37,147 [ERROR] Failed to get ticker '23302330.TW' reason: Expecting value: line 1 column 1 (char 0)
+2026-02-21 09:34:37,359 [ERROR] $23302330.TW: possibly delisted; no price data found  (period=30d)
+2026-02-21 09:34:37,717 [ERROR] Failed to get ticker '23302330' reason: Expecting value: line 1 column 1 (char 0)
+2026-02-21 09:34:37,960 [ERROR] $23302330: possibly delisted; no price data found  (period=30d)
+2026-02-21 09:36:53,424 [INFO] stock_investor_us table ready.
+2026-02-21 09:36:53,428 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 09:36:53,867 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 09:36:53,869 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 09:36:53,869 [WARNING] AAPL: No data to insert.
+2026-02-21 09:45:30,660 [INFO] stock_investor_us table ready.
+2026-02-21 09:45:30,662 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 09:45:31,311 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 09:45:31,312 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 09:45:31,313 [WARNING] AAPL: No data to insert.
+2026-02-21 09:54:18,145 [INFO] stock_investor_us table ready.
+2026-02-21 09:54:18,146 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 09:54:18,749 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 09:54:18,751 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 09:54:18,751 [WARNING] NVDA: No data to insert.
+2026-02-21 10:00:17,446 [INFO] Fetching WACC market data for NVDA from local DB...
+2026-02-21 10:02:32,977 [INFO] stock_investor_us table ready.
+2026-02-21 10:02:32,979 [INFO] Fetching US institutional data for TSLA...
+2026-02-21 10:02:33,428 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//TSLA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 10:02:33,429 [WARNING] TSLA: No institutional_holders data from yfinance.
+2026-02-21 10:02:33,429 [WARNING] TSLA: No data to insert.
+2026-02-21 10:06:10,562 [INFO] Fetching WACC market data for TSLA from local DB...
+2026-02-21 10:08:25,194 [INFO] stock_investor_us table ready.
+2026-02-21 10:08:25,196 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 10:08:25,759 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 10:08:25,761 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 10:08:25,761 [WARNING] AAPL: No data to insert.
+2026-02-21 10:19:38,831 [INFO] Fetching WACC market data for AAPL from local DB...
+2026-02-21 10:34:58,930 [INFO] E:\Infinity\mydjango\demo\stock_Django\股價估值工具\dcf_valuation\financial_data.py changed, reloading.
+2026-02-21 10:35:43,493 [INFO] E:\Infinity\mydjango\demo\stock_Django\stock_utils.py changed, reloading.
+2026-02-21 10:54:25,619 [WARNING] Not Found: /favicon.ico
+2026-02-21 10:56:14,773 [INFO] stock_investor_us table ready.
+2026-02-21 10:56:14,775 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 10:56:15,431 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 10:56:15,433 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 10:56:15,433 [WARNING] NVDA: No data to insert.
+2026-02-21 11:02:19,054 [WARNING] Not Found: /favicon.ico
+2026-02-21 11:04:04,293 [INFO] stock_investor_us table ready.
+2026-02-21 11:04:04,295 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 11:04:04,957 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 11:04:04,958 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 11:04:04,959 [WARNING] NVDA: No data to insert.
+2026-02-21 11:05:38,755 [INFO] Fetching WACC market data for NVDA from local DB...
+2026-02-21 11:07:44,410 [INFO] stock_investor_us table ready.
+2026-02-21 11:07:44,412 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 11:07:45,134 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 11:07:45,136 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 11:07:45,136 [WARNING] AAPL: No data to insert.
+2026-02-21 11:10:15,549 [INFO] Fetching WACC market data for AAPL from local DB...
+2026-02-21 11:16:20,943 [INFO] Starting US investor data fetch for: ['AAPL', 'NVDA', 'TSLA']
+2026-02-21 11:16:20,983 [INFO] stock_investor_us table ready.
+2026-02-21 11:16:20,983 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 11:16:21,641 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 11:16:21,643 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 11:16:21,643 [WARNING] AAPL: No data to insert.
+2026-02-21 11:16:22,718 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 11:16:22,972 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 11:16:22,977 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 11:16:22,977 [WARNING] NVDA: No data to insert.
+2026-02-21 11:16:24,906 [INFO] Fetching US institutional data for TSLA...
+2026-02-21 11:16:25,118 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//TSLA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 11:16:25,119 [WARNING] TSLA: No institutional_holders data from yfinance.
+2026-02-21 11:16:25,119 [WARNING] TSLA: No data to insert.
+2026-02-21 11:16:26,405 [INFO] Done.
+2026-02-21 14:30:31,031 [WARNING] Not Found: /favicon.ico
+2026-02-21 14:39:47,489 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-02-21 21:13:55,628 [WARNING] Not Found: /favicon.ico
+2026-02-21 21:15:45,598 [INFO] stock_investor_us table ready.
+2026-02-21 21:15:45,598 [ERROR] get_latest_holders error for AAPL: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'AAPL'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:15:45,600 [WARNING] Could not read last fetch date for AAPL: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'AAPL'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:15:45,600 [INFO] Fetching US institutional data for AAPL...
+2026-02-21 21:15:46,118 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//AAPL?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 21:15:46,118 [WARNING] AAPL: No institutional_holders data from yfinance.
+2026-02-21 21:15:46,119 [WARNING] AAPL: No data to insert.
+2026-02-21 21:15:47,316 [ERROR] get_latest_holders error for AAPL: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'AAPL'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:22:50,691 [INFO] Fetching WACC market data for AAPL from local DB...
+2026-02-21 21:29:46,415 [INFO] stock_investor_us table ready.
+2026-02-21 21:29:46,415 [ERROR] get_latest_holders error for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:29:46,416 [WARNING] Could not read last fetch date for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:29:46,416 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 21:29:46,926 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 21:29:46,928 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 21:29:46,928 [WARNING] NVDA: No data to insert.
+2026-02-21 21:29:48,701 [ERROR] get_latest_holders error for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:43:48,989 [WARNING] Not Found: /favicon.ico
+2026-02-21 21:45:48,715 [INFO] stock_investor_us table ready.
+2026-02-21 21:45:48,715 [ERROR] get_latest_holders error for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:45:48,717 [WARNING] Could not read last fetch date for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-21 21:45:48,717 [INFO] Fetching US institutional data for NVDA...
+2026-02-21 21:45:56,067 [ERROR] 429 Client Error: Too Many Requests for url: https://query2.finance.yahoo.com/v10/finance/quoteSummary//NVDA?modules=institutionOwnership%2CfundOwnership%2CmajorDirectHolders%2CmajorHoldersBreakdown%2CinsiderTransactions%2CinsiderHolders%2CnetSharePurchaseActivity&corsDomain=finance.yahoo.com&formatted=false&crumb=Edge%3A+Too+Many+Requests
+2026-02-21 21:45:56,068 [WARNING] NVDA: No institutional_holders data from yfinance.
+2026-02-21 21:45:56,068 [WARNING] NVDA: No data to insert.
+2026-02-21 21:45:57,085 [ERROR] get_latest_holders error for NVDA: (pymysql.err.OperationalError) (1054, "Unknown column 'fetch_date' in 'field list'")
+[SQL: SELECT MAX(fetch_date) FROM stock_investor_us WHERE ticker = %(t)s]
+[parameters: {'t': 'NVDA'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

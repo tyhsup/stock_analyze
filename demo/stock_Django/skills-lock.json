@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "analyzing-financial-statements": {
+      "source": "activer007/ordinary-claude-skills",
+      "sourceType": "github",
+      "computedHash": "caafa85b09b9af40ad3b7e8af2a168bf60b56d53d9fda9812dfe2f19fe6f693e"
+    },
+    "database-migrations": {
+      "source": "openclaw/skills",
+      "sourceType": "github",
+      "computedHash": "7c517f57ac3ee2701b53a77957d1d7ed561bf0b155e1d27cfe9c4df4267e6867"
+    },
+    "django-expert": {
+      "source": "vintasoftware/django-ai-plugins",
+      "sourceType": "github",
+      "computedHash": "48918a76e3f070c0cbd13a70324bf1c4d2cc8251f33a27055a4e432312a3ac0c"
+    },
+    "investor-materials": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "github",
+      "computedHash": "f65d21f96ce34c4d452be3d98117f1c6d2584667bc92cc67b85a5ac4f387cd96"
+    },
+    "python-expert": {
+      "source": "shubhamsaboo/awesome-llm-apps",
+      "sourceType": "github",
+      "computedHash": "aaefc22f80eb2b50bc24cf2be6121d0ec3b63a8f025a4f7c583c049d2ebab60b"
+    }
+  }
+}
