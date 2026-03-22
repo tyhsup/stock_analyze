@@ -287,12 +287,18 @@
                 <div id="kline-cycle-wrap" style="display:none;">
                     <div id="kline-cycle"></div>
                 </div>
+                <!-- Phasor Plot (I vs Q) -->
+                <div id="kline-phasor-wrap" style="display:none;">
+                    <div id="kline-phasor"></div>
+                </div>
                 <div id="kline-stats-wrap" style="display:none;">
                     <div id="kline-stats"></div>
                 </div>
                 <div id="kline-math-wrap" style="display:none;">
                     <div id="kline-math"></div>
                 </div>
+                <!-- Container for all dynamic generic indicators (e.g., ADX, AROON, MFI) -->
+                <div id="dynamic-indicators-wrap" class="px-0"></div>
             </div>
         </div>
     </div>
@@ -402,6 +408,7 @@
     let _obvChart = null;
     let _adChart = null;
     let _cycleChart = null;
+    let _phasorChart = null;
     let _statsChart = null;
     let _mathChart = null;
     let _investorChart = null;    // Specific Ticker Investor Trend chart
@@ -994,14 +1001,11 @@
                         type: 'datetime',
                         labels: { style: { fontSize: '18px' } }
                     },
-                    yaxis: {
-                        ...(yaxisConfig || {}),
-                        labels: {
-                            ...(yaxisConfig?.labels || {}),
-                            style: { fontSize: '18px' }
-                        }
+                    yaxis: yaxisConfig || { labels: { style: { fontSize: '18px' } } },
+                    stroke: { 
+                        width: seriesConfig.map(s => s.type === 'bar' ? 0 : 2),
+                        curve: seriesConfig.map(s => s.stroke?.curve || 'smooth')
                     },
-                    stroke: { width: seriesConfig.map(s => s.type === 'bar' ? 0 : 2) },
                     legend: { fontSize: '18px' },
                     dataLabels: { enabled: false },
                     annotations: annotations || {},
@@ -1101,9 +1105,17 @@
         const cycleChecked = isChecked('ind-ht_dcperiod') ||
             isChecked('ind-ht_dcphase') ||
             isChecked('ind-ht_trendmode') ||
-            isChecked('ind-ht_phasor') ||
             isChecked('ind-ht_sine');
+        
+        const phasorChecked = isChecked('ind-ht_phasor');
+        
+        const cyclePeriodChecked = isChecked('ind-ht_dcperiod');
+        const cyclePhaseChecked  = isChecked('ind-ht_dcphase');
+        const cyclePhasorChecked = isChecked('ind-ht_phasor');
+        const cycleTrendChecked  = isChecked('ind-ht_trendmode');
+        const cycleSineChecked   = isChecked('ind-ht_sine');
 
+ 
         console.log("Cycle Indicators check:", { cycleChecked, hasConfig: !!_taConfig, hasCycle: !!(_taConfig && _taConfig.cycle_indicators) });
         if (_taConfig && _taConfig.cycle_indicators) {
             console.log("Cycle Indicators data keys:", Object.keys(_taConfig.cycle_indicators));
@@ -1121,15 +1133,10 @@
                 const phaseSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_DCPHASE[i] === 'number' ? _taConfig.cycle_indicators.HT_DCPHASE[i] : null }));
                 seriesData.push({ name: 'DC Phase', type: 'line', data: phaseSer });
             }
-            if (cyclePhasorChecked && _taConfig.cycle_indicators.HT_PHASOR) {
-                const inPhaseSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_PHASOR[0][i] === 'number' ? _taConfig.cycle_indicators.HT_PHASOR[0][i] : null }));
-                const quadSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_PHASOR[1][i] === 'number' ? _taConfig.cycle_indicators.HT_PHASOR[1][i] : null }));
-                seriesData.push({ name: 'InPhase', type: 'line', data: inPhaseSer });
-                seriesData.push({ name: 'Quadrature', type: 'line', data: quadSer });
-            }
+ 
             if (cycleTrendChecked && _taConfig.cycle_indicators.HT_TRENDMODE) {
                 const tmSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_TRENDMODE[i] === 'number' ? _taConfig.cycle_indicators.HT_TRENDMODE[i] : null }));
-                seriesData.push({ name: 'Trend Mode', type: 'line', data: tmSer });
+                seriesData.push({ name: 'Trend Mode', type: 'line', data: tmSer, stroke: { curve: 'stepline' } });
             }
             if (cycleSineChecked && _taConfig.cycle_indicators.HT_SINE) {
                 const sineSer = timestamps.map((ts, i) => ({ x: ts, y: typeof _taConfig.cycle_indicators.HT_SINE[0][i] === 'number' ? _taConfig.cycle_indicators.HT_SINE[0][i] : null }));
@@ -1138,12 +1145,96 @@
                 seriesData.push({ name: 'Lead Sine', type: 'line', data: leadSer });
             }
 
-            _cycleChart = renderOscPanel('kline-cycle-wrap', cycleEl, _cycleChart, cycleChecked, seriesData,
-                { labels: { formatter: v => (v !== null && v !== undefined) ? v.toFixed(2) : '' } }, {});
+            const cycleYaxis = seriesData.map(s => {
+                if (s.name === 'DC Period' || s.name === 'DC Phase') {
+                    return { seriesName: s.name, show: s.name === 'DC Period' || s.name === 'DC Phase', labels: { style: { fontSize: '18px' }, formatter: v => v ? v.toFixed(1) : '' } };
+                }
+                return { seriesName: s.name, opposite: true, show: s.name === 'Sine' || s.name === 'Trend Mode', labels: { style: { fontSize: '18px' }, formatter: v => v ? v.toFixed(2) : '' } };
+            });
+
+            _cycleChart = renderOscPanel('kline-cycle-wrap', cycleEl, _cycleChart, cycleChecked, seriesData, cycleYaxis, {});
             if (_cycleChart) _cycleChart.render();
         } else {
             const wrap = document.getElementById('kline-cycle-wrap');
             if (wrap) wrap.style.display = 'none';
+            if (_cycleChart) { _cycleChart.destroy(); _cycleChart = null; }
+        }
+
+        // Independent Phasor Plot (InPhase vs Quadrature)
+        const phasorWrap = document.getElementById('kline-phasor-wrap');
+        const phasorEl = document.getElementById('kline-phasor');
+        if (phasorWrap && phasorEl) {
+            if (phasorChecked && _taConfig && _taConfig.cycle_indicators && _taConfig.cycle_indicators.HT_PHASOR) {
+                phasorWrap.style.display = '';
+                const iData = _taConfig.cycle_indicators.HT_PHASOR[0];
+                const qData = _taConfig.cycle_indicators.HT_PHASOR[1];
+                
+                const lookback = 100;
+                const points = [];
+                const startIdx = Math.max(0, iData.length - lookback);
+                for (let i = startIdx; i < iData.length; i++) {
+                    if (typeof iData[i] === 'number' && typeof qData[i] === 'number') {
+                        points.push({ x: iData[i], y: qData[i] });
+                    }
+                }
+
+                // Calculate Current Magnitude and Phase
+                const lastI = iData[iData.length - 1];
+                const lastQ = qData[qData.length - 1];
+                let amp = 0, phase = 0;
+                if (typeof lastI === 'number' && typeof lastQ === 'number') {
+                    amp = Math.sqrt(lastI * lastI + lastQ * lastQ);
+                    phase = Math.atan2(lastQ, lastI) * (180 / Math.PI);
+                    if (phase < 0) phase += 360;
+                }
+
+                const subtitleText = `Amplitude: ${amp.toFixed(2)} | Phase Angle: ${phase.toFixed(2)}°`;
+
+                if (_phasorChart) _phasorChart.destroy();
+                _phasorChart = new ApexCharts(phasorEl, {
+                    series: [{ name: 'Phase Trajectory', data: points }],
+                    chart: { type: 'scatter', height: 450, animations: { enabled: false }, zoom: { type: 'xy' }, toolbar: { show: true } },
+                    theme: { mode: 'dark' },
+                    title: { text: 'HT_PHASOR Plot (InPhase vs Quadrature)', align: 'center', style: { color: '#fff', fontSize: '22px', fontWeight: 700 } },
+                    subtitle: { text: subtitleText, align: 'center', style: { color: '#03a9f4', fontSize: '18px', fontWeight: 'bold' } },
+                    xaxis: { 
+                        type: 'numeric', 
+                        title: { text: 'InPhase', style: { color: '#ccc', fontSize: '16px' } },
+                        labels: { style: { colors: '#fff', fontSize: '18px' }, formatter: v => (v !== null) ? v.toFixed(2) : '' },
+                        axisBorder: { show: true, color: '#444' }
+                    },
+                    yaxis: { 
+                        title: { text: 'Quadrature', style: { color: '#ccc', fontSize: '16px' } },
+                        labels: { style: { colors: '#fff', fontSize: '18px' }, formatter: v => (v !== null) ? v.toFixed(2) : '' }
+                    },
+                    annotations: {
+                        points: [{
+                            x: 0, y: 0, marker: { size: 0 }, label: { text: 'Origin', style: { color: '#fff', background: '#333', fontSize: '14px' } }
+                        }],
+                        xaxis: [{ x: 0, borderColor: '#777', strokeDashArray: 4, label: { text: '' } }],
+                        yaxis: [{ y: 0, borderColor: '#777', strokeDashArray: 4, label: { text: '' } }]
+                    },
+                    markers: { 
+                        size: 6, 
+                        strokeColors: '#fff', 
+                        strokeWidth: 1, 
+                        discrete: [{ 
+                            seriesIndex: 0, 
+                            dataPointIndex: points.length - 1, 
+                            fillColor: '#ffeb3b', 
+                            size: 11,
+                            strokeColor: '#f44336',
+                            strokeWidth: 2
+                        }] 
+                    },
+                    colors: ['#03a9f4'],
+                    grid: { borderColor: '#444' }
+                });
+                _phasorChart.render();
+            } else {
+                phasorWrap.style.display = 'none';
+                if (_phasorChart) { _phasorChart.destroy(); _phasorChart = null; }
+            }
         }
 
         // Statistics
@@ -1197,50 +1288,85 @@
                 const chartId = `chart-${lowName}`;
 
                 if (cb && cb.checked) {
-                    let containerWrap = document.getElementById(chartId + '-wrap');
-                    if (!containerWrap) {
-                        const newDiv = document.createElement('div');
-                        newDiv.id = chartId + '-wrap';
-                        newDiv.className = 'mt-3 border-top';
-                        newDiv.innerHTML = `
-                            <div class="d-flex justify-content-between align-items-center px-3 pt-2">
-                                <strong class="small text-muted">${funcName} (${groupName.replace(/_/g, ' ')})</strong>
-                                <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('${lowName}', true)">↺</button>
-                            </div>
-                            <div id="${chartId}" style="min-height: 200px;"></div>
-                        `;
-                        wrap.appendChild(newDiv);
-                        containerWrap = newDiv;
-                    }
-                    containerWrap.style.display = '';
+                    try {
+                        let containerWrap = document.getElementById(chartId + '-wrap');
+                        if (!containerWrap) {
+                            const newDiv = document.createElement('div');
+                            newDiv.id = chartId + '-wrap';
+                            newDiv.className = 'mt-3 border-top';
+                            newDiv.innerHTML = `
+                                <div class="d-flex justify-content-between align-items-center px-3 pt-2">
+                                    <strong class="small text-muted">${funcName} (${groupName.replace(/_/g, ' ')})</strong>
+                                    <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('${lowName}', true)">↺</button>
+                                </div>
+                                <div id="${chartId}" style="min-height: 200px;"></div>
+                            `;
+                            wrap.appendChild(newDiv);
+                            containerWrap = newDiv;
+                        }
+                        containerWrap.style.display = '';
 
-                    const rawData = groupFuncs[funcName];
-                    let series = [];
-                    if (Array.isArray(rawData[0])) {
-                        rawData.forEach((part, idx) => {
-                            series.push({
-                                name: `${funcName} ${idx}`,
-                                data: timestamps.map((ts, i) => ({ x: ts, y: part[i] !== null ? parseFloat(part[i].toFixed(4)) : null }))
+                        const rawData = groupFuncs[funcName];
+                        if (!rawData) throw new Error('rawData is missing for ' + funcName);
+                        
+                        let series = [];
+                        const safeFloat = (v) => (typeof v === 'number' && !isNaN(v)) ? parseFloat(v.toFixed(4)) : null;
+
+                        if (Array.isArray(rawData) && Array.isArray(rawData[0])) {
+                            rawData.forEach((part, idx) => {
+                                let labelName = `${funcName} ${idx}`;
+                                if (funcName === 'AROON' || funcName === 'AROONOSC') labelName = idx === 0 ? 'Aroon Down' : 'Aroon Up';
+                                else if (funcName === 'MACD' || funcName === 'MACDEXT' || funcName === 'MACDFIX') labelName = idx === 0 ? 'MACD' : (idx === 1 ? 'Signal' : 'Hist');
+                                else if (funcName.startsWith('STOCH')) labelName = idx === 0 ? '%K' : '%D';
+                                
+                                series.push({
+                                    name: labelName,
+                                    data: timestamps.map((ts, i) => ({ x: ts, y: safeFloat(part[i]) }))
+                                });
                             });
-                        });
-                    } else {
-                        series.push({
-                            name: funcName,
-                            data: timestamps.map((ts, i) => ({ x: ts, y: rawData[i] !== null ? parseFloat(rawData[i].toFixed(4)) : null }))
-                        });
-                    }
+                        } else {
+                            series.push({
+                                name: funcName,
+                                data: timestamps.map((ts, i) => ({ x: ts, y: safeFloat(rawData[i]) }))
+                            });
+                        }
 
-                    if (_dynamicCharts[lowName]) _dynamicCharts[lowName].destroy();
-                    _dynamicCharts[lowName] = new ApexCharts(document.getElementById(chartId), {
-                        series: series,
-                        chart: { height: 220, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
-                        xaxis: { type: 'datetime', labels: { style: { fontSize: '16px' } } },
-                        yaxis: { labels: { style: { fontSize: '16px' }, formatter: v => v ? v.toFixed(2) : '' }, forceNiceScale: true },
-                        stroke: { width: 2 },
-                        colors: ['#00bcd4', '#ff9800', '#4caf50', '#e91e63'],
-                        legend: { fontSize: '16px' }
-                    });
-                    _dynamicCharts[lowName].render();
+                        let yaxisAnnos = [];
+                        const ob80 = ['STOCH', 'STOCHF', 'STOCHRSI', 'MFI'];
+                        const ob70 = ['RSI', 'ULTOSC'];
+                        
+                        if (ob80.includes(funcName)) {
+                            yaxisAnnos.push({ y: 80, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought (80)', style: { color: '#fff', background: '#f44336' } } });
+                            yaxisAnnos.push({ y: 20, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold (20)', style: { color: '#fff', background: '#4caf50' } } });
+                        } else if (ob70.includes(funcName)) {
+                            yaxisAnnos.push({ y: 70, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought (70)', style: { color: '#fff', background: '#f44336' } } });
+                            yaxisAnnos.push({ y: 30, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold (30)', style: { color: '#fff', background: '#4caf50' } } });
+                        } else if (funcName === 'CMO') {
+                            yaxisAnnos.push({ y: 50, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought (+50)', style: { color: '#fff', background: '#f44336' } } });
+                            yaxisAnnos.push({ y: -50, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold (-50)', style: { color: '#fff', background: '#4caf50' } } });
+                        } else if (funcName === 'CCI') {
+                            yaxisAnnos.push({ y: 100, borderColor: '#f44336', strokeDashArray: 4, label: { text: '+100', style: { color: '#fff', background: '#f44336' } } });
+                            yaxisAnnos.push({ y: -100, borderColor: '#4caf50', strokeDashArray: 4, label: { text: '-100', style: { color: '#fff', background: '#4caf50' } } });
+                        } else if (funcName === 'WILLR') {
+                            yaxisAnnos.push({ y: -20, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought (-20)', style: { color: '#fff', background: '#f44336' } } });
+                            yaxisAnnos.push({ y: -80, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold (-80)', style: { color: '#fff', background: '#4caf50' } } });
+                        }
+
+                        if (_dynamicCharts[lowName]) _dynamicCharts[lowName].destroy();
+                        _dynamicCharts[lowName] = new ApexCharts(document.getElementById(chartId), {
+                            series: series,
+                            chart: { height: 220, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
+                            xaxis: { type: 'datetime', labels: { style: { fontSize: '16px' } } },
+                            yaxis: { labels: { style: { fontSize: '16px' }, formatter: v => v ? v.toFixed(2) : '' }, forceNiceScale: true },
+                            annotations: { yaxis: yaxisAnnos },
+                            stroke: { width: 2 },
+                            colors: ['#00bcd4', '#ff9800', '#4caf50', '#e91e63'],
+                            legend: { fontSize: '16px' }
+                        });
+                        _dynamicCharts[lowName].render();
+                    } catch (e) {
+                        console.error('Error rendering dynamic chart for ' + funcName, e);
+                    }
                 } else {
                     const containerWrap = document.getElementById(chartId + '-wrap');
                     if (containerWrap) containerWrap.style.display = 'none';

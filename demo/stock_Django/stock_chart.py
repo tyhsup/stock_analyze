@@ -575,14 +575,17 @@ class chart_create:
                     elif group_name == 'Cycle Indicators':
                         output = func(C)
                     elif group_name == 'Momentum Indicators':
-                        # Momentum indicators vary widely in input requirements
-                        if any(x in func_name for x in ['ADX', 'DI', 'DX', 'CCI', 'WILLR', 'ULTOSC']):
-                            output = func(H, L, C)
-                        elif any(x in func_name for x in ['AROON', 'MINUS_DM', 'PLUS_DM']):
-                            output = func(H, L)
+                        # Precise input mapping for 30 TA-Lib Momentum Indicators
+                        if func_name == 'BOP':
+                            output = func(O, H, L, C)
                         elif func_name == 'MFI':
                             output = func(H, L, C, V)
+                        elif func_name in ['ADX', 'ADXR', 'CCI', 'DX', 'MINUS_DI', 'PLUS_DI', 'ULTOSC', 'WILLR']:
+                            output = func(H, L, C)
+                        elif func_name in ['AROON', 'MINUS_DM', 'PLUS_DM']:
+                            output = func(H, L)
                         else:
+                            # APO, AROONOSC, CMO, MOM, PPO, ROC, ROCP, ROCR, ROCR100, RSI, TRIX
                             output = func(C)
                     elif group_name == 'Overlap Studies':
                         if func_name in ['SAR', 'SAREXT']: output = func(H, L)
