@@ -590,7 +590,7 @@ class StockService:
                                     fin_summary['book_value'] = round(equity / shares, 2)
 
                                 # 4. Gross Margin
-                                rev_keys = ['Revenues', 'TotalRevenues', 'OperatingRevenue', 'TotalRevenue', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingCostReportedOnNetBasis', 'InterestIncomeExpenseNetNonoperating', '營業收入合計', '營業收入', '營業收入淨額', 'Net Sales', '運輸收入', 'NetInterestIncome']
+                                rev_keys = ['Revenues', 'TotalRevenues', 'OperatingRevenue', 'TotalRevenue', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerExcludingCostReportedOnNetBasis', 'InterestIncomeExpenseNetNonoperating', '營業收入合計', '營業收入', '營業收入淨額', 'Net Sales', '運輸收入', 'NetInterestIncome']
                                 cos_keys = ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfGoodsSold', 'InterestExpense', '營業成本', '運輸成本', 'CostOfDirectServices']
                                 rev = get_first_match(latest, rev_keys)
                                 cos = get_first_match(latest, cos_keys)

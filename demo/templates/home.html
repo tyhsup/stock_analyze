@@ -1549,7 +1549,7 @@
                         plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
                         dataLabels: { enabled: false },
                         xaxis: { categories: usData.categories, labels: { formatter: v => (v / 1e6).toFixed(1) + 'M' } },
-                        yaxis: { labels: { style: { fontSize: '11px' } } },
+                        yaxis: { labels: { style: { fontSize: '16px' } } },
                         colors: [function ({ dataPointIndex }) {
                             return usData.bar_colors ? usData.bar_colors[dataPointIndex] : '#42a5f5';
                         }],
