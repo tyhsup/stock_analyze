@@ -131,12 +131,13 @@ class chart_create:
 
         return fig.to_json()
 
-    def kline_apex(self, data: pd.DataFrame, symbol: str = "") -> Optional[Dict[str, Any]]:
+    def kline_apex(self, data: pd.DataFrame, symbol: str = "", ai_pred: dict = None) -> Optional[Dict[str, Any]]:
         """生成 ApexCharts 格式的 K 線圖資料。
 
         Args:
             data (pd.DataFrame): 包含 OHLCV 的股價資料。
             symbol (str, optional): 股票代碼。 預設為 ""。
+            ai_pred (dict, optional): 包含歷史預測與未來預測的字典。
 
         Returns:
             Optional[Dict[str, Any]]: ApexCharts 配置字典，若資料為空則回傳 None。
@@ -178,10 +179,61 @@ class chart_create:
                 if points:
                     ma_series.append({'name': f'MA{ma}', 'color': color, 'data': points})
                     
+        # Process AI Prediction
+        ai_hist_series = []
+        ai_future_series = []
+        
+        if ai_pred:
+            hist = ai_pred.get('historical', [])
+            latest = ai_pred.get('latest', None)
+            
+            # 1. Historical Trajectory (Solid Line)
+            hist_points = []
+            for item in hist:
+                dt = pd.to_datetime(item['date'])
+                # Shift 1 business day backward or forward depending on definition.
+                # Since model predicts T+1 based on T ending data:
+                next_dt = dt + pd.offsets.BDay(1)
+                ts = int(next_dt.timestamp() * 1000)
+                hist_points.append({'x': ts, 'y': float(item['pred'])})
+            
+            if hist_points:
+                ai_hist_series.append({
+                    'name': 'AI Pred (History)',
+                    'type': 'line',
+                    'color': '#ff0000', # Red solid line
+                    'data': hist_points
+                })
+                
+            # 2. Future 5-day Prediction (Dashed Line logic)
+            future_points = []
+            if latest and 'predictions' in latest:
+                preds = latest['predictions']
+                last_dt = pd.to_datetime(data.index[-1])
+                for i, p in enumerate(preds):
+                    fut_dt = last_dt + pd.offsets.BDay(i + 1)
+                    ts = int(fut_dt.timestamp() * 1000)
+                    future_points.append({'x': ts, 'y': float(p)})
+                    
+            if future_points:
+                # Add the last actual close price to connect the line visually
+                last_ts = timestamps[-1]
+                last_close = closes[-1]
+                conn_points = [{'x': last_ts, 'y': last_close}] + future_points
+                
+                ai_future_series.append({
+                    'name': 'AI Pred (Future)',
+                    'type': 'line',
+                    'color': '#ff0000', # Will use strokeDashArray in frontend
+                    'data': conn_points
+                })
+                    
         config = {
             'candlestick': {'name': 'OHLC', 'data': series_data},
             'volume': {'name': 'Volume', 'data': volume_data},
             'ma': ma_series,
+            'ai_history': ai_hist_series,
+            'ai_future': ai_future_series,
             'symbol': symbol
         }
         return config  # Return dict - Django's json_script filter will serialize it
@@ -334,7 +386,7 @@ class chart_create:
     def last_investor_H_T(self, data, amount):
         investor_last_time = data.sort_values(by = '日期', ascending = True).iloc[-1].at['日期']
         mask_last_date = (data['日期']==investor_last_time)
-        investor_lastday_data = data[mask_last_date]
+        investor_lastday_data = data[mask_last_date].copy()
         investor_lastday_data.sort_values(by = '三大法人買賣超股數', ascending = False, inplace = True)
         investor_head= investor_lastday_data.head(int(amount))
         investor_head.set_index('日期', inplace = True)
@@ -344,7 +396,7 @@ class chart_create:
     
     def get_investor(self, data,stock,days):
         mask = (data['number']==str(stock))
-        data2 = data[mask]
+        data2 = data[mask].copy()
         data_sort = data2.sort_values(by = '日期', ascending = True)
         investor_tail = data_sort.tail(days)
         investor_tail.set_index('日期', inplace = True)

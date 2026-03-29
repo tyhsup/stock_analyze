@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import talib
-import datetime, io, urllib, base64, time
+import datetime, io, urllib, base64, time, os
 from sklearn.preprocessing import MinMaxScaler
 from stock_Django import mySQL_OP
 
@@ -212,8 +212,6 @@ class StockUtils:
     @staticmethod
     def Sentiment_indicators(stock_number: str, data: pd.DataFrame) -> pd.DataFrame:
         data_copy = data.copy()
-        data_copy['漲跌幅度'] = data_copy['Close'].pct_change() * 100
-        
         # Use configurable path for news analysis results
         webbug_dir = os.getenv('WEBBUG_DIR', 'E:/Infinity/webbug/')
         news_path = os.path.join(webbug_dir, f'{stock_number}_news_新聞正負分析結果(day).xlsx')

@@ -11,6 +11,9 @@ from stock_Django import stock_chart
 from .data_freshness import trigger_refresh_if_stale
 from .stock_investor_tpex import TPExInvestorManager
 from sqlalchemy import text
+from .stock_cost_AI import IntegratedStockPredModel
+from datetime import datetime
+
 logger = logging.getLogger(__name__)
 
 class StockService:
@@ -105,7 +108,79 @@ class StockService:
         if len(number) == 4 and number[0] in '34568':
             return '.TWO'
             
+            
         return '.TW'
+
+    def _get_ai_predictions(self, symbol: str, days: int = 120) -> dict:
+        """取的 AI 預測結果，實作 Lazy Evaluation 快取機制，並回傳歷史軌跡"""
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        result_dict = {'cached': False, 'historical': [], 'latest': None}
+        
+        # 1. 取得歷史預測軌跡 (讀取過去N天的 pred_day_1 作為軌跡點)
+        hist_query = text("""
+            SELECT date, pred_day_1, trend_probability 
+            FROM stock_ai_predictions 
+            WHERE symbol = :sys AND date >= DATE_SUB(:dt, INTERVAL :days DAY)
+            ORDER BY date ASC
+        """)
+        try:
+            with self.sql_op.engine.connect() as conn:
+                rows = conn.execute(hist_query, {'sys': symbol, 'dt': today_str, 'days': days}).fetchall()
+                for r in rows:
+                    if r.pred_day_1 is not None:
+                        result_dict['historical'].append({
+                            'date': str(r.date),
+                            'pred': float(r.pred_day_1)
+                        })
+        except Exception as e:
+            logger.warning(f"Failed to read AI history: {e}")
+
+        # 2. 檢查今天是否已有快取
+        query = text("SELECT * FROM stock_ai_predictions WHERE symbol = :sys AND date = :dt")
+        try:
+            with self.sql_op.engine.connect() as conn:
+                row = conn.execute(query, {'sys': symbol, 'dt': today_str}).fetchone()
+                if row:
+                    result_dict['latest'] = {
+                        'predictions': [row.pred_day_1, row.pred_day_2, row.pred_day_3, row.pred_day_4, row.pred_day_5],
+                        'trend_probability': row.trend_probability
+                    }
+                    result_dict['cached'] = True
+                    return result_dict
+        except Exception as e:
+            logger.warning(f"Failed to read AI cache: {e}")
+            
+        # 若無當日快取，進行即時推論
+        logger.info(f"AI Prediction Cache Miss for {symbol}. Running model inference...")
+        try:
+            ai_model = IntegratedStockPredModel(symbol)
+            res = ai_model.predict_5_days()
+            if res and 'predictions' in res:
+                preds = res['predictions']
+                prob = res['trend_probability']
+                # Save to DB
+                insert_query = text("""
+                    INSERT INTO stock_ai_predictions (symbol, date, pred_day_1, pred_day_2, pred_day_3, pred_day_4, pred_day_5, trend_probability)
+                    VALUES (:sys, :dt, :p1, :p2, :p3, :p4, :p5, :prob)
+                    ON DUPLICATE KEY UPDATE 
+                        pred_day_1=VALUES(pred_day_1), pred_day_2=VALUES(pred_day_2), pred_day_3=VALUES(pred_day_3),
+                        pred_day_4=VALUES(pred_day_4), pred_day_5=VALUES(pred_day_5), trend_probability=VALUES(trend_probability)
+                """)
+                with self.sql_op.engine.begin() as conn:
+                    conn.execute(insert_query, {
+                        'sys': symbol, 'dt': today_str,
+                        'p1': float(preds[0]), 'p2': float(preds[1]), 'p3': float(preds[2]), 
+                        'p4': float(preds[3]), 'p5': float(preds[4]), 'prob': float(prob)
+                    })
+                result_dict['latest'] = {
+                    'predictions': [float(p) for p in preds],
+                    'trend_probability': float(prob)
+                }
+                return result_dict
+        except Exception as e:
+            logger.error(f"AI Model Inference failed for {symbol}: {e}")
+            
+        return result_dict
 
     def get_stock_data(self, number: str, days: int) -> Dict[str, Any]:
         """
@@ -219,19 +294,23 @@ class StockService:
                 except Exception as e_yf:
                     logger.warning(f"yfinance fallback failed for {yf_symbol}: {e_yf}")
 
-            # 3. 生成圖表與技術指標 (FIXED: Move outside yfinance fallback)
-            if not result['historical_data'].empty:
-                try:
-                    result['kline_json'] = self.chart.kline_apex(result['historical_data'], symbol=number)
-                    result['ta_json'] = self.chart.get_ta_indicators(result['historical_data'])
-                except Exception as e_chart:
-                    logger.warning(f"Chart/TA generation error: {e_chart}")
-
             # NEW: Trigger refresh even if data is present (to update stale records)
             try:
+                # 在執行特徵抓取與繪圖前，確保資料是最新的
                 trigger_refresh_if_stale(valuation_symbol, is_tw, self.sql_op.engine)
             except Exception as e_trigger:
                 logger.warning(f"Refresh trigger failed for {valuation_symbol}: {e_trigger}")
+                
+            # 3. 生成圖表、技術指標與 AI 預測
+            ai_pred = self._get_ai_predictions(valuation_symbol)
+            result['ai_prediction'] = ai_pred
+            
+            if not result['historical_data'].empty:
+                try:
+                    result['kline_json'] = self.chart.kline_apex(result['historical_data'], symbol=number, ai_pred=ai_pred)
+                    result['ta_json'] = self.chart.get_ta_indicators(result['historical_data'])
+                except Exception as e_chart:
+                    logger.warning(f"Chart/TA generation error: {e_chart}")
 
             # 3.5 獲取財報摘要 (yfinance info alternative)
             # To avoid 429 Rate Limit from yfinance.Ticker.info, we calculate locally or scrape

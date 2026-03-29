@@ -784,6 +784,22 @@
             maColors.push('#e91e63');
         }
 
+        // AI Predictions
+        if (_rawKlineConfig.ai_history && _rawKlineConfig.ai_history.length > 0) {
+            _rawKlineConfig.ai_history.forEach(ser => {
+                mainSeries.push(ser);
+                maWidths.push(2);
+                maColors.push(ser.color);
+            });
+        }
+        if (_rawKlineConfig.ai_future && _rawKlineConfig.ai_future.length > 0) {
+            _rawKlineConfig.ai_future.forEach(ser => {
+                mainSeries.push(ser);
+                maWidths.push(2);
+                maColors.push(ser.color);
+            });
+        }
+
         const mainOptions = {
             series: mainSeries,
             chart: {
@@ -815,7 +831,7 @@
                     }
                 }
             },
-            stroke: { width: maWidths, curve: 'smooth' },
+            stroke: { width: maWidths, curve: 'smooth', dashArray: mainSeries.map(s => s.name === 'AI Pred (Future)' ? 5 : 0) },
             colors: maColors,
             legend: {
                 show: true,

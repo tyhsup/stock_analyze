@@ -7,7 +7,7 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 from stock_Django import mySQL_OP
-from .stock_cost_AI import stock_cost_AI
+
 from stock_Django import stock_chart
 from .stock_utils import StockUtils
 from .stock_investor_us import USStockInvestorManager

@@ -259,6 +259,33 @@ class OP_Fun:
                 conn.execute(text(q))
         logger.info("財報資料表初始化完成")
 
+    def init_ai_prediction_tables(self):
+        """初始化 AI 預測結果快取與軌跡資料表"""
+        queries = [
+            """
+            CREATE TABLE IF NOT EXISTS stock_ai_predictions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                symbol VARCHAR(20),
+                date DATE COMMENT '預測產生的基準日',
+                pred_day_1 FLOAT,
+                pred_day_2 FLOAT,
+                pred_day_3 FLOAT,
+                pred_day_4 FLOAT,
+                pred_day_5 FLOAT,
+                trend_probability FLOAT COMMENT '綜合看漲機率',
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY idx_unique_prediction (symbol, date)
+            )
+            """
+        ]
+        try:
+            with self.engine.begin() as conn:
+                for q in queries:
+                    conn.execute(text(q))
+            logger.info("AI 預測資料表 stock_ai_predictions 初始化完成")
+        except Exception as e:
+            logger.error(f"初始化 AI 預測資料表失敗: {e}")
+
     def bulk_upsert_raw_financials(self, df, market='tw'):
         """
         批量更新財報原始數據

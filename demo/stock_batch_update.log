@@ -9,3 +9,19 @@
 2026-02-28 21:44:49,330 [INFO] 成功取得上市股票清單，共 1080 支
 2026-02-28 21:44:49,401 [WARNING] The msedgedriver version (144.0.3719.82) detected in PATH at E:\webbug\msedgedriver.exe might not be compatible with the detected MicrosoftEdge version (145.0.3800.70); currently, msedgedriver 145.0.3800.82 is recommended for MicrosoftEdge 145.*, so it is advised to delete the driver in PATH and retry
 2026-02-28 21:45:01,364 [INFO] 成功取得上櫃股票清單，共 879 支
+2026-03-29 09:24:18,961 [INFO] 財報資料表初始化完成
+2026-03-29 09:24:54,397 [INFO] 單一更新 2330.TW: 偵測到最後日期 2026-03-27，從 2026-03-28 開始抓取
+2026-03-29 09:24:54,563 [ERROR] 
+1 Failed download:
+2026-03-29 09:24:54,563 [ERROR] ['2330.TW']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+2026-03-29 09:24:56,045 [INFO] YahooQuery Fallback Success for ['2330.TW']
+2026-03-29 09:24:56,216 [INFO] 成功更新 stock_cost
+2026-03-29 09:24:56,217 [INFO] 單一更新 2330.TW 成功上傳 1 筆資料
+2026-03-29 10:16:24,551 [INFO] 財報資料表初始化完成
+2026-03-29 10:19:27,237 [INFO] 單一更新 AAPL: 偵測到最後日期 2026-03-26，從 2026-03-27 開始抓取
+2026-03-29 10:19:27,393 [ERROR] 
+1 Failed download:
+2026-03-29 10:19:27,393 [ERROR] ['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')
+2026-03-29 10:19:29,056 [INFO] YahooQuery Fallback Success for ['AAPL']
+2026-03-29 10:19:29,212 [INFO] 成功更新 stock_cost_us
+2026-03-29 10:19:29,212 [INFO] 單一更新 AAPL 成功上傳 1 筆資料
