@@ -39,7 +39,10 @@ class FinancialDataLoader:
         self.op = OP_Fun()
         self.raw_data = None
         
-        # Add session and cache
+        # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
+        from curl_cffi.requests import Session as CurlSession
+        self.yf_session = CurlSession(verify=False)
+        # requests session 保留給一般 HTTP 請求使用
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -167,7 +170,7 @@ class FinancialDataLoader:
             return cached['is'], cached['bs'], cached['cf']
             
         try:
-            ticker = yf.Ticker(self.full_symbol, session=self.session)
+            ticker = yf.Ticker(self.full_symbol, session=self.yf_session)
             
             # Fetch annual financials (more stable than quarterly for DCF)
             income_stmt = ticker.financials       # Annual income statement

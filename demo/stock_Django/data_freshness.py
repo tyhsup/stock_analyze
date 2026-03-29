@@ -128,8 +128,8 @@ def refresh_data_background(ticker: str, is_tw: bool):
             else:
                 from stock_Django.mySQL_OP import OP_Fun
                 import yfinance as yf
-                import requests
-                ticker_obj = yf.Ticker(ticker, session=requests.Session())
+                from curl_cffi.requests import Session as CurlSession
+                ticker_obj = yf.Ticker(ticker, session=CurlSession(verify=False))
                 hist = ticker_obj.history(period="5d")
                 if not hist.empty:
                     sql_op = OP_Fun()

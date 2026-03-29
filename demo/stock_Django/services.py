@@ -19,7 +19,11 @@ class StockService:
         self.chart = stock_chart.chart_create()
         self.us_mgr = USStockInvestorManager()
         self.tpex_mgr = TPExInvestorManager()
-        # Initialize persistent session for yfinance to reduce 429 errors
+        # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
+        # verify=False 繞過使用者路徑含中文時 curl_cffi 無法定位 CA 憑證的問題
+        from curl_cffi.requests import Session as CurlSession
+        self.yf_session = CurlSession(verify=False)
+        # requests session 保留給 web scraping 使用
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -90,7 +94,7 @@ class StockService:
         # 2. 第二優先：Yahoo Finance 正確性檢查 (採用較輕量的歷史資料檢查)
         for suffix in ['.TW', '.TWO']:
             try:
-                ticker = yf.Ticker(f"{number}{suffix}", session=self.session)
+                ticker = yf.Ticker(f"{number}{suffix}", session=self.yf_session)
                 # 只抓 1 天，若非空則代表此代碼有效
                 if not ticker.history(period="1d").empty:
                     return suffix
@@ -183,14 +187,14 @@ class StockService:
             if result['historical_data'].empty:
                 yf_symbol = valuation_symbol
                 try:
-                    ticker_obj = yf.Ticker(yf_symbol, session=self.session)
+                    ticker_obj = yf.Ticker(yf_symbol, session=self.yf_session)
                     yf_data = ticker_obj.history(period=f"{days}d")
                     
                     if yf_data.empty and is_tw and ".TW" in yf_symbol:
                         # OTC Fallback: Try .TWO suffix if .TW returns nothing
                         otc_symbol = yf_symbol.replace(".TW", ".TWO")
                         logger.info(f"Trying OTC fallback for {otc_symbol}")
-                        ticker_obj = yf.Ticker(otc_symbol, session=self.session)
+                        ticker_obj = yf.Ticker(otc_symbol, session=self.yf_session)
                         yf_data = ticker_obj.history(period=f"{days}d")
                         if not yf_data.empty:
                             yf_symbol = otc_symbol
@@ -233,7 +237,7 @@ class StockService:
             # To avoid 429 Rate Limit from yfinance.Ticker.info, we calculate locally or scrape
             format_large_number = self.format_large_number
             # Fetch info from yfinance (Fallback and Metadata)
-            ticker = yf.Ticker(valuation_symbol, session=self.session)
+            ticker = yf.Ticker(valuation_symbol, session=self.yf_session)
             info = {}
             try:
                 info = ticker.get_info()

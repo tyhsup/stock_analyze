@@ -164,9 +164,15 @@ class StockCostManager:
         Returns:
             pd.DataFrame: 抓取到的股價資料。
         """
+        # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
+        # verify=False 繞過使用者路徑含中文時 curl_cffi 無法定位 CA 憑證的問題
+        from curl_cffi.requests import Session as CurlSession
+        curl_session = CurlSession(verify=False)
+        
+        # requests session 保留給 TWSE/TPEx fallback 使用
         import requests
-        session = requests.Session()
-        session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+        http_session = requests.Session()
+        http_session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
         
         # 1. 嘗試 yfinance
         try:
@@ -176,7 +182,7 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": session,
+                "session": curl_session,
                 "repair": True,        # Automatic price repair
                 "timeout": 20          # Explicit timeout
             }
@@ -241,7 +247,7 @@ class StockCostManager:
                     url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?stockNo={num}&date={target_date}"
                     
                     logger.info(f"Trying TWSE Direct Fallback for {sym} using month containing {target_date}")
-                    resp = session.get(url, timeout=10)
+                    resp = http_session.get(url, timeout=10)
                     if resp.status_code == 200:
                         json_data = resp.json()
                         if json_data.get('stat') == 'OK':
@@ -290,7 +296,7 @@ class StockCostManager:
                     tpex_url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?d={target_date}&stkno={num}"
                     
                     logger.info(f"Trying TPEx Direct Fallback for {sym}")
-                    resp = session.get(tpex_url, timeout=10)
+                    resp = http_session.get(tpex_url, timeout=10)
                     if resp.status_code == 200:
                         json_data = resp.json()
                         if json_data.get('aaData'):

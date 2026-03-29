@@ -49,7 +49,9 @@ class USStockInvestorManager:
             logger.warning("yfinance not installed — cannot calculate pct_out.")
             return 0
         try:
-            info = yf.Ticker(ticker).fast_info
+            from curl_cffi.requests import Session as CurlSession
+            _yf_session = CurlSession(verify=False)
+            info = yf.Ticker(ticker, session=_yf_session).fast_info
             shares = getattr(info, 'shares', None) or 0
             if shares:
                 logger.info(f"{ticker}: shares_outstanding = {shares:,} (fast_info)")
@@ -59,7 +61,9 @@ class USStockInvestorManager:
 
         # Slower fallback using full info
         try:
-            info = yf.Ticker(ticker).info
+            from curl_cffi.requests import Session as CurlSession
+            _yf_session = CurlSession(verify=False)
+            info = yf.Ticker(ticker, session=_yf_session).info
             shares = (
                 info.get('sharesOutstanding')
                 or info.get('impliedSharesOutstanding')
