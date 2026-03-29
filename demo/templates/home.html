@@ -1072,29 +1072,7 @@
             if (_atrChart) _atrChart.render();
         }
 
-        // OBV
-        const obvChecked = document.getElementById('ind-obv') && document.getElementById('ind-obv').checked;
-        {
-            const obvEl = document.getElementById('kline-obv');
-            const obvVals = _taConfig && _taConfig.volume ? _taConfig.volume.OBV : computeOBV(closes, volumes_raw);
-            const obvSer = timestamps.map((ts, i) => ({ x: ts, y: obvVals[i] !== undefined ? obvVals[i] : null }));
-            _obvChart = renderOscPanel('kline-obv-wrap', obvEl, _obvChart, obvChecked,
-                [{ name: 'OBV', type: 'line', data: obvSer }],
-                { labels: { formatter: v => v !== null ? (v / 1e6).toFixed(1) + 'M' : '' } }, {});
-            if (_obvChart) _obvChart.render();
-        }
-
-        // AD (Accumulation/Distribution)
-        const adChecked = document.getElementById('ind-ad') && document.getElementById('ind-ad').checked;
-        if (adChecked && _taConfig && _taConfig.volume) {
-            const adEl = document.getElementById('kline-ad');
-            const adVals = _taConfig.volume.AD;
-            const adSer = timestamps.map((ts, i) => ({ x: ts, y: adVals[i] !== undefined ? adVals[i] : null }));
-            _adChart = renderOscPanel('kline-ad-wrap', adEl, _adChart, adChecked,
-                [{ name: 'AD', type: 'line', data: adSer }],
-                { labels: { formatter: v => v !== null ? (v / 1e9).toFixed(1) + 'B' : '' } }, {});
-            if (_adChart) _adChart.render();
-        }
+// Volume Indicators OBV/AD rendering removed here to use dynamic renderer instead.
 
         // Cycle Indicators (HT)
         const isChecked = (id) => {
@@ -1273,7 +1251,7 @@
 
         const HARDCODED = [
             'ma5', 'ma20', 'ma60', 'ema5', 'ema20', 'ema60', 'bb', 'sar', 'wma20', 'vwap', 'patterns',
-            'rsi', 'macd', 'stoch', 'cci', 'williamsr', 'atr', 'obv', 'ad',
+            'rsi', 'macd', 'stoch', 'cci', 'williamsr', 'atr',
             'ht_dcperiod', 'ht_dcphase', 'ht_trendmode', 'ht_phasor', 'ht_sine',
             'stats', 'math'
         ];
