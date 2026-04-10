@@ -85,7 +85,10 @@ WSGI_APPLICATION = 'demo.wsgi.application'
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+env_path = os.path.join(BASE_DIR, 'stock_Django', '.env')
+if not os.path.exists(env_path):
+    env_path = os.path.join(BASE_DIR, '.env')
+load_dotenv(env_path)
 
 DATABASES = {
     'default': {
