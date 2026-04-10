@@ -36,6 +36,29 @@ class StockCostManager:
         self.sql = mySQL_OP.OP_Fun()
         # 初始化表格 (確保 stock_cost/stock_cost_us 與索引存在)
         self.sql.init_financial_tables()
+        
+        # 初始化持久化 Session (遵循 yfinance Best Practices/Domain Rules)
+        from curl_cffi.requests import Session as CurlSession
+        import requests
+        self.curl_session = CurlSession(verify=False)
+        self.http_session = requests.Session()
+        
+        # User-Agent 清單庫
+        self.user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+        ]
+        self._rotate_user_agent()
+
+    def _rotate_user_agent(self) -> None:
+        """輪替 Session 的 User-Agent 以規避單一指紋封鎖。"""
+        ua = random.choice(self.user_agents)
+        self.curl_session.headers.update({"User-Agent": ua})
+        self.http_session.headers.update({"User-Agent": ua})
+        logger.info(f"已輪替 User-Agent: {ua[:30]}...")
 
     def _is_otc_stock(self, code: str) -> bool:
         """查詢資料庫判斷代碼是否為上櫃股票。
@@ -152,7 +175,8 @@ class StockCostManager:
             return {}
 
     def _fetch_prices(self, tickers: List[str], period: Optional[str] = None, 
-                      start: Optional[str] = None, end: Optional[str] = None) -> pd.DataFrame:
+                      start: Optional[str] = None, end: Optional[str] = None,
+                      retry_count: int = 0) -> pd.DataFrame:
         """私有輔助方法：嘗試多個來源抓取股價 (Resilient Fetch)。
 
         Args:
@@ -160,21 +184,12 @@ class StockCostManager:
             period (Optional[str]): 抓取期間 (如 '1d', 'max')。
             start (Optional[str]): 開始日期 (YYYY-MM-DD)。
             end (Optional[str]): 結束日期 (YYYY-MM-DD)。
+            retry_count (int): 目前重試次數。
 
         Returns:
             pd.DataFrame: 抓取到的股價資料。
         """
-        # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
-        # verify=False 繞過使用者路徑含中文時 curl_cffi 無法定位 CA 憑證的問題
-        from curl_cffi.requests import Session as CurlSession
-        curl_session = CurlSession(verify=False)
-        
-        # requests session 保留給 TWSE/TPEx fallback 使用
-        import requests
-        http_session = requests.Session()
-        http_session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
-        
-        # 1. 嘗試 yfinance
+        # 1. 嘗試 yfinance (優先使用持久化 session)
         try:
             params = {
                 "tickers": tickers,
@@ -182,9 +197,9 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": curl_session,
+                "session": self.curl_session,
                 "repair": True,        # Automatic price repair
-                "timeout": 20          # Explicit timeout
+                "timeout": 30          # 增加超時寬容度
             }
             if start: params["start"] = start
             if end: params["end"] = end
@@ -192,20 +207,30 @@ class StockCostManager:
             
             data = yf.download(**params)
             
-            # Use multi_level_index=True behavior check
             if not data.empty:
-                # If only 1 ticker, yfinance might not return MultiIndex unless specified
-                # or if it's a list. Standardizing to MultiIndex for consistency in batch code
                 if len(tickers) == 1 and not isinstance(data.columns, pd.MultiIndex):
                     data.columns = pd.MultiIndex.from_product([[tickers[0]], data.columns])
                 return data
+            
         except Exception as e:
-            logger.warning(f"yfinance Download Error for {tickers}: {e}")
+            msg = str(e)
+            if any(key in msg for key in ["Rate limited", "429", "Too Many Requests"]):
+                if retry_count < 2:
+                    wait_time = random.randint(60, 120) * (retry_count + 1)
+                    logger.warning(f"偵測到 YFRateLimitError for {tickers}。將休息 {wait_time}s 後更換 UA 並重試 ({retry_count+1}/2)")
+                    time.sleep(wait_time)
+                    self._rotate_user_agent()
+                    return self._fetch_prices(tickers, period, start, end, retry_count + 1)
+                else:
+                    logger.error(f"達到最大重試次數，YF 依然限速 for {tickers}")
+            else:
+                logger.warning(f"yfinance Download Error for {tickers}: {e}")
 
         # 2. 如果 yf 失敗或為空，嘗試 yahooquery (備援)
         try:
             from yahooquery import Ticker
-            t = Ticker(tickers, verify=False)
+            # yahooquery 暫時手動傳入 verify=False
+            t = Ticker(tickers, verify=False, session=self.http_session)
             
             yq_params = {"interval": '1d'}
             if start: yq_params["start"] = start
@@ -222,13 +247,6 @@ class StockCostManager:
                     'adjclose': 'Close', 'adj_close': 'Close',
                     'open': 'Open', 'high': 'High', 'low': 'Low', 'volume': 'Volume'
                 })
-                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                    if col not in history.columns and col.lower() in history.columns:
-                        history[col] = history[col.lower()]
-
-                cols_to_keep = ['ticker', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-                history = history[[c for c in cols_to_keep if c in history.columns]]
-
                 pivoted = history.pivot(index='Date', columns='ticker')
                 pivoted = pivoted.swaplevel(0, 1, axis=1).sort_index(axis=1)
                 return pivoted
@@ -241,53 +259,31 @@ class StockCostManager:
             if sym.endswith('.TW'):
                 try:
                     num = sym.split('.')[0]
-                    # Get for current month (or use start if provided to determine months)
                     target_date = start if start else datetime.datetime.now().strftime('%Y%m%d')
                     target_date = target_date.replace('-', '').replace('/', '')
                     url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?stockNo={num}&date={target_date}"
                     
-                    logger.info(f"Trying TWSE Direct Fallback for {sym} using month containing {target_date}")
-                    resp = http_session.get(url, timeout=10)
+                    logger.info(f"Trying TWSE Direct Fallback for {sym}")
+                    resp = self.http_session.get(url, timeout=15)
                     if resp.status_code == 200:
                         json_data = resp.json()
                         if json_data.get('stat') == 'OK':
-                            # Columns: 日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數
                             data_list = json_data['data']
                             df_twse = pd.DataFrame(data_list, columns=json_data['fields'])
-                            
-                            # Convert Minguo date (115/02/24) to AD date
                             def convert_date(d_str):
                                 parts = d_str.split('/')
-                                year = int(parts[0]) + 1911
-                                return f"{year}-{parts[1]}-{parts[2]}"
-                            
-                            df_twse['Date'] = df_twse['日期'].apply(convert_date)
-                            df_twse['Date'] = pd.to_datetime(df_twse['Date'])
-                            
-                            # Clean numeric columns
+                                return f"{int(parts[0]) + 1911}-{parts[1]}-{parts[2]}"
+                            df_twse['Date'] = pd.to_datetime(df_twse['日期'].apply(convert_date))
                             for col in ['開盤價', '最高價', '最低價', '收盤價', '成交股數']:
                                 df_twse[col] = df_twse[col].str.replace(',', '').apply(pd.to_numeric, errors='coerce')
-                            
-                            df_twse = df_twse.rename(columns={
-                                '開盤價': 'Open', '最高價': 'High', '最低價': 'Low', 
-                                '收盤價': 'Close', '成交股數': 'Volume'
-                            })
-                            
-                            df_twse = df_twse.dropna(subset=['Close'])
-                            df_twse = df_twse[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
-                            
-                            # Pivot to match yfinance format: MultiIndex (Metric, Ticker)
+                            df_twse = df_twse.rename(columns={'開盤價':'Open','最高價':'High','最低價':'Low','收盤價':'Close','成交股數':'Volume'})
+                            df_twse = df_twse.dropna(subset=['Close'])[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
                             df_twse['ticker'] = sym
-                            pivoted = df_twse.pivot(index='Date', columns='ticker')
-                            # Swap level to (Ticker, Metric) to mimic yf.download result
-                            pivoted = pivoted.swaplevel(0, 1, axis=1).sort_index(axis=1)
-                            
-                            logger.info(f"TWSE Direct Fallback SUCCESS for {sym}")
+                            pivoted = df_twse.pivot(index='Date', columns='ticker').swaplevel(0, 1, axis=1).sort_index(axis=1)
                             return pivoted
                 except Exception as e_twse:
                     logger.error(f"TWSE Direct Fallback failed for {sym}: {e_twse}")
 
-            # 4. 上櫃股票: 使用 TPEx API
             elif sym.endswith('.TWO'):
                 try:
                     num = sym.split('.')[0]
@@ -296,44 +292,28 @@ class StockCostManager:
                     tpex_url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?d={target_date}&stkno={num}"
                     
                     logger.info(f"Trying TPEx Direct Fallback for {sym}")
-                    resp = http_session.get(tpex_url, timeout=10)
+                    resp = self.http_session.get(tpex_url, timeout=15)
                     if resp.status_code == 200:
                         json_data = resp.json()
                         if json_data.get('aaData'):
                             cols = ['日期', '成交仟股', '成交仟元', '開盤', '最高', '最低', '收盤', '漲跌', '筆數']
                             df_tpex = pd.DataFrame(json_data['aaData'], columns=cols[:len(json_data['aaData'][0])])
-                            
-                            # 民國日期轉換
                             def convert_tpex_date(d_str):
                                 parts = d_str.strip().split('/')
-                                year = int(parts[0]) + 1911
-                                return f"{year}-{parts[1]}-{parts[2]}"
-                            
-                            df_tpex['Date'] = df_tpex['日期'].apply(convert_tpex_date)
-                            df_tpex['Date'] = pd.to_datetime(df_tpex['Date'])
-                            
+                                return f"{int(parts[0]) + 1911}-{parts[1]}-{parts[2]}"
+                            df_tpex['Date'] = pd.to_datetime(df_tpex['日期'].apply(convert_tpex_date))
                             for col in ['開盤', '最高', '最低', '收盤', '成交仟股']:
                                 if col in df_tpex.columns:
                                     df_tpex[col] = df_tpex[col].astype(str).str.replace(',', '').apply(pd.to_numeric, errors='coerce')
-                            
-                            df_tpex = df_tpex.rename(columns={
-                                '開盤': 'Open', '最高': 'High', '最低': 'Low',
-                                '收盤': 'Close', '成交仟股': 'Volume'
-                            })
-                            df_tpex = df_tpex.dropna(subset=['Close'])
-                            df_tpex = df_tpex[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
-                            
+                            df_tpex = df_tpex.rename(columns={'開盤':'Open','最高':'High','最低':'Low','收盤':'Close','成交仟股':'Volume'})
+                            df_tpex = df_tpex.dropna(subset=['Close'])[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
                             df_tpex['ticker'] = sym
-                            pivoted = df_tpex.pivot(index='Date', columns='ticker')
-                            pivoted = pivoted.swaplevel(0, 1, axis=1).sort_index(axis=1)
-                            
-                            logger.info(f"TPEx Direct Fallback SUCCESS for {sym}")
+                            pivoted = df_tpex.pivot(index='Date', columns='ticker').swaplevel(0, 1, axis=1).sort_index(axis=1)
                             return pivoted
                 except Exception as e_tpex:
                     logger.error(f"TPEx Direct Fallback failed for {sym}: {e_tpex}")
 
-        logger.error(f"All price sources (yf, yq, twse) failed for {tickers}.")
-        
+        logger.error(f"All price sources failed for {tickers}.")
         return pd.DataFrame()
 
     def update_single_ticker(self, ticker: str) -> bool:
@@ -423,6 +403,40 @@ class StockCostManager:
             logger.error(f"單一更新 {ticker} 失敗: {e}")
             return False
 
+    def _process_and_upload_batch(self, data: pd.DataFrame, symbols: List[str], table_name: str):
+        """處理抓取到的批量資料並上傳。"""
+        if data.empty:
+            return
+
+        for symbol in symbols:
+            try:
+                if isinstance(data.columns, pd.MultiIndex):
+                    if symbol in data.columns.get_level_values(0).unique():
+                        stock_df = data[symbol].copy()
+                    else:
+                        continue
+                else:
+                    stock_df = data.copy() if len(symbols) == 1 else pd.DataFrame()
+                
+                if stock_df.empty: continue
+                
+                stock_df = stock_df.loc[:, ~stock_df.columns.duplicated(keep='first')]
+                stock_df = stock_df.dropna()
+                if stock_df.empty: continue
+
+                stock_df.reset_index(inplace=True)
+                if 'index' in stock_df.columns: stock_df = stock_df.rename(columns={'index': 'Date'})
+                stock_df.insert(0, 'number', symbol)
+                if isinstance(stock_df.columns, pd.MultiIndex):
+                    stock_df.columns = stock_df.columns.get_level_values(0)
+
+                final_cols = ['number', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+                stock_df = stock_df[[c for c in final_cols if c in stock_df.columns]]
+
+                self.sql.upload_all(stock_df, table_name)
+            except Exception as e:
+                logger.error(f"處理 {symbol} 時發生錯誤: {e}")
+
     def update_all_cost(self):
         """批量更新台股股價 (整合上市與上櫃，增量更新 + 自動補全)"""
         all_stocks = self.fetch_all_tw_stock_list()
@@ -431,79 +445,47 @@ class StockCostManager:
             return
 
         stats = self.get_stock_stats('stock_cost')
-        total_stocks = len(all_stocks)
         
-        batch_size = 10
-        logger.info(f"開始執行台股更新，共 {total_stocks} 支 (上市+上櫃)")
-
-        i = 0
-        while i < total_stocks:
-            batch_data = all_stocks[i : i + batch_size]
-            symbols_query = [f"{s['code']}{s['suffix']}" for s in batch_data]
-            
-            period_param = "10d"
-            start_param = None
-            
-            # --- 判斷邏輯 ---
-            needs_max = False
-            for s in symbols_query:
-                if s not in stats:
-                    needs_max = True; break
-                s_stat = stats[s]
+        # 分離「新加入/需全量」與「已存在/需增量」的股票
+        new_stocks = []
+        existing_stocks = []
+        
+        for s_info in all_stocks:
+            symbol = f"{s_info['code']}{s_info['suffix']}"
+            if symbol not in stats:
+                new_stocks.append(symbol)
+            else:
+                s_stat = stats[symbol]
+                # 若資料筆數過少且開盤不到一年，視為新股
                 days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
                 if s_stat['row_count'] < 100 and days_diff < 365:
-                    needs_max = True; break
+                    new_stocks.append(symbol)
+                else:
+                    existing_stocks.append(symbol)
+        
+        logger.info(f"台股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支")
+
+        # 1. 處理全量 (小 batch 避開封鎖)
+        for i in range(0, len(new_stocks), 5):
+            batch = new_stocks[i : i + 5]
+            logger.info(f"[台股-全量] 處理中 ({i+1}/{len(new_stocks)}): {batch}")
+            data = self._fetch_prices(batch, period="max")
+            self._process_and_upload_batch(data, batch, 'stock_cost')
+            time.sleep(random.uniform(3, 7))
+
+        # 2. 處理增量 (大 batch 提升效率)
+        for i in range(0, len(existing_stocks), 20):
+            batch = existing_stocks[i : i + 20]
+            min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
+            start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
             
-            if needs_max:
-                period_param = "max"
-                logger.info(f"批次中有新股票或資料不足，採用 max 模式: {symbols_query}")
-            else:
-                # 全都是已有完整歷史的股票 -> 找最舊的 last_date 開始增量更新
-                min_last = min([stats[s]['last_date'] for s in symbols_query])
-                if isinstance(min_last, str): min_last = pd.to_datetime(min_last)
-                start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
-                logger.info(f"批次增量更新，起點: {start_param}, 標的: {symbols_query}")
-
-            try:
-                data = self._fetch_prices(symbols_query, period=period_param, start=start_param)
-
-                if data.empty:
-                    logger.warning(f"批次 {symbols_query} 抓取空值，跳過")
-                    i += batch_size
-                    continue
-
-                for s_info in batch_data:
-                    symbol_full = f"{s_info['code']}{s_info['suffix']}"
-                    
-                    if isinstance(data.columns, pd.MultiIndex):
-                        if symbol_full in data.columns.get_level_values(0).unique():
-                            stock_df = data[symbol_full].copy()
-                        else:
-                            continue
-                    else:
-                        # Fallback for single result which might have been flattened
-                        stock_df = data.copy()
-                    
-                    stock_df = stock_df.loc[:, ~stock_df.columns.duplicated(keep='first')]
-                    stock_df = stock_df.dropna()
-                    if stock_df.empty: continue
-
-                    stock_df.reset_index(inplace=True)
-                    if 'index' in stock_df.columns: stock_df = stock_df.rename(columns={'index': 'Date'})
-                    stock_df.insert(0, 'number', symbol_full)
-                    if isinstance(stock_df.columns, pd.MultiIndex):
-                        stock_df.columns = stock_df.columns.get_level_values(0)
-
-                    final_cols = ['number', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-                    stock_df = stock_df[[c for c in final_cols if c in stock_df.columns]]
-
-                    self.sql.upload_all(stock_df, 'stock_cost')
-
-                i += batch_size
-                time.sleep(random.uniform(2, 4))
-            except Exception as e:
-                logger.error(f"台股處理失敗 {symbols_query}: {e}")
-                i += batch_size
+            if pd.to_datetime(start_param).date() >= datetime.date.today():
+                continue
+                
+            logger.info(f"[台股-增量] 處理中 ({i+1}/{len(existing_stocks)}): 從 {start_param} 抓取 {batch}")
+            data = self._fetch_prices(batch, start=start_param)
+            self._process_and_upload_batch(data, batch, 'stock_cost')
+            time.sleep(random.uniform(2, 5))
 
     def update_us_cost(self):
         """更新美股股價 (增量更新 + 自動補全)"""
@@ -515,61 +497,44 @@ class StockCostManager:
             if not us_symbols: return
             
             stats = self.get_stock_stats('stock_cost_us')
-            total = len(us_symbols)
-            logger.info(f"開始執行美股更新，共 {total} 支 (增量+補全)")
             
-            batch_size = 20
-            for i in range(0, total, batch_size):
-                batch = us_symbols[i : i + batch_size]
-                
-                needs_max = False
-                for s in batch:
-                    if s not in stats:
-                        needs_max = True; break
+            new_stocks = []
+            existing_stocks = []
+            for s in us_symbols:
+                if s not in stats:
+                    new_stocks.append(s)
+                else:
                     s_stat = stats[s]
                     days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
                     if s_stat['row_count'] < 100 and days_diff < 365:
-                        needs_max = True; break
-                
-                period_param = "30d"
-                start_param = None
-                
-                if needs_max:
-                    period_param = "max"
-                    logger.info(f"美股批次中有新代號或資料不足，採用 max 模式: {batch}")
-                else:
-                    min_last = min([stats[s]['last_date'] for s in batch])
-                    if isinstance(min_last, str): min_last = pd.to_datetime(min_last)
-                    start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
-                    logger.info(f"美股批次增量更新，起點: {start_param}, 標的: {batch}")
+                        new_stocks.append(s)
+                    else:
+                        existing_stocks.append(s)
+            
+            logger.info(f"美股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支")
 
-                data = self._fetch_prices(batch, period=period_param, start=start_param)
+            # 1. 全量
+            for i in range(0, len(new_stocks), 10):
+                batch = new_stocks[i : i + 10]
+                logger.info(f"[美股-全量] 處理中 ({i+1}/{len(new_stocks)}): {batch}")
+                data = self._fetch_prices(batch, period="max")
+                self._process_and_upload_batch(data, batch, 'stock_cost_us')
+                time.sleep(random.uniform(2, 4))
+
+            # 2. 增量
+            for i in range(0, len(existing_stocks), 30):
+                batch = existing_stocks[i : i + 30]
+                min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
+                start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
                 
-                if data.empty:
-                    logger.warning(f"美股 {batch} 下載為空")
+                if pd.to_datetime(start_param).date() >= datetime.date.today():
                     continue
 
-                for symbol in batch:
-                    if isinstance(data.columns, pd.MultiIndex):
-                        if symbol not in data.columns.levels[0]: continue
-                        df = data[symbol].copy()
-                    else:
-                        df = data.copy()
-                    
-                    df = df.loc[:, ~df.columns.duplicated(keep='first')]
-                    df = df.dropna().reset_index()
-                    if df.empty: continue
-                    
-                    if 'index' in df.columns: df = df.rename(columns={'index': 'Date'})
-                    df.insert(0, 'number', symbol)
-                    if isinstance(df.columns, pd.MultiIndex): 
-                        df.columns = df.columns.get_level_values(0)
-                    
-                    final_cols = ['number', 'Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-                    df = df[[c for c in final_cols if c in df.columns]]
-                        
-                    self.sql.upload_all(df, 'stock_cost_us')
-                time.sleep(random.uniform(1, 2))
+                logger.info(f"[美股-增量] 處理中 ({i+1}/{len(existing_stocks)}): 從 {start_param} 抓取 {batch}")
+                data = self._fetch_prices(batch, start=start_param)
+                self._process_and_upload_batch(data, batch, 'stock_cost_us')
+                time.sleep(random.uniform(1, 3))
+                
             logger.info("美股價格更新完成")
         except Exception as e:
             logger.error(f"美股更新失敗: {e}")

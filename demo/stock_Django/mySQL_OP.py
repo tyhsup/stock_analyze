@@ -60,7 +60,17 @@ class OP_Fun:
                         index_name = f"idx_{table_name}_unique"
                         conn.execute(text(f"ALTER TABLE {table_name} ADD UNIQUE INDEX {index_name} ({date_col}, number)"))
 
-                conn.execute(text(f"INSERT IGNORE INTO {table_name} SELECT * FROM {temp_table}"))
+                # 採用 ON DUPLICATE KEY UPDATE 以符合標準並確保數據一致性
+                cols_list = [f"`{c}`" for c in data.columns]
+                # 排除唯一索引鍵 (Date, number)
+                update_list = [f"{c}=VALUES({c})" for c in cols_list if c.replace("`", "") not in [date_col, 'number', '日期']]
+                
+                if update_list:
+                    insert_sql = f"INSERT INTO {table_name} ({', '.join(cols_list)}) SELECT {', '.join(cols_list)} FROM {temp_table} ON DUPLICATE KEY UPDATE {', '.join(update_list)}"
+                else:
+                    insert_sql = f"INSERT IGNORE INTO {table_name} SELECT * FROM {temp_table}"
+                
+                conn.execute(text(insert_sql))
                 conn.execute(text(f"DROP TABLE {temp_table}"))
             logger.info(f"成功更新 {table_name}")
         except Exception as e:
