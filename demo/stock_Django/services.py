@@ -812,13 +812,14 @@ class StockService:
             try:
                 # Attempt to get cached valuation or perform a quick estimate
                 from valuation.services.valuation_service import ValuationService
-                v_service = ValuationService()
-                v_res = v_service.get_stored_valuation(valuation_symbol)
-                if v_res:
+                v_res = ValuationService.calculate_valuation(valuation_symbol)
+                if v_res and 'error' not in v_res:
+                    upside = float(v_res.get('upside', 0))
+                    rating = 'Strong Buy' if upside >= 0.15 else ('Buy' if upside >= 0.05 else ('Hold' if upside >= -0.05 else 'Sell'))
                     result['fair_value_data'] = {
                         'fair_value': v_res.get('fair_value'),
-                        'rating': v_res.get('rating'),
-                        'upside': v_res.get('upside_potential')
+                        'rating': rating,
+                        'upside': upside
                     }
             except Exception as e_v:
                 logger.warning(f"Failed to integrate valuation result: {e_v}")

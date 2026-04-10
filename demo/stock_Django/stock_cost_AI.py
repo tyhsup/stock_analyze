@@ -10,6 +10,7 @@ import yfinance as yf
 
 from .stock_utils import StockUtils
 from stock_Django.mySQL_OP import OP_Fun
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 

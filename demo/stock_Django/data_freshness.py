@@ -119,26 +119,10 @@ def refresh_data_background(ticker: str, is_tw: bool):
         # --- Step 1: OHLCV (30%) ---
         _set_status(ticker, 'running', 5, f'正在更新 {ticker} 股價...')
         try:
-            if is_tw:
-                from stock_Django.stock_cost import StockCostManager
-                mgr = StockCostManager()
-                # 確保傳入的是帶後綴的代碼
-                mgr.update_single_ticker(ticker)
-                _set_status(ticker, 'running', 30, f'✅ 台股股價更新完成')
-            else:
-                from stock_Django.mySQL_OP import OP_Fun
-                import yfinance as yf
-                from curl_cffi.requests import Session as CurlSession
-                ticker_obj = yf.Ticker(ticker, session=CurlSession(verify=False))
-                hist = ticker_obj.history(period="5d")
-                if not hist.empty:
-                    sql_op = OP_Fun()
-                    hist = hist.reset_index().rename(columns={'Date':'Date','Open':'Open','High':'High','Low':'Low','Close':'Close','Volume':'Volume'})
-                    hist['number'] = ticker
-                    sql_op.upload_all(hist, 'stock_cost_us')
-                    _set_status(ticker, 'running', 30, f'✅ 美股股價更新完成')
-                else:
-                    _set_status(ticker, 'running', 30, f'⚠️ 美股股價查無資料')
+            from stock_Django.stock_cost import StockCostManager
+            mgr = StockCostManager()
+            mgr.update_single_ticker(ticker)
+            _set_status(ticker, 'running', 30, f'✅ 股價更新完成')
         except Exception as e:
             logger.error(f"OHLCV refresh error for {ticker}: {e}")
             _set_status(ticker, 'running', 30, f'⚠️ OHLCV 更新失敗: {e}')
