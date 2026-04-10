@@ -42,14 +42,19 @@ class StockCostManager:
     def __init__(self) -> None:
         """初始化 StockCostManager，設定資料庫連線並初始化表格。"""
         self.sql = mySQL_OP.OP_Fun()
-        # 初始化表格 (確保 stock_cost/stock_cost_us 與索引存在)
-        self.sql.init_financial_tables()
-        
-        # 初始化持久化 Session (遵循 yfinance Best Practices/Domain Rules)
+        # 初始化持久化 Session
         from curl_cffi.requests import Session as CurlSession
+        from requests.adapters import HTTPAdapter
+        from urllib3.util import Retry
         import requests
+        
+        # yfinance (v1.2.0+) 專用 CurlSession 以避開 TLS 指紋檢測
         self.curl_session = CurlSession(verify=False)
         self.http_session = requests.Session()
+        # 設定備援 Session 的自動重試
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+        self.http_session.mount("https://", HTTPAdapter(max_retries=retries))
+        self.http_session.mount("http://", HTTPAdapter(max_retries=retries))
         
         # 非同步執行執行緒池
         self._executor = ThreadPoolExecutor(max_workers=10)
@@ -256,9 +261,10 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": self.curl_session,
-                "repair": True,        # Automatic price repair
-                "timeout": 30          # 增加超時寬容度
+                "session": self.curl_session, # 必須使用 curl_cffi session 以通過 Yahoo 指紋
+                "threads": False,             # 重要：禁用內部多線程，將併發控制權交給外部 Semaphore
+                "repair": True,
+                "timeout": 20
             }
             if start: params["start"] = start
             if end: params["end"] = end
@@ -275,8 +281,10 @@ class StockCostManager:
             msg = str(e)
             if any(key in msg for key in ["Rate limited", "429", "Too Many Requests"]):
                 if retry_count < 2:
-                    wait_time = random.randint(60, 120) * (retry_count + 1)
-                    logger.warning(f"偵測到 YFRateLimitError for {tickers}。將休息 {wait_time}s 後更換 UA 並重試 ({retry_count+1}/2)")
+                    # 延長限速重試等待時間 (60s -> 180s 隨機)
+                    wait_base = 60 if "max" not in (period or "") else 120
+                    wait_time = random.randint(wait_base, wait_base * 2) * (retry_count + 1)
+                    logger.warning(f"偵測到 YFRateLimitError for {tickers}。將冷卻 {wait_time}s 後重試 ({retry_count+1}/2)")
                     time.sleep(wait_time)
                     self._rotate_user_agent()
                     return self._fetch_prices(tickers, period, start, end, retry_count + 1)
@@ -532,17 +540,17 @@ class StockCostManager:
         
         logger.info(f"台股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支 (併發限制: 5)")
 
-        # 1. 處理全量
+        # 1. 處理全量 (縮小 batch 以防 YF 限速)
         tasks = []
-        for i in range(0, len(new_stocks), 5):
-            batch = new_stocks[i : i + 5]
+        for i in range(0, len(new_stocks), 3):
+            batch = new_stocks[i : i + 3]
             tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', period="max"))
         if tasks: await asyncio.gather(*tasks)
 
         # 2. 處理增量
         tasks = []
-        for i in range(0, len(existing_stocks), 20):
-            batch = existing_stocks[i : i + 20]
+        for i in range(0, len(existing_stocks), 15):
+            batch = existing_stocks[i : i + 15]
             min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
             start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
             if pd.to_datetime(start_param).date() >= datetime.date.today():
@@ -571,12 +579,12 @@ class StockCostManager:
             logger.info(f"美股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支 (併發限制: 5)")
 
             tasks = []
-            for i in range(0, len(new_stocks), 10):
-                batch = new_stocks[i : i + 10]
+            for i in range(0, len(new_stocks), 5):
+                batch = new_stocks[i : i + 5]
                 tasks.append(self._fetch_and_upload_task(batch, 'stock_cost_us', period="max"))
             
-            for i in range(0, len(existing_stocks), 30):
-                batch = existing_stocks[i : i + 30]
+            for i in range(0, len(existing_stocks), 20):
+                batch = existing_stocks[i : i + 20]
                 min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
                 start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
                 if pd.to_datetime(start_param).date() >= datetime.date.today(): continue
@@ -594,8 +602,10 @@ class StockCostManager:
             # upload_all 目前是同步的，在 ThreadPool 執行以防阻塞 EventLoop
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(self._executor, lambda: self._process_and_upload_batch(data, batch, table_name))
-            # 隨機微小延遲避免連發
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+            # 隨機微小延遲避免連發 (針對全量更新增加等待時間)
+            wait_time = random.uniform(2.0, 5.0) if "max" in kwargs.get("period", "") else random.uniform(0.5, 2.0)
+            await asyncio.sleep(wait_time)
 
     def _run_async_task(self, coro):
         """同步環境運行非同步任務的輔助器"""
