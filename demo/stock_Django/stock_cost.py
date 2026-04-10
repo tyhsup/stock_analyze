@@ -4,11 +4,19 @@ import datetime
 from datetime import timedelta
 import time
 import random
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 try:
-    from . import mySQL_OP
-except (ImportError, ValueError):
-    import mySQL_OP
+    # 優先嘗試 Django 項目下的絕對路徑匯入
+    import stock_Django.mySQL_OP as mySQL_OP
+except ImportError:
+    try:
+        # 嘗試相對路徑匯入 (當作為 Package 的一部分運行時)
+        from . import mySQL_OP
+    except (ImportError, ValueError):
+        # 降級為直接匯入 (當在目錄內作為獨立腳本運行時)
+        import mySQL_OP
 try:
     from selenium import webdriver
     from bs4 import BeautifulSoup
@@ -42,6 +50,11 @@ class StockCostManager:
         import requests
         self.curl_session = CurlSession(verify=False)
         self.http_session = requests.Session()
+        
+        # 非同步執行執行緒池
+        self._executor = ThreadPoolExecutor(max_workers=10)
+        self._loop = None 
+        self._semaphore = None # 將在 async 語境中初始化為 Semaphore(5)
         
         # User-Agent 清單庫
         self.user_agents = [
@@ -119,22 +132,68 @@ class StockCostManager:
             logger.error(f"抓取 {url} 股票清單失敗: {e}")
             return []
 
-    def fetch_all_tw_stock_list(self) -> List[Dict[str, str]]:
-        """抓取上市 (strMode=2) 與 上櫃 (strMode=4) 股票清單並整合。
-
+    def _scrape_stock_codes_fast(self, url: str) -> List[str]:
+        """[New] 使用 requests + BeautifulSoup 快速抓取股票代碼。
+        
+        Args:
+            url (str): 要抓取的 TWSE 頁面 URL。
+            
         Returns:
-            List[Dict[str, str]]: 包含股票代碼與字尾的字典清單，例如 [{'code': '2330', 'suffix': '.TW'}, ...]。
+            List[str]: 抓取到的 4 位數股票代碼清單。
         """
-        logger.info("正在抓取上市與上櫃股票清單...")
+        try:
+            # 模仿瀏覽器 Headers
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+            }
+            resp = self.http_session.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            
+            # 使用 CP950 解碼 (TWSE 網頁常用)
+            resp.encoding = 'big5' 
+            
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(resp.text, "lxml")
+            tr = soup.find_all('tr')
+            
+            stock_numbers = []
+            for row in tr:
+                tds = [td.get_text().strip() for td in row.find_all("td")]
+                if len(tds) >= 1 and '　' in tds[0]:
+                    data_number = tds[0].split('　')[0].strip()
+                    if data_number.isdigit() and len(data_number) == 4:
+                        stock_numbers.append(data_number)
+            
+            if not stock_numbers:
+                raise ValueError("無法解析出有效的股票代碼")
+                
+            return stock_numbers
+        except Exception as e:
+            logger.warning(f"Fast Scraping 失敗 ({url}): {e}")
+            return []
+
+    def fetch_all_tw_stock_list(self) -> List[Dict[str, str]]:
+        """抓取上市 (strMode=2) 與 上櫃 (strMode=4) 股票清單。
+        具備自動降級機制：優先使用 Fast Method，失敗則切換至 Selenium。
+        """
+        logger.info("正在獲取台股清單 (採用 Fast/Local Fallback 模式)...")
         
         listed_url = 'http://isin.twse.com.tw/isin/C_public.jsp?strMode=2'
         otc_url = 'http://isin.twse.com.tw/isin/C_public.jsp?strMode=4'
         
-        listed_codes = self._scrape_stock_codes(listed_url)
-        logger.info(f"成功取得上市股票清單，共 {len(listed_codes)} 支")
+        # 1. 嘗試快速抓取
+        listed_codes = self._scrape_stock_codes_fast(listed_url)
+        if not listed_codes:
+            logger.info("Fast Scraping 失敗，降級使用 Selenium 抓取上市清單...")
+            listed_codes = self._scrape_stock_codes(listed_url)
         
-        otc_codes = self._scrape_stock_codes(otc_url)
-        logger.info(f"成功取得上櫃股票清單，共 {len(otc_codes)} 支")
+        otc_codes = self._scrape_stock_codes_fast(otc_url)
+        if not otc_codes:
+            logger.info("Fast Scraping 失敗，降級使用 Selenium 抓取上櫃清單...")
+            otc_codes = self._scrape_stock_codes(otc_url)
+            
+        logger.info(f"成功取得清單: 上市 {len(listed_codes)} 支, 上櫃 {len(otc_codes)} 支")
         
         all_stocks = []
         for code in listed_codes:
@@ -316,6 +375,19 @@ class StockCostManager:
         logger.error(f"All price sources failed for {tickers}.")
         return pd.DataFrame()
 
+    async def _fetch_prices_async(self, *args, **kwargs) -> pd.DataFrame:
+        """非同步包裝器，配合 Semaphore 強制限制併發數。"""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(5)
+            
+        async with self._semaphore:
+            # 在 ThreadPool 中執行原本的同步抓取邏輯
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                self._executor, 
+                lambda: self._fetch_prices(*args, **kwargs)
+            )
+
     def update_single_ticker(self, ticker: str) -> bool:
         """更新單一股票的股價資料 (增量更新)。
 
@@ -437,18 +509,14 @@ class StockCostManager:
             except Exception as e:
                 logger.error(f"處理 {symbol} 時發生錯誤: {e}")
 
-    def update_all_cost(self):
-        """批量更新台股股價 (整合上市與上櫃，增量更新 + 自動補全)"""
+    async def _update_all_cost_async(self):
+        """[Async] 批量更新台股股價"""
         all_stocks = self.fetch_all_tw_stock_list()
         if not all_stocks:
-            logger.error("無法取得股票清單，終止更新作業")
             return
 
         stats = self.get_stock_stats('stock_cost')
-        
-        # 分離「新加入/需全量」與「已存在/需增量」的股票
-        new_stocks = []
-        existing_stocks = []
+        new_stocks, existing_stocks = [], []
         
         for s_info in all_stocks:
             symbol = f"{s_info['code']}{s_info['suffix']}"
@@ -456,94 +524,105 @@ class StockCostManager:
                 new_stocks.append(symbol)
             else:
                 s_stat = stats[symbol]
-                # 若資料筆數過少且開盤不到一年，視為新股
                 days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
                 if s_stat['row_count'] < 100 and days_diff < 365:
                     new_stocks.append(symbol)
                 else:
                     existing_stocks.append(symbol)
         
-        logger.info(f"台股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支")
+        logger.info(f"台股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支 (併發限制: 5)")
 
-        # 1. 處理全量 (小 batch 避開封鎖)
+        # 1. 處理全量
+        tasks = []
         for i in range(0, len(new_stocks), 5):
             batch = new_stocks[i : i + 5]
-            logger.info(f"[台股-全量] 處理中 ({i+1}/{len(new_stocks)}): {batch}")
-            data = self._fetch_prices(batch, period="max")
-            self._process_and_upload_batch(data, batch, 'stock_cost')
-            time.sleep(random.uniform(3, 7))
+            tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', period="max"))
+        if tasks: await asyncio.gather(*tasks)
 
-        # 2. 處理增量 (大 batch 提升效率)
+        # 2. 處理增量
+        tasks = []
         for i in range(0, len(existing_stocks), 20):
             batch = existing_stocks[i : i + 20]
             min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
             start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
-            
             if pd.to_datetime(start_param).date() >= datetime.date.today():
                 continue
-                
-            logger.info(f"[台股-增量] 處理中 ({i+1}/{len(existing_stocks)}): 從 {start_param} 抓取 {batch}")
-            data = self._fetch_prices(batch, start=start_param)
-            self._process_and_upload_batch(data, batch, 'stock_cost')
-            time.sleep(random.uniform(2, 5))
+            tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', start=start_param))
+        if tasks: await asyncio.gather(*tasks)
 
-    def update_us_cost(self):
-        """更新美股股價 (增量更新 + 自動補全)"""
+    async def _update_us_cost_async(self):
+        """[Async] 批量更新美股股價"""
         query = "SELECT symbol FROM stocks_us"
         try:
             with self.sql.engine.connect() as conn:
                 us_symbols = pd.read_sql(text(query), conn)['symbol'].tolist()
-            
             if not us_symbols: return
             
             stats = self.get_stock_stats('stock_cost_us')
-            
-            new_stocks = []
-            existing_stocks = []
+            new_stocks, existing_stocks = [], []
             for s in us_symbols:
-                if s not in stats:
-                    new_stocks.append(s)
+                if s not in stats: new_stocks.append(s)
                 else:
                     s_stat = stats[s]
                     days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
-                    if s_stat['row_count'] < 100 and days_diff < 365:
-                        new_stocks.append(s)
-                    else:
-                        existing_stocks.append(s)
+                    if s_stat['row_count'] < 100 and days_diff < 365: new_stocks.append(s)
+                    else: existing_stocks.append(s)
             
-            logger.info(f"美股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支")
+            logger.info(f"美股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支 (併發限制: 5)")
 
-            # 1. 全量
+            tasks = []
             for i in range(0, len(new_stocks), 10):
                 batch = new_stocks[i : i + 10]
-                logger.info(f"[美股-全量] 處理中 ({i+1}/{len(new_stocks)}): {batch}")
-                data = self._fetch_prices(batch, period="max")
-                self._process_and_upload_batch(data, batch, 'stock_cost_us')
-                time.sleep(random.uniform(2, 4))
-
-            # 2. 增量
+                tasks.append(self._fetch_and_upload_task(batch, 'stock_cost_us', period="max"))
+            
             for i in range(0, len(existing_stocks), 30):
                 batch = existing_stocks[i : i + 30]
                 min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
                 start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
+                if pd.to_datetime(start_param).date() >= datetime.date.today(): continue
+                tasks.append(self._fetch_and_upload_task(batch, 'stock_cost_us', start=start_param))
                 
-                if pd.to_datetime(start_param).date() >= datetime.date.today():
-                    continue
-
-                logger.info(f"[美股-增量] 處理中 ({i+1}/{len(existing_stocks)}): 從 {start_param} 抓取 {batch}")
-                data = self._fetch_prices(batch, start=start_param)
-                self._process_and_upload_batch(data, batch, 'stock_cost_us')
-                time.sleep(random.uniform(1, 3))
-                
+            if tasks: await asyncio.gather(*tasks)
             logger.info("美股價格更新完成")
         except Exception as e:
             logger.error(f"美股更新失敗: {e}")
 
+    async def _fetch_and_upload_task(self, batch, table_name, **kwargs):
+        """輔助任務：抓取並上傳"""
+        data = await self._fetch_prices_async(batch, **kwargs)
+        if not data.empty:
+            # upload_all 目前是同步的，在 ThreadPool 執行以防阻塞 EventLoop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._executor, lambda: self._process_and_upload_batch(data, batch, table_name))
+            # 隨機微小延遲避免連發
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+
+    def _run_async_task(self, coro):
+        """同步環境運行非同步任務的輔助器"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 若已在運行 (如 Django 背景任務)，則建立任務
+                return asyncio.create_task(coro)
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            # 建立新 loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+
+    def update_all_cost(self):
+        """批量更新台股股價 (同步包裝器)"""
+        return self._run_async_task(self._update_all_cost_async())
+
+    def update_us_cost(self):
+        """更新美股股價 (同步包裝器)"""
+        return self._run_async_task(self._update_us_cost_async())
+
 if __name__ == "__main__":
     manager = StockCostManager()
-    logger.info(">>> 啟動全市場價格更新作業 <<<")
-    # 1. 更新台股
+    logger.info(">>> 啟動全市場價格更新作業 (非同步併發模式) <<<")
     manager.update_all_cost()
-    # 2. 更新美股
     manager.update_us_cost()
     logger.info(">>> 全市場價格更新作業結束 <<<")

@@ -8,8 +8,19 @@ from keras.layers import Dense, LSTM, Dropout, Input, Concatenate
 from keras.models import Model
 import yfinance as yf
 
-from .stock_utils import StockUtils
-from stock_Django.mySQL_OP import OP_Fun
+try:
+    # 優先嘗試絕對路徑
+    from stock_Django.stock_utils import StockUtils
+    from stock_Django.mySQL_OP import OP_Fun
+except ImportError:
+    try:
+        # 相對路徑降級
+        from .stock_utils import StockUtils
+        from .mySQL_OP import OP_Fun
+    except (ImportError, ValueError):
+        # 獨立腳本運行模式
+        from stock_utils import StockUtils
+        from mySQL_OP import OP_Fun
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
