@@ -23,6 +23,7 @@ except ImportError:
         from stock_Django import mySQL_OP
     except ImportError:
         import mySQL_OP
+from .stock_cost import StockCostManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,8 +34,10 @@ logger = logging.getLogger(__name__)
 class USStockInvestorManager:
     def __init__(self):
         self.sql_op = mySQL_OP.OP_Fun()
+        # 使用全局單例共享 Session
+        self.cost_mgr = StockCostManager()
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Connection': 'keep-alive',
@@ -49,14 +52,21 @@ class USStockInvestorManager:
             logger.warning("yfinance not installed — cannot calculate pct_out.")
             return 0
         try:
-            from curl_cffi.requests import Session as CurlSession
-            _yf_session = CurlSession(verify=False)
-            info = yf.Ticker(ticker, session=_yf_session).fast_info
+            # 統一使用共享 Session
+            _yf_session = self.cost_mgr.curl_session
+            ticker_obj = yf.Ticker(ticker, session=_yf_session)
+            info = ticker_obj.fast_info
             shares = getattr(info, 'shares', None) or 0
+            
+            # 如果 fast_info 拿不到，嘗試 info (雖然慢一點但較完整)
+            if not shares:
+                 shares = ticker_obj.info.get('sharesOutstanding', 0)
+                 
             if shares:
-                logger.info(f"{ticker}: shares_outstanding = {shares:,} (fast_info)")
+                logger.info(f"{ticker}: shares_outstanding = {shares:,}")
                 return int(shares)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Error fetching shares for {ticker}: {e}")
             pass
 
         # Slower fallback using full info

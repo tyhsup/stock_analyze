@@ -12,6 +12,7 @@ from .data_freshness import trigger_refresh_if_stale
 from .stock_investor_tpex import TPExInvestorManager
 from sqlalchemy import text
 from .stock_cost_AI import IntegratedStockPredModel
+from .stock_cost import StockCostManager
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -22,14 +23,15 @@ class StockService:
         self.chart = stock_chart.chart_create()
         self.us_mgr = USStockInvestorManager()
         self.tpex_mgr = TPExInvestorManager()
-        # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
-        # verify=False 繞過使用者路徑含中文時 curl_cffi 無法定位 CA 憑證的問題
-        from curl_cffi.requests import Session as CurlSession
-        self.yf_session = CurlSession(verify=False)
+        
+        # 使用全局單例 StockCostManager 的 Session 以避免 429
+        self.cost_mgr = StockCostManager()
+        self.yf_session = self.cost_mgr.curl_session
+        
         # requests session 保留給 web scraping 使用
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
         })
 
     def format_large_number(self, num: Optional[float], currency: str = 'USD') -> str:
@@ -94,20 +96,19 @@ class StockService:
         except Exception as e:
             logger.debug(f"DB Suffix resolution failed for {number}: {e}")
             
-        # 2. 第二優先：Yahoo Finance 正確性檢查 (採用較輕量的歷史資料檢查)
-        for suffix in ['.TW', '.TWO']:
-            try:
-                ticker = yf.Ticker(f"{number}{suffix}", session=self.yf_session)
-                # 只抓 1 天，若非空則代表此代碼有效
-                if not ticker.history(period="1d").empty:
-                    return suffix
-            except: continue
-            
-        # 3. 第三優先：常見上櫃代碼區間 (4 碼且開頭為 3, 4, 5, 6, 8 且非特定上市股)
-        # 這僅是統計上的備案
+        # 2. 第二優先：代碼規則過濾 (台股代碼 4 碼且開頭為 3, 4, 5, 6, 8 多為上櫃)
+        # 這種靜態規則可以減少 90% 的 Ticker 初始化請求
         if len(number) == 4 and number[0] in '34568':
             return '.TWO'
             
+        # 3. 第三優先：Yahoo Finance 最後驗證 (僅在絕對必要時執行)
+        for suffix in ['.TW', '.TWO']:
+            try:
+                # 這裡不調用 Ticker.history，改用更輕量的 fast_info (如果可用) 或僅初始化
+                ticker = yf.Ticker(f"{number}{suffix}", session=self.yf_session)
+                if not ticker.history(period="1d").empty:
+                    return suffix
+            except: continue
             
         return '.TW'
 

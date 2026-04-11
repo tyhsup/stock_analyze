@@ -39,8 +39,26 @@ logger = logging.getLogger(__name__)
 from typing import List, Dict, Any, Optional
 
 class StockCostManager:
+    _instance = None
+    _lock = None
+
+    def __new__(cls, *args, **kwargs):
+        """實作單例模式，確保全域共享同一個 Session 降低 429 機率。"""
+        if cls._instance is None:
+            import threading
+            if cls._lock is None:
+                cls._lock = threading.Lock()
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(StockCostManager, cls).__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self) -> None:
         """初始化 StockCostManager，設定資料庫連線並初始化表格。"""
+        if getattr(self, '_initialized', False):
+            return
+            
         self.sql = mySQL_OP.OP_Fun()
         # 初始化持久化 Session
         from curl_cffi.requests import Session as CurlSession
@@ -49,7 +67,8 @@ class StockCostManager:
         import requests
         
         # yfinance (v1.2.0+) 專用 CurlSession 以避開 TLS 指紋檢測
-        self.curl_session = CurlSession(verify=False)
+        # 使用 impersonate="chrome110" 提供真實瀏覽器指紋
+        self.curl_session = CurlSession(verify=False, impersonate="chrome110")
         self.http_session = requests.Session()
         # 設定備援 Session 的自動重試
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
@@ -61,14 +80,12 @@ class StockCostManager:
         self._loop = None 
         self._semaphore = None # 將在 async 語境中初始化為 Semaphore(5)
         
-        # User-Agent 清單庫
+        # User-Agent 清單庫 (僅作備用，impersonate 已內建 Headers)
         self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
         ]
+        self._initialized = True
         self._rotate_user_agent()
 
     def _rotate_user_agent(self) -> None:
