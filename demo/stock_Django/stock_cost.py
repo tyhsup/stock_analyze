@@ -6,7 +6,11 @@ import time
 import random
 import asyncio
 import logging
+import threading
+import tempfile
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from filelock import FileLock  # 修正：使用標準的 filelock
 try:
     # 優先嘗試 Django 項目下的絕對路徑匯入
     import stock_Django.mySQL_OP as mySQL_OP
@@ -80,13 +84,54 @@ class StockCostManager:
         self._loop = None 
         self._semaphore = None # 將在 async 語境中初始化為 Semaphore(5)
         
-        # User-Agent 清單庫 (僅作備用，impersonate 已內建 Headers)
+        # 使用者代理清單庫 (僅作備用，impersonate 已內建 Headers)
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
         ]
+        
+        # 跨進程限速協調 (Global 429 Lock)
+        # 用於記錄 429 狀態，讓多個 Django Worker 能集體進入冷卻
+        self._lock_path = Path(tempfile.gettempdir()) / "stock_cost_yf_429.lock"
+        self._global_lock = FileLock(str(self._lock_path))
+        
         self._initialized = True
         self._rotate_user_agent()
+
+    def close(self) -> None:
+        """顯式釋放資源，防止連線與執行緒池洩漏。"""
+        if hasattr(self, '_executor'):
+            self._executor.shutdown(wait=False)
+        if hasattr(self, 'curl_session'):
+            self.curl_session.close()
+        if hasattr(self, 'http_session'):
+            self.http_session.close()
+        logger.info("StockCostManager 資源已釋放")
+
+    def __del__(self) -> None:
+        """解構子：作為資源釋放的最後防線。"""
+        try:
+            self.close()
+        except:
+            pass
+
+    def _check_global_cooling(self) -> bool:
+        """檢查是否有全域 429 冷卻鎖存在 (跨 Worker 協查)。"""
+        if self._lock_path.exists():
+            # 檢查鎖定檔案的修改時間，若在 5 分鐘內則視為冷卻中
+            mtime = self._lock_path.stat().st_mtime
+            if time.time() - mtime < 300: # 5 分鐘冷卻期
+                return True
+        return False
+
+    def _set_global_cooling(self) -> None:
+        """設置全域冷卻標記。"""
+        try:
+            with open(self._lock_path, 'w') as f:
+                f.write(str(time.time()))
+            logger.warning(f"已設置全域 429 冷卻鎖: {self._lock_path}")
+        except Exception as e:
+            logger.error(f"設置全域冷卻鎖失敗: {e}")
 
     def _rotate_user_agent(self) -> None:
         """輪替 Session 的 User-Agent 以規避單一指紋封鎖。"""
@@ -270,6 +315,12 @@ class StockCostManager:
         Returns:
             pd.DataFrame: 抓取到的股價資料。
         """
+        # 0. 檢查全域冷卻標記 (跨進程協調)
+        if self._check_global_cooling():
+            wait_jitter = random.uniform(5, 10)
+            logger.info(f"系統處於全域 429 冷卻中，等待 {wait_jitter:.1f}s 後再試...")
+            time.sleep(wait_jitter)
+
         # 1. 嘗試 yfinance (優先使用持久化 session)
         try:
             params = {
@@ -278,8 +329,8 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": self.curl_session, # 必須使用 curl_cffi session 以通過 Yahoo 指紋
-                "threads": False,             # 重要：禁用內部多線程，將併發控制權交給外部 Semaphore
+                "session": self.curl_session, 
+                "threads": False,             
                 "repair": True,
                 "timeout": 20
             }
@@ -297,11 +348,16 @@ class StockCostManager:
         except Exception as e:
             msg = str(e)
             if any(key in msg for key in ["Rate limited", "429", "Too Many Requests"]):
+                # 遭受官方限速，設置全域冷卻標記
+                self._set_global_cooling()
+                
                 if retry_count < 2:
-                    # 延長限速重試等待時間 (60s -> 180s 隨機)
+                    # 加入 隨機抖動 (Jitter) 以打散併發重試
                     wait_base = 60 if "max" not in (period or "") else 120
-                    wait_time = random.randint(wait_base, wait_base * 2) * (retry_count + 1)
-                    logger.warning(f"偵測到 YFRateLimitError for {tickers}。將冷卻 {wait_time}s 後重試 ({retry_count+1}/2)")
+                    jitter = random.uniform(0.8, 1.2) # 20% 的隨機抖動
+                    wait_time = int(wait_base * jitter * (retry_count + 1))
+                    
+                    logger.warning(f"偵測到 YFRateLimitError for {tickers}。Jitter 冷卻 {wait_time}s ({retry_count+1}/2)")
                     time.sleep(wait_time)
                     self._rotate_user_agent()
                     return self._fetch_prices(tickers, period, start, end, retry_count + 1)
