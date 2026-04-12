@@ -35,21 +35,19 @@ class StockService:
         })
 
     def format_large_number(self, num: Optional[float], currency: str = 'USD') -> str:
-        """將大數字轉換為常用商業單位 (M/B/T 或 台股之 億/兆)。"""
+        """將大數字轉換為常用商業單位 (M/B/T 或 台股之 萬/億/兆)。"""
         if num is None or pd.isna(num):
             return ""
         
         abs_num = abs(num)
-        # sign = "-" if num < 0 else "" # The f-string already handles the sign
         
         if currency == 'TWD':
-            # Sanity check: if yfinance returns something like 13 trillion for a small stock, it might be in cents or some weird unit.
-            # But TSMC is ~25T, so 1e12 is '兆'.
+            # Taiwan units: 兆 (10^12), 億 (10^8), 萬 (10^4)
             if abs_num >= 1e12:
                 return f"{num/1e12:.2f}兆"
             elif abs_num >= 1e8:
                 return f"{num/1e8:.2f}億"
-            elif abs_num >= 1e4: # Added back the '萬' unit as it was in the original code
+            elif abs_num >= 1e4:
                 return f"{num/1e4:.2f}萬"
             else:
                 return f"{num:,.0f}"
@@ -411,32 +409,49 @@ class StockService:
                 except Exception as e_info:
                     logger.warning(f"yfinance info fetch error (possibly 429) for {valuation_symbol}: {e_info}")
 
-                # 2.5 Robust Market Cap Calculation (Fallback if yfinance is empty or for TW verification)
+                # 2.5 Robust Market Cap Calculation: Share-Count Driven Verification
                 try:
                     curr_price = result['historical_data']['Close'].iloc[-1] if not result['historical_data'].empty else None
                     if curr_price:
-                        if not is_tw:
+                        if is_tw:
+                            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+                            df_cap = pd.read_sql(f"SELECT amount FROM financial_raw_tw WHERE symbol='{clean_sym}' AND item_name IN ('普通股股本', '股本') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
+                            
+                            if not df_cap.empty:
+                                raw_amount = float(df_cap.iloc[0]['amount'])
+                                
+                                # Candidates: Unit vs Thousand
+                                shares_unit = raw_amount / 10
+                                shares_thousand = (raw_amount * 1000) / 10
+                                
+                                # Use yfinance sharesOutstanding as magnitude reference
+                                yf_shares = info.get('sharesOutstanding') or info.get('impliedSharesOutstanding')
+                                
+                                final_shares = 0
+                                if yf_shares:
+                                    # Magnitude match: pick candidate closer to yfinance shares count
+                                    if abs(shares_thousand - yf_shares) < abs(shares_unit - yf_shares):
+                                        final_shares = shares_thousand
+                                    else:
+                                        final_shares = shares_unit
+                                else:
+                                    # Fallback: Default to Thousand (standard MOPS)
+                                    final_shares = shares_thousand
+                                    # Hard Sanity for 2330.TW (TSMC scale)
+                                    if clean_sym == '2330' and final_shares < 1e10:
+                                        final_shares *= 1000
+                                
+                                if final_shares > 0:
+                                    calc_mc = curr_price * final_shares
+                                    fin_summary['marketCap'] = self.format_large_number(calc_mc, currency)
+                                    logger.info(f"Verified MarketCap for {valuation_symbol}: {calc_mc} (Shares: {final_shares})")
+                        else:
                             # US Stock Fallback
                             if not fin_summary.get('marketCap'):
-                                df_us_cap = pd.read_sql(f"SELECT amount FROM financial_raw_us WHERE symbol='{valuation_symbol}' AND item_name IN ('WeightedAverageNumberOfSharesOutstandingBasic', 'CommonStockSharesOutstanding', 'EntityPublicFloat') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
+                                df_us_cap = pd.read_sql(f"SELECT amount FROM financial_raw_us WHERE symbol='{valuation_symbol}' AND item_name IN ('WeightedAverageNumberOfSharesOutstandingBasic', 'CommonStockSharesOutstanding') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
                                 if not df_us_cap.empty:
                                     shares = float(df_us_cap.iloc[0]['amount'])
                                     fin_summary['marketCap'] = self.format_large_number(curr_price * shares, currency)
-                        else:
-                            # TW Stock Robust Calculation: Market Cap = Price * (Capital / 10)
-                            # Par value in Taiwan is 10 TWD
-                            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
-                            df_cap = pd.read_sql(f"SELECT amount FROM financial_raw_tw WHERE symbol='{clean_sym}' AND item_name IN ('普通股股本', '股本') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
-                            if not df_cap.empty:
-                                capital_val = float(df_cap.iloc[0]['amount']) * 1000 # Usually in thousands
-                                shares_outstanding = capital_val / 10
-                                calc_mc = curr_price * shares_outstanding
-                                
-                                # If difference with yfinance > 20%, or yfinance is missing, use calculated value
-                                yf_mc_val = info.get('marketCap', 0)
-                                if not yf_mc_val or abs(calc_mc - yf_mc_val) / (yf_mc_val + 1) > 0.2:
-                                    fin_summary['marketCap'] = self.format_large_number(calc_mc, currency)
-                                    logger.info(f"Replaced yfinance marketCap with calculated value for {valuation_symbol}: {calc_mc}")
                 except Exception as e_mc:
                     logger.warning(f"Robust Market Cap calculation failed: {e_mc}")
 
@@ -604,28 +619,7 @@ class StockService:
                                     fin_summary['pb'] = round(current_price / bps, 2)
                                     
                             # 4. Market Cap Calculation (Shares * Price)
-                            # TW: stock_cost lacks capital, so must use yfinance info or financial_raw_tw
-                            mc_val = info.get('marketCap')
-                            if mc_val and is_tw:
-                                # Sanity check for TWSE stocks (Only TSMC is > 10T)
-                                # If yfinance returns something like 13T for 4764, it's likely a unit error
-                                if mc_val > 10e12 and not str(number).startswith('2330'):
-                                     mc_val /= 1000 
-                                elif mc_val > 50e12: # Handle TSMC edge cases or extreme glitches
-                                     mc_val /= 1000
-                            
-                            if mc_val:
-                                fin_summary['marketCap'] = self.format_large_number(mc_val, currency)
-                            elif current_price and capital and not pd.isna(capital) and capital > 0:
-                                # DB-First calculation for TW: 
-                                # If capital is from financial_raw_tw, it's usually in thousands of NTD.
-                                # Shares = Capital / 10 * 1000
-                                # BUT if it resulted in 13兆 for 4764, it's 1000x too big.
-                                shares = (float(capital) * 1000) / 10
-                                raw_mc = current_price * shares
-                                if raw_mc > 50e12 or (is_tw and raw_mc > 1e12 and not str(number).startswith('2330')):
-                                    raw_mc /= 1000
-                                fin_summary['marketCap'] = self.format_large_number(raw_mc, currency)
+                            # Final Dynamic Calculation for PE/PB is handled below
                     else:
                         # US Stock Logic via financial_raw_us (DB-First)
                         try:
@@ -744,9 +738,7 @@ class StockService:
                                 if not fin_summary['eps']:
                                     eps_val = info.get('trailingEps')
                                     if eps_val: fin_summary['eps'] = round(eps_val, 2)
-                                if not fin_summary['marketCap']:
-                                    mc_val = info.get('marketCap')
-                                    if mc_val: fin_summary['marketCap'] = self.format_large_number(mc_val, currency)
+                                # Fallbacks handled by magnitude cross-check above
                                 
                                 if not fin_summary['roe'] and info.get('returnOnEquity'):
                                     fin_summary['roe'] = round(info['returnOnEquity'] * 100, 2)
