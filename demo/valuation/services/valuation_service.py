@@ -110,9 +110,27 @@ class ValuationService:
             ev_ebitda_price = rel_results.get('ev_ebitda_approach', {}).get('implied_price', current_price)
             implied_price_market = (pe_price + ev_ebitda_price) / 2
             
-            # 8. Weighted Fair Value
-            fair_value = (implied_price_dcf * dcf_weight) + (implied_price_market * market_weight)
+            # --- 8. 優化：加入情緒溢價 (Sentiment Premium) ---
+            # 根據新聞情緒強度，為估值提供 +/- 5% 的動態空間
+            sentiment_premium = 1.0
+            try:
+                from stock_Django.news_excel import NewsExcelManager
+                news_mgr = NewsExcelManager()
+                recent_news = news_mgr.read_news(ticker_symbol, limit=20)
+                if recent_news:
+                    pos_count = sum(1 for n in recent_news if n.get('正負分析') == '正面')
+                    neg_count = sum(1 for n in recent_news if n.get('正負分析') == '負面')
+                    if pos_count > neg_count * 2:
+                         sentiment_premium = 1.05 # 利多溢價
+                    elif neg_count > pos_count * 2:
+                         sentiment_premium = 0.95 # 利空折價
+            except Exception as e_s:
+                logger.debug(f"Sentiment premium calculation skipped: {e_s}")
+
+            # 9. Weighted Fair Value (並乘上情緒溢價)
+            fair_value = ((implied_price_dcf * dcf_weight) + (implied_price_market * market_weight)) * sentiment_premium
             upside = (fair_value / current_price) - 1 if current_price > 0 else 0
+
             
             # Prepare projection lists for detail.html template
             # Standardize output to Millions (M) for large stocks

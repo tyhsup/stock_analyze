@@ -19,7 +19,7 @@ from django.urls import path, include
 #from member.views import show_member_info
 #from member.views import receive_Data
 #from ClassServices.views import studentMethod
-from stock_Django.views import home, News_display, refresh_status_api, news_refresh_api
+from stock_Django.views import home, News_display, refresh_status_api, news_refresh_api, smart_advisor_analysis
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -30,4 +30,5 @@ urlpatterns = [
     path('valuation/', include('valuation.urls')),
     path('api/refresh-status/<str:ticker>/', refresh_status_api, name='refresh_status'),
     path('api/news-refresh/<str:ticker>/', news_refresh_api, name='news_refresh'),
+    path('api/smart-advisor/<str:ticker>/', smart_advisor_analysis, name='smart_advisor'),
 ]

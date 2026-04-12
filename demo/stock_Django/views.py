@@ -13,13 +13,16 @@ from .stock_utils import StockUtils
 from .stock_investor_us import USStockInvestorManager
 from .news_excel import NewsExcelManager
 from .news_scraper_cnyes import CnyesScraper
-from .data_freshness import trigger_refresh_if_stale, get_refresh_status
+from .data_freshness import trigger_refresh_if_stale, get_refresh_status, trigger_news_refresh, check_news_freshness
 from .nlp_service import NLPService
 from django.http import JsonResponse
 import time
 import pandas as pd
 import threading
 import logging
+from datetime import datetime
+from .services import StockService
+from .gemma_advisor_service import GemmaAdvisorService
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,6 @@ def News_display(request):
                      (query.isalpha() and 1 <= len(query) <= 5)
         
         if is_ticker:
-            from .data_freshness import trigger_news_refresh, check_news_freshness
             is_fresh = check_news_freshness(query)
             
             if len(data) < limit or not is_fresh:
@@ -84,9 +86,60 @@ def refresh_status_api(request, ticker):
     status = get_refresh_status(ticker)
     return JsonResponse(status)
 
+def smart_advisor_analysis(request, ticker):
+    """
+    智慧顧問分析：整合技術面、情緒面與估值，調用本地 Gemma 4 進行推理。
+    """
+    service = StockService()
+    advisor = GemmaAdvisorService()
+    
+    # 1. 取得基礎數據
+    # 這裡儘量復用 existing logic
+    
+    # 技術預測
+    pred_data = service._get_ai_predictions(ticker)
+    
+    # 估值 (調用 valuation_service)
+    try:
+        from valuation.services.valuation_service import ValuationService
+        val_results = ValuationService.calculate_valuation(ticker)
+    except:
+        val_results = {"error": "估值模組未就緒"}
+        
+    # 情緒 (讀取最新新聞統計)
+    try:
+        from .news_excel import NewsExcelManager
+        news_mgr = NewsExcelManager()
+        news = news_mgr.read_news(ticker, limit=20)
+        pos = sum(1 for n in news if n.get('正負分析') == '正面')
+        neg = sum(1 for n in news if n.get('正負分析') == '負面')
+        sentiment_summary = {
+            'positive': pos,
+            'negative': neg,
+            'label': '偏多' if pos > neg else ('偏空' if neg > pos else '中性'),
+            'score': pred_data.get('latest', {}).get('trend_probability', 0.5) * 100 if pred_data.get('latest') else 50
+        }
+    except:
+        sentiment_summary = {'label': '未知'}
+
+    # 2. 準備給 Advisor 的數據
+    advisor_input = {
+        'trend_label': '看漲' if sentiment_summary.get('label') == '偏多' else '盤整/看跌',
+        'sentiment_summary': sentiment_summary,
+        'valuation': val_results
+    }
+    
+    # 3. 觸發 Gemma 推理 (這可能較久，故前面已將所有數據準備好)
+    report = advisor.get_structured_advice(ticker, advisor_input)
+    
+    return JsonResponse({
+        'ticker': ticker,
+        'report': report,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    })
+
 def news_refresh_api(request, ticker):
     """API endpoint to trigger news refresh from 鉅亨網."""
-    from .data_freshness import trigger_news_refresh
     trigger_news_refresh(ticker)
     return JsonResponse({'status': 'triggered', 'ticker': ticker})
 

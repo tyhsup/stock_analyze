@@ -170,7 +170,8 @@ class IntegratedStockPredModel:
         os.makedirs(self.model_dir, exist_ok=True)
         self.weights_path = os.path.join(self.model_dir, f'stock_model_weights_{self.clean_number}.weights.h5')
         
-        self.time_steps = 5
+        # 優化：增加時間序列深度 (5 -> 20) 以捕捉中換趨勢
+        self.time_steps = 20
         self.predict_steps = 5
         self.lstm_features = 0
         self.dense_features = 0
@@ -205,12 +206,13 @@ class IntegratedStockPredModel:
     def create_model(self, lstm_feat_dim, ext_feat_dim):
         """建構 Multi-Input DNN模型"""
         input_ts = Input(shape=(self.time_steps, lstm_feat_dim), name="time_series_input")
-        x = LSTM(64, return_sequences=True)(input_ts)
+        # 優化：增強 LSTM 特徵提取能力
+        x = LSTM(128, return_sequences=True)(input_ts)
         x = Dropout(0.2)(x)
-        x = LSTM(32)(x)
+        x = LSTM(64)(x)
         
         input_ext = Input(shape=(ext_feat_dim,), name="external_features_input")
-        y = Dense(32, activation='relu')(input_ext)
+        y = Dense(64, activation='relu')(input_ext)
         y = Dropout(0.2)(y)
         
         combined = Concatenate()([x, y])
@@ -220,7 +222,13 @@ class IntegratedStockPredModel:
         out_price = Dense(self.predict_steps, name='price_prediction')(z)
         
         model = Model(inputs=[input_ts, input_ext], outputs=out_price)
-        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        
+        # 優化：使用 Huber Loss 取代 MSE，降低對異常跳空值的敏感度
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+            loss=tf.keras.losses.Huber(delta=1.0), 
+            metrics=['mae']
+        )
         return model
 
     def prepare_training_data(self, full_df):
@@ -252,10 +260,20 @@ class IntegratedStockPredModel:
         
         return np.array(X_ts), np.array(X_ext), np.array(Y)
 
-    def train_incremental(self, epochs=50, batch_size=32):
+    def train_incremental(self, epochs=20, batch_size=32):
         """增量訓練邏輯 (Incremental Learning)"""
         full_df = self.build_dataset()
-        if full_df is None: return False
+        if full_df is None or len(full_df) < self.time_steps + self.predict_steps: 
+            return False
+        
+        # 優化：加入 EarlyStopping 防止模型在增量訓練中追逐短期噪音
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(
+                monitor='val_loss', 
+                patience=5, 
+                restore_best_weights=True
+            )
+        ]
         
         self.max_vals = full_df.max().replace(0, 1)
         norm_df = full_df / self.max_vals
@@ -267,14 +285,20 @@ class IntegratedStockPredModel:
         if self.model is None:
             self.model = self.create_model(self.lstm_features, self.dense_features)
             weights_h5 = self.weights_path.replace('.weights.h5', '.h5')
-            # 優先讀 .keras, 沒有就找 .h5
             if os.path.exists(self.weights_path):
                 self.model.load_weights(self.weights_path)
             elif os.path.exists(weights_h5):
                 self.model.load_weights(weights_h5)
                     
-        logger.info(f"Training Incremental Model for {self.stock_number}...")
-        self.model.fit([X_ts, X_ext], Y, epochs=epochs, batch_size=batch_size, verbose=0, validation_split=0.1)
+        logger.info(f"Training Incremental Model for {self.stock_number} (Target: {epochs} epochs)...")
+        self.model.fit(
+            [X_ts, X_ext], Y, 
+            epochs=epochs, 
+            batch_size=batch_size, 
+            verbose=0, 
+            validation_split=0.1,
+            callbacks=callbacks
+        )
         
         self.model.save_weights(self.weights_path)
         logger.info(f"Saved optimized weights to {self.weights_path}")
