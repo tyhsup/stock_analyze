@@ -37,18 +37,22 @@ def News_display(request):
         # 1. Try finding news for specific ticker first
         data = news_mgr.read_news(query, limit=limit)
         
-        # 2. Check if we have enough data; if not, trigger a background refresh
+        # 2. Check if we have enough data or if it's stale; if so, trigger a background refresh
         is_ticker = (query.isdigit() and len(query) >= 4) or \
                      ".TW" in query or \
                      (query.isalpha() and 1 <= len(query) <= 5)
         
-        if len(data) < limit and is_ticker:
-            from .data_freshness import trigger_news_refresh
-            triggered = trigger_news_refresh(query, limit=limit)
-            # If not enough data even after possible previous refreshes, or if this is new
-            # We skip wait since it's background, but we can set the warning if it's currently low
-            if len(data) < limit:
-                quantity_warning = True
+        if is_ticker:
+            from .data_freshness import trigger_news_refresh, check_news_freshness
+            is_fresh = check_news_freshness(query)
+            
+            if len(data) < limit or not is_fresh:
+                if not is_fresh:
+                    logger.info(f"[News] {query} is stale. Triggering background refresh.")
+                trigger_news_refresh(query, limit=limit)
+                
+                if len(data) < limit:
+                    quantity_warning = True
 
         # Fallback to general search if still empty (for non-ticker queries or failed ticker search)
         if not data:

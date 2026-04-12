@@ -103,6 +103,28 @@ def check_investor_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, st
     return False, None
 
 
+def check_news_freshness(ticker: str) -> bool:
+    """
+    Check if news for a ticker is fresh (last news >= today - 1 day).
+    """
+    from stock_Django.news_excel import NewsExcelManager
+    try:
+        mgr = NewsExcelManager()
+        latest_date_str = mgr.get_latest_date(ticker)
+        if not latest_date_str:
+            return False
+            
+        latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
+        today = date.today()
+        
+        # Fresh if news is from today or yesterday
+        # (For weekends, simplified check: within 2 days)
+        return (today - latest_date).days <= 1
+    except Exception as e:
+        logger.warning(f"News freshness check failed for {ticker}: {e}")
+        return False
+
+
 def refresh_data_background(ticker: str, is_tw: bool):
     """
     Background thread: refresh all stale data for a given ticker.

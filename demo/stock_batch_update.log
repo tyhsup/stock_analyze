@@ -25,3 +25,32 @@
 2026-03-29 10:19:29,056 [INFO] YahooQuery Fallback Success for ['AAPL']
 2026-03-29 10:19:29,212 [INFO] 成功更新 stock_cost_us
 2026-03-29 10:19:29,212 [INFO] 單一更新 AAPL 成功上傳 1 筆資料
+2026-04-12 09:00:42,095 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\tf_keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+2026-04-12 09:00:43,028 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\ckiptagger\api.py:11: The name tf.logging.set_verbosity is deprecated. Please use tf.compat.v1.logging.set_verbosity instead.
+
+2026-04-12 09:00:43,035 [INFO] 正在從 E:/Infinity/webbug/final_model_stock_news_BERT_1k 載入 BERT 模型 (設備: cpu)...
+2026-04-12 09:00:43,858 [INFO] 正在載入 CKIP Tagger 模型...
+2026-04-12 09:01:14,076 [INFO] NLP 服務初始化完成。
+2026-04-12 09:03:10,727 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Macintosh; Intel ...
+2026-04-12 09:03:33,682 [INFO] AI Prediction Cache Miss for 2330.TW. Running model inference...
+2026-04-12 09:04:43,849 [INFO] Training Incremental Model for 2330.TW...
+2026-04-12 09:04:48,537 [INFO] Saved optimized weights to E:/Infinity/mydjango/demo/stock_Django/stock_model\stock_model_weights_2330.weights.h5
+2026-04-12 09:05:02,528 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:02,600 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:02,673 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:09,746 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 09:05:20,864 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:20,915 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:20,974 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:05:21,023 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:29,122 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:29,170 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:29,218 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:35,856 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 09:16:42,855 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:42,905 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:42,955 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:16:43,006 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 09:23:12,608 [INFO] [CnyesScraper] Fetching news for 2330 (tw): https://www.cnyes.com/search/news?keyword=2330, limit: 1000
+2026-04-12 09:26:41,835 [INFO] 開始抓取 663 篇新聞的詳細內容...
