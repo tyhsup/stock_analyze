@@ -81,7 +81,11 @@ def scrape_tw_financials_playwright(symbol, year, quarter):
                 # 5. 等待結果表格出現 (新版可能需要多一點時間渲染)
                 try:
                     # MOPS 結果通常在 table.hasBorder 或特定結果區塊
-                    page.wait_for_selector('table.hasBorder', timeout=20000)
+                    # 增加對「無資料」文字的偵測，避免超時等待
+                    page.wait_for_selector('table.hasBorder, :text-is("查無資料")', timeout=15000)
+                    if page.locator(':text-is("查無資料")').count() > 0:
+                        print(f"DEBUG: No data found on MOPS for {symbol} {year}Q{quarter}")
+                        continue
                 except:
                     # 有時候沒資料會彈窗或顯示「無資料」
                     continue
@@ -89,10 +93,11 @@ def scrape_tw_financials_playwright(symbol, year, quarter):
                 # 6. 解析 HTML - 優化 JS 解析以適應新版結構
                 data_list = page.evaluate("""
                     () => {
-                        // 新版 SPA 可能在不同容器內，但 table.hasBorder 屬性通常保留
                         const tables = Array.from(document.querySelectorAll('table.hasBorder'));
-                        // 找尋資料最多的那個表格
-                        const mainTable = tables.sort((a, b) => b.rows.length - a.rows.length)[0];
+                        if (tables.length === 0) return [];
+                        // 優先找尋包含「項目」或「會計項目」的表格
+                        const mainTable = tables.find(t => t.innerText.includes('項目')) || 
+                                         tables.sort((a, b) => b.rows.length - a.rows.length)[0];
                         if (!mainTable) return [];
                         
                         return Array.from(mainTable.rows).map(row => {

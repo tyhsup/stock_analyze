@@ -411,17 +411,34 @@ class StockService:
                 except Exception as e_info:
                     logger.warning(f"yfinance info fetch error (possibly 429) for {valuation_symbol}: {e_info}")
 
-                # 2.5 Fallback for US Market Cap if info failed
-                if not fin_summary.get('marketCap') and not is_tw:
-                    try:
-                        curr_price = result['historical_data']['Close'].iloc[-1] if not result['historical_data'].empty else None
-                        if curr_price:
-                            df_us_cap = pd.read_sql(f"SELECT amount FROM financial_raw_us WHERE symbol='{valuation_symbol}' AND item_name IN ('WeightedAverageNumberOfSharesOutstandingBasic', 'CommonStockSharesOutstanding', 'EntityPublicFloat') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
-                            if not df_us_cap.empty:
-                                shares = float(df_us_cap.iloc[0]['amount'])
-                                fin_summary['marketCap'] = self.format_large_number(curr_price * shares, currency)
-                    except Exception as e_mc:
-                        logger.warning(f"US Market Cap fallback failed: {e_mc}")
+                # 2.5 Robust Market Cap Calculation (Fallback if yfinance is empty or for TW verification)
+                try:
+                    curr_price = result['historical_data']['Close'].iloc[-1] if not result['historical_data'].empty else None
+                    if curr_price:
+                        if not is_tw:
+                            # US Stock Fallback
+                            if not fin_summary.get('marketCap'):
+                                df_us_cap = pd.read_sql(f"SELECT amount FROM financial_raw_us WHERE symbol='{valuation_symbol}' AND item_name IN ('WeightedAverageNumberOfSharesOutstandingBasic', 'CommonStockSharesOutstanding', 'EntityPublicFloat') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
+                                if not df_us_cap.empty:
+                                    shares = float(df_us_cap.iloc[0]['amount'])
+                                    fin_summary['marketCap'] = self.format_large_number(curr_price * shares, currency)
+                        else:
+                            # TW Stock Robust Calculation: Market Cap = Price * (Capital / 10)
+                            # Par value in Taiwan is 10 TWD
+                            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+                            df_cap = pd.read_sql(f"SELECT amount FROM financial_raw_tw WHERE symbol='{clean_sym}' AND item_name IN ('普通股股本', '股本') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
+                            if not df_cap.empty:
+                                capital_val = float(df_cap.iloc[0]['amount']) * 1000 # Usually in thousands
+                                shares_outstanding = capital_val / 10
+                                calc_mc = curr_price * shares_outstanding
+                                
+                                # If difference with yfinance > 20%, or yfinance is missing, use calculated value
+                                yf_mc_val = info.get('marketCap', 0)
+                                if not yf_mc_val or abs(calc_mc - yf_mc_val) / (yf_mc_val + 1) > 0.2:
+                                    fin_summary['marketCap'] = self.format_large_number(calc_mc, currency)
+                                    logger.info(f"Replaced yfinance marketCap with calculated value for {valuation_symbol}: {calc_mc}")
+                except Exception as e_mc:
+                    logger.warning(f"Robust Market Cap calculation failed: {e_mc}")
 
                 # 3. Fundamental Data (PE, EPS, PB, ROE, Margins)
                 # Use Local DB to calculate metrics instead of yfinance API (avoids 429 block)
@@ -430,9 +447,24 @@ class StockService:
                         # TW Stock calculation from financial_raw_tw
                         clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
                         df_fin = pd.read_sql(f"SELECT * FROM financial_raw_tw WHERE symbol='{clean_sym}' ORDER BY year DESC, quarter DESC LIMIT 3000", self.sql_op.engine)
-                        
                         if df_fin.empty:
-                            fin_summary['data_status'] = "Initial (0 Quarters)"
+                            fin_summary['data_status'] = "Initial (0 Quarters) - Auto-Refresh Triggered"
+                            # 自癒機制：若資料缺失，觸發背景抓取任務
+                            try:
+                                from .scraper_tw_pw import scrape_tw_financials_playwright
+                                import threading
+                                # 抓取最近 2 年 (8 個季度)
+                                def bg_sync():
+                                    for y in [2024, 2023]:
+                                        for q in range(4, 0, -1):
+                                            try:
+                                                df_sync = scrape_tw_financials_playwright(clean_sym, y, q)
+                                                if not df_sync.empty:
+                                                    self.sql_op.bulk_upsert_raw_financials(df_sync, market='tw')
+                                            except: continue
+                                threading.Thread(target=bg_sync, daemon=True).start()
+                            except Exception as e_bg:
+                                logger.warning(f"Failed to trigger self-healing for {clean_sym}: {e_bg}")
                         else:
                             df_pivot = df_fin.pivot_table(index=['year', 'quarter'], columns='item_name', values='amount', aggfunc='first').reset_index()
                             df_pivot = df_pivot.sort_values(['year', 'quarter'], ascending=[False, False])
