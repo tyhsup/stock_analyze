@@ -12,10 +12,11 @@ def scrape_tw_financials_playwright(symbol, year, quarter):
     """使用 Playwright 模擬瀏覽器抓取 MOPS 財報 (mopsov 網域)"""
     roc_year = year - 1911
     # 使用較穩定的 mopsov 網域
+    # 新版 SPA 介面網址
     urls = {
-        'IS': "https://mopsov.twse.com.tw/mops/web/t164sb04", # 損益
-        'BS': "https://mopsov.twse.com.tw/mops/web/t164sb03", # 資產
-        'CF': "https://mopsov.twse.com.tw/mops/web/t164sb05"  # 現流
+        'IS': "https://mops.twse.com.tw/mops/#/web/t164sb04", # 損益
+        'BS': "https://mops.twse.com.tw/mops/#/web/t164sb03", # 資產
+        'CF': "https://mops.twse.com.tw/mops/#/web/t164sb05"  # 現流
     }
     
     all_items = []
@@ -29,38 +30,72 @@ def scrape_tw_financials_playwright(symbol, year, quarter):
         for stmt_type, url in urls.items():
             print(f"Scraping {stmt_type} for {symbol} {year}Q{quarter}...")
             try:
-                page.goto(url, wait_until="networkidle", timeout=30000)
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 
-                # 1. 處理「公司代號」
-                page.fill('input#co_id', symbol)
+                # 1. 偵測介面版本並處理「公司代號」
+                # 使用聯集選擇器等待新版 (#companyId) 或舊版 (#co_id) 出現
+                try:
+                    page.wait_for_selector('input#companyId, input#co_id', timeout=20000)
+                except:
+                    # 如果都等不到，可能是網頁載入極慢或路徑錯誤
+                    print(f"DEBUG: Timeout waiting for company input on {stmt_type}")
+                    continue
+
+                # 判定實際出現的 ID
+                is_new_mops = page.locator('input#companyId').count() > 0
+                target_selector = 'input#companyId' if is_new_mops else 'input#co_id'
+                page.fill(target_selector, symbol)
                 
-                # 2. 處理「年度/季別」顯示問題：切換 'isnew' 下拉選單為「歷史資料」
-                # 根據 Subagent回報，必須切換才能看到年度輸入框
-                if page.locator('select#isnew').count() > 0:
-                    page.select_option('select#isnew', label="歷史資料")
-                    smart_delay(1, 2)
+                # 2. 處理「年度/季別」：新版 SPA 需要點擊「自訂」標籤
+                is_new_mops = 'companyId' in target_selector
+                if is_new_mops:
+                    # 點擊「自訂資料」標籤以顯示年份輸入框
+                    # 使用更寬鬆的文本選擇器，因為可能是 button, label 或 div
+                    custom_btn = page.locator(':text-is("自訂")')
+                    if custom_btn.count() > 0:
+                        custom_btn.first.click()
+                        # 重要：新版點擊後會出現「載入中...」遮罩，必須等待它消失
+                        try:
+                            page.locator('div:has-text("載入中...")').wait_for(state="hidden", timeout=15000)
+                        except:
+                            # 如果沒出現或消失極快，就繼續
+                            pass
+                else:
+                    # 舊版處理 'isnew' 下拉選單
+                    if page.locator('select#isnew').count() > 0:
+                        page.select_option('select#isnew', label="歷史資料")
+                
+                smart_delay(0.5, 1)
                 
                 # 3. 填寫年度與季別
+                page.wait_for_selector('input#year', timeout=5000)
                 page.fill('input#year', str(roc_year))
                 page.select_option('select#season', label=str(quarter))
                 
                 # 4. 點擊「查詢」
-                # 使用 Subagent 觀察到的按鈕點擊方式或鍵盤 Enter
-                page.click('input[type="button"][value=" 查詢 "]')
+                if is_new_mops:
+                    page.click('button#searchBtn')
+                else:
+                    page.click('input[type="button"][value=" 查詢 "]')
                 
-                # 5. 等待結果表格出現
+                # 5. 等待結果表格出現 (新版可能需要多一點時間渲染)
                 try:
-                    # MOPS 結果通常在 table.hasBorder
+                    # MOPS 結果通常在 table.hasBorder 或特定結果區塊
                     page.wait_for_selector('table.hasBorder', timeout=20000)
                 except:
-                    print(f"DEBUG: No table found for {stmt_type}. Possible no data or block.")
+                    # 有時候沒資料會彈窗或顯示「無資料」
                     continue
                 
-                # 6. 解析 HTML - 使用 evaluate 確保字元正確性 (JavaScript Unicode)
+                # 6. 解析 HTML - 優化 JS 解析以適應新版結構
                 data_list = page.evaluate("""
                     () => {
-                        const rows = Array.from(document.querySelectorAll('table.hasBorder tr'));
-                        return rows.map(row => {
+                        // 新版 SPA 可能在不同容器內，但 table.hasBorder 屬性通常保留
+                        const tables = Array.from(document.querySelectorAll('table.hasBorder'));
+                        // 找尋資料最多的那個表格
+                        const mainTable = tables.sort((a, b) => b.rows.length - a.rows.length)[0];
+                        if (!mainTable) return [];
+                        
+                        return Array.from(mainTable.rows).map(row => {
                             const cells = Array.from(row.querySelectorAll('td'));
                             return cells.map(c => c.innerText.trim());
                         }).filter(r => r.length >= 2);
@@ -121,25 +156,52 @@ def scrape_tw_financials_multi(symbol, periods: list):
             for stmt_type, url in urls.items():
                 logger.info(f"Scraping {symbol} {year}Q{quarter} {stmt_type}...")
                 try:
-                    page.goto(url, wait_until="networkidle", timeout=30000)
-                    page.fill('input#co_id', symbol)
-                    if page.locator('select#isnew').count() > 0:
-                        page.select_option('select#isnew', label="歷史資料")
-                        smart_delay(0.5, 1)
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     
+                    # 偵測版本並填寫公司代號
+                    try:
+                        page.wait_for_selector('input#companyId, input#co_id', timeout=20000)
+                    except:
+                        continue
+
+                    is_new_mops = page.locator('input#companyId').count() > 0
+                    target_selector = 'input#companyId' if is_new_mops else 'input#co_id'
+                    page.fill(target_selector, symbol)
+                    
+                    is_new_mops = 'companyId' in target_selector
+                    if is_new_mops:
+                        custom_btn = page.locator(':text-is("自訂")')
+                        if custom_btn.count() > 0:
+                            custom_btn.first.click()
+                            try:
+                                page.locator('div:has-text("載入中...")').wait_for(state="hidden", timeout=15000)
+                            except:
+                                pass
+                    else:
+                        if page.locator('select#isnew').count() > 0:
+                            page.select_option('select#isnew', label="歷史資料")
+                    
+                    smart_delay(0.5, 1)
+                    page.wait_for_selector('input#year', timeout=10000)
                     page.fill('input#year', str(roc_year))
                     page.select_option('select#season', label=str(quarter))
-                    page.click('input[type="button"][value=" 查詢 "]')
+                    
+                    if is_new_mops:
+                        page.click('button#searchBtn')
+                    else:
+                        page.click('input[type="button"][value=" 查詢 "]')
                     
                     try:
-                        page.wait_for_selector('table.hasBorder', timeout=10000)
+                        page.wait_for_selector('table.hasBorder', timeout=15000)
                     except:
                         continue
                     
                     data_list = page.evaluate("""
                         () => {
-                            const rows = Array.from(document.querySelectorAll('table.hasBorder tr'));
-                            return rows.map(row => {
+                            const tables = Array.from(document.querySelectorAll('table.hasBorder'));
+                            const mainTable = tables.sort((a, b) => b.rows.length - a.rows.length)[0];
+                            if (!mainTable) return [];
+                            return Array.from(mainTable.rows).map(row => {
                                 const cells = Array.from(row.querySelectorAll('td'));
                                 return cells.map(c => c.innerText.trim());
                             }).filter(r => r.length >= 2);
