@@ -341,8 +341,8 @@ class IntegratedStockPredModel:
         
         last_close = full_df['Close'].iloc[-1]
         avg_pred = np.mean(pred_real)
-        # 簡單趨勢轉換，正負乖離 * 5 當作偏移機率
-        trend_prob = 0.5 + ((avg_pred - last_close) / last_close) * 5.0
+        # 安全優化：加入 epsilon (1e-9) 防止除以零，並使用 np.clip 限制機率區間
+        trend_prob = 0.5 + ((avg_pred - last_close) / (last_close + 1e-9)) * 5.0
         trend_prob = np.clip(trend_prob, 0.1, 0.9)
         
         return {

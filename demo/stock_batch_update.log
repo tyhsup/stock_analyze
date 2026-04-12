@@ -54,3 +54,51 @@
 2026-04-12 09:16:43,006 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
 2026-04-12 09:23:12,608 [INFO] [CnyesScraper] Fetching news for 2330 (tw): https://www.cnyes.com/search/news?keyword=2330, limit: 1000
 2026-04-12 09:26:41,835 [INFO] 開始抓取 663 篇新聞的詳細內容...
+2026-04-12 11:28:38,055 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\tf_keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+2026-04-12 11:28:38,799 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\ckiptagger\api.py:11: The name tf.logging.set_verbosity is deprecated. Please use tf.compat.v1.logging.set_verbosity instead.
+
+2026-04-12 11:28:38,804 [INFO] 正在從 E:/Infinity/webbug/final_model_stock_news_BERT_1k 載入 BERT 模型 (設備: cpu)...
+2026-04-12 11:28:39,105 [INFO] 正在載入 CKIP Tagger 模型...
+2026-04-12 11:28:46,865 [INFO] NLP 服務初始化完成。
+2026-04-12 11:30:33,269 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Macintosh; Intel ...
+2026-04-12 11:31:10,907 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:10,978 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:11,039 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:18,192 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 11:31:25,383 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:25,434 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:25,511 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:31:25,583 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:16,886 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:16,927 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:16,982 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:24,120 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 11:32:31,532 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:31,581 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:31,633 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:32:31,683 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:11,450 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:11,498 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:11,543 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:18,820 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 11:34:25,485 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:25,530 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:25,575 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:34:25,618 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:33,614 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:33,666 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:33,717 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:40,928 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 11:38:48,253 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:48,303 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:48,351 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:38:48,403 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:00,101 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:00,153 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:00,208 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:07,353 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-12 11:40:14,805 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:14,878 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:14,956 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-12 11:40:15,030 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
