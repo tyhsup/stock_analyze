@@ -118,7 +118,13 @@ class IntegratedStockPredModel:
         fund_feat = FundamentalFeatureProcessor.get_fundamental_features(clean_sym, date_index_df)
         
         full_df = pd.concat([price_feat, senti_feat, flow_feat, fund_feat], axis=1)
-        full_df.dropna(inplace=True)
+        
+        # v4.0 Robustness Fix: 不要用 dropna，否則只要新聞或基本面漏一天，整天數據都會消失
+        # 除非股價(技術指標)本身就是空的，否則我們用 0 填充
+        if 'Close' in full_df.columns:
+            full_df = full_df[full_df['Close'].notnull()]
+        full_df.fillna(0, inplace=True)
+        
         return full_df
 
     def build_all_nodes_datasets(self):

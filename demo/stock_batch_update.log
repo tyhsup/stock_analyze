@@ -654,3 +654,70 @@ Call log:
 2026-04-13 00:30:27,337 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
 2026-04-13 00:30:27,393 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
 2026-04-13 00:30:27,453 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:34:34,629 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\tf_keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+2026-04-19 09:34:35,732 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\ckiptagger\api.py:11: The name tf.logging.set_verbosity is deprecated. Please use tf.compat.v1.logging.set_verbosity instead.
+
+2026-04-19 09:34:35,743 [INFO] 正在從 E:/Infinity/webbug/final_model_stock_news_BERT_1k 載入 BERT 模型 (設備: cpu)...
+2026-04-19 09:34:36,454 [INFO] 正在載入 CKIP Tagger 模型...
+2026-04-19 09:35:07,493 [INFO] NLP 服務初始化完成。
+2026-04-19 09:35:11,638 [WARNING] Not Found: /favicon.ico
+2026-04-19 09:35:26,931 [WARNING] Not Found: /favicon.ico
+2026-04-19 09:35:43,034 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Windows NT 10.0; ...
+2026-04-19 09:35:56,366 [INFO] [Freshness] 2330.TW data needs refresh: OHLCV stale (last: 2026-04-10), Investor stale (last: 2026-04-10). Triggering background refresh.
+2026-04-19 09:35:56,397 [INFO] AI Prediction Cache Miss for 2330.TW. Running model inference...
+2026-04-19 09:36:35,948 [INFO] 單一更新 2330.TW: 偵測到最後日期 2026-04-10，從 2026-04-11 開始抓取
+2026-04-19 09:36:39,693 [INFO] 成功更新 stock_cost
+2026-04-19 09:36:39,693 [INFO] 單一更新 2330.TW 成功上傳 5 筆資料
+2026-04-19 09:36:40,459 [WARNING] The msedgedriver version (146.0.3856.62) detected in PATH at E:\webbug\msedgedriver.exe might not be compatible with the detected MicrosoftEdge version (147.0.3912.72); currently, msedgedriver 147.0.3912.72 is recommended for MicrosoftEdge 147.*, so it is advised to delete the driver in PATH and retry
+2026-04-19 09:36:47,934 [INFO] 正在展開 2026-04-13 並偵測渲染...
+2026-04-19 09:36:58,101 [INFO] 三大法人批量寫入完成：stock_investor (共 16360 筆)
+2026-04-19 09:36:58,161 [INFO] ✅ 2026/04/17 成功寫入 16360 筆。
+2026-04-19 09:37:02,168 [INFO] 正在展開 2026-04-14 並偵測渲染...
+2026-04-19 09:37:17,668 [INFO] 2026-04-14 證交所無資料，跳過。
+2026-04-19 09:37:18,455 [INFO] 正在展開 2026-04-15 並偵測渲染...
+2026-04-19 09:37:30,782 [INFO] 三大法人批量寫入完成：stock_investor (共 16648 筆)
+2026-04-19 09:37:30,828 [INFO] ✅ 2026/04/15 成功寫入 16648 筆。
+2026-04-19 09:37:35,091 [INFO] 正在展開 2026-04-16 並偵測渲染...
+2026-04-19 09:37:48,856 [INFO] 三大法人批量寫入完成：stock_investor (共 16219 筆)
+2026-04-19 09:37:48,971 [INFO] ✅ 2026/04/16 成功寫入 16219 筆。
+2026-04-19 09:37:52,441 [INFO] 正在展開 2026-04-17 並偵測渲染...
+2026-04-19 09:38:08,244 [INFO] 三大法人批量寫入完成：stock_investor (共 16360 筆)
+2026-04-19 09:38:08,301 [INFO] ✅ 2026/04/17 成功寫入 16360 筆。
+2026-04-19 09:38:13,484 [INFO] 所有程序執行完畢。
+2026-04-19 09:43:00,541 [ERROR] AI Model Inference failed for 2330.TW: Could not interpret optimizer identifier: <tf_keras.src.optimizers.adam.Adam object at 0x000002158945B590>
+2026-04-19 09:43:12,491 [INFO] Verified MarketCap for 2330.TW: 51865049000000.0 (Shares: 25932524500.0)
+2026-04-19 09:43:12,635 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:12,710 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:12,779 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:19,260 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-19 09:43:25,282 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:25,337 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:25,394 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 09:43:25,450 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 10:45:27,848 [INFO] E:\Infinity\mydjango\demo\stock_Django\dataset_builders.py changed, reloading.
+2026-04-19 10:45:45,103 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\tf_keras\src\losses.py:2976: The name tf.losses.sparse_softmax_cross_entropy is deprecated. Please use tf.compat.v1.losses.sparse_softmax_cross_entropy instead.
+
+2026-04-19 10:45:46,188 [WARNING] From C:\Users\許廷宇\AppData\Roaming\Python\Python311\site-packages\ckiptagger\api.py:11: The name tf.logging.set_verbosity is deprecated. Please use tf.compat.v1.logging.set_verbosity instead.
+
+2026-04-19 10:45:46,200 [INFO] 正在從 E:/Infinity/webbug/final_model_stock_news_BERT_1k 載入 BERT 模型 (設備: cpu)...
+2026-04-19 10:45:46,370 [INFO] 正在載入 CKIP Tagger 模型...
+2026-04-19 10:46:03,967 [INFO] NLP 服務初始化完成。
+2026-04-19 10:52:33,635 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Macintosh; Intel ...
+2026-04-19 10:53:02,408 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Macintosh; Intel ...
+2026-04-19 10:53:02,422 [INFO] AI Prediction Cache Miss for 2330.TW. Running model inference...
+2026-04-19 11:01:11,526 [WARNING] From C:\Users\許廷宇\AppData\Local\Programs\Python\Python311\Lib\site-packages\keras\src\backend\tensorflow\core.py:232: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+2026-04-19 11:01:11,703 [INFO] Training Incremental Model (v4.0) for 2330.TW (Target: 2 epochs)...
+2026-04-19 11:01:38,558 [INFO] Saved optimized weights to E:\Infinity\mydjango\demo\stock_Django\stock_model\stock_model_weights_2330.weights.h5
+2026-04-19 11:47:37,245 [WARNING] Not Found: /favicon.ico
+2026-04-19 11:47:50,163 [INFO] 已輪替 User-Agent: Mozilla/5.0 (Windows NT 10.0; ...
+2026-04-19 11:48:31,918 [INFO] Verified MarketCap for 2330.TW: 52643024735000.0 (Shares: 25932524500.0)
+2026-04-19 11:48:32,008 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:32,065 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:32,119 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:38,435 [INFO] Fetching WACC market data for 2330 from local DB...
+2026-04-19 11:48:44,758 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:44,814 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:44,871 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330
+2026-04-19 11:48:44,919 [INFO] Successfully loaded 4044 financial items from local MySQL for 2330

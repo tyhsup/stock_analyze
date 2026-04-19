@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
+import os
 from sqlalchemy import text
 import torch
 from transformers import AutoTokenizer, AutoModel
@@ -75,7 +76,7 @@ class SentimentProbabilityModel:
 
     @classmethod
     def get_sentiment_features(cls, stock_number, date_index_df):
-        """取得新聞語義特徵 (具備資料庫快取機制)"""
+        """取得新聞語詞特徵 (具備資料庫快取機制)"""
         embedding_dim = 768
         embedding_cols = [f'finbert_emb_{i}' for i in range(embedding_dim)]
         
@@ -86,10 +87,11 @@ class SentimentProbabilityModel:
             return result_df
             
         sql_op = OP_Fun()
+        clean_num = str(stock_number).upper().replace('.TW', '').replace('.TWO', '')
         start_date = date_index_df.index.min().strftime('%Y-%m-%d')
         end_date = date_index_df.index.max().strftime('%Y-%m-%d')
         
-        # 1. 嘗試從快取讀取
+        # 1. 嘗試從快取讀取 (批次)
         cached_embeddings = sql_op.get_sentiment_embeddings(stock_number, start_date, end_date)
         
         # 2. 判斷缺失日期
@@ -104,38 +106,45 @@ class SentimentProbabilityModel:
         if not missing_dates:
             return result_df[embedding_cols]
             
-        # 3. 僅針對缺失日期進行推論
-        logger.info(f"快取未命中，正在計算 {stock_number} 共 {len(missing_dates)} 天的語義向量...")
+        # 3. 僅針對缺失日期讀取原始文本並進行推論
+        logger.info(f"AI Cache Miss for {stock_number}. Parsing raw news for {len(missing_dates)} days...")
         
-        # 建立僅包含缺失日期的臨時 index df 供爬蟲使用
-        # 注意: 這裡我們使用原本的邏輯去抓新聞文本
-        sentiment_df = StockUtils.Sentiment_indicators(stock_number, pd.DataFrame(index=missing_dates))
+        # 嘗試讀取包含原始文本的 Excel 檔案
+        webbug_dir = os.getenv('WEBBUG_DIR', 'E:/Infinity/webbug/')
+        news_file = os.path.join(webbug_dir, f'{clean_num}_news.xlsx')
         
-        if sentiment_df.empty:
+        if not os.path.exists(news_file):
+            logger.warning(f"News text file not found: {news_file}. Using 0.0 embeddings fallback.")
             return result_df[embedding_cols]
-
-        text_col = None
-        for col in ['Content', 'Title', 'text', '新聞內容', '新聞標題']:
-            if col in sentiment_df.columns:
-                text_col = col
-                break
-
-        if text_col:
-            sentiment_df['text'] = sentiment_df[text_col].fillna("").astype(str)
-            sentiment_df = sentiment_df[sentiment_df['text'].str.strip() != ""]
             
-            if not sentiment_df.empty:
-                embeddings = cls._get_embeddings_batch(sentiment_df['text'].tolist())
-                sentiment_df['embedding'] = list(embeddings)
+        try:
+            # 讀取 Excel 並解析日期與標題
+            df_news = pd.read_excel(news_file)
+            if df_news.empty:
+                return result_df[embedding_cols]
                 
-                # 以 Date 聚合 (確保它是 string 格式以便與快取邏輯一致)
-                if 'Date' in sentiment_df.columns:
-                    sentiment_df['Date_str'] = pd.to_datetime(sentiment_df['Date']).dt.strftime('%Y-%m-%d')
-                else:
-                    sentiment_df['Date_str'] = pd.to_datetime(sentiment_df.index).dt.strftime('%Y-%m-%d')
+            # 假設欄位順序: Index 0=標題, Index 1=發布時間
+            df_news['Parsed_Date'] = pd.to_datetime(df_news.iloc[:, 1], errors='coerce').dt.strftime('%Y-%m-%d')
+            df_news['Parsed_Text'] = df_news.iloc[:, 0].fillna("").astype(str)
+            
+            # 過濾僅保留缺失日期的數據
+            missing_date_strs = [d.strftime('%Y-%m-%d') for d in missing_dates]
+            df_missing = df_news[df_news['Parsed_Date'].isin(missing_date_strs)]
+            
+            if df_missing.empty:
+                return result_df[embedding_cols]
+            
+            # 進行批次推論
+            texts = df_missing['Parsed_Text'].tolist()
+            embeddings = cls._get_embeddings_batch(texts)
+            
+            if len(embeddings) > 0:
+                df_missing = df_missing.copy()
+                df_missing['embedding'] = list(embeddings)
                 
-                daily_groups = sentiment_df.groupby('Date_str')['embedding'].apply(
-                    lambda x: np.mean(np.stack(x.values), axis=0)
+                # 按日聚合 取平均
+                daily_groups = df_missing.groupby('Parsed_Date')['embedding'].apply(
+                    lambda x: np.mean(np.stack(x.values), axis=0) if len(x) > 0 else np.zeros(embedding_dim)
                 )
                 
                 # 4. 寫回快取並更新結果
@@ -147,7 +156,10 @@ class SentimentProbabilityModel:
                         result_df.loc[d_ts, embedding_cols] = emb
                 
                 sql_op.save_sentiment_embeddings(stock_number, new_cache_data)
-        
+                
+        except Exception as e:
+            logger.error(f"Failed to process raw news text for {stock_number}: {e}")
+            
         return result_df[embedding_cols]
 
 class InstitutionalFlowModel:
@@ -214,7 +226,7 @@ class FundamentalFeatureProcessor:
         
         query = f"SELECT year, quarter, item_name, amount FROM {table_name} WHERE symbol = '{clean_num}'"
         try:
-            fin_df = pd.read_sql(OP_Fun().engine, query)
+            fin_df = pd.read_sql(sql_op.engine, query)
         except Exception:
             fin_df = pd.DataFrame()
             
