@@ -14,6 +14,7 @@ try:
         FundamentalFeatureProcessor
     )
     from stock_Django.model_architectures import StockModelArchitectures
+    from stock_Django.graph_builders import GraphBuilder
 except ImportError:
     try:
         from .stock_utils import StockUtils
@@ -24,6 +25,8 @@ except ImportError:
             FundamentalFeatureProcessor
         )
         from .model_architectures import StockModelArchitectures
+        from .graph_builders import GraphBuilder
+
     except (ImportError, ValueError):
         from stock_utils import StockUtils
         from dataset_builders import (
@@ -33,6 +36,7 @@ except ImportError:
             FundamentalFeatureProcessor
         )
         from model_architectures import StockModelArchitectures
+        from graph_builders import GraphBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ class IntegratedStockPredModel:
     def __init__(self, stock_number):
         self.stock_number = str(stock_number)
         self.clean_number = self.stock_number.replace('.TW', '').replace('.TWO', '')
+        self.market = 'tw' if '.TW' in self.stock_number or '.TWO' in self.stock_number else 'us'
         
         # Load configuration
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,18 +66,30 @@ class IntegratedStockPredModel:
         self.lstm_features = 0
         self.dense_features = 0
         self.model = None
-        self.max_vals = None
+        self.max_vals_dict = {}
         self.ts_idx = None
         self.ext_idx = None
+        
+        self.neighbor_count = self.config.get('neighbor_count', 5)
+        self.graph_builder = GraphBuilder()
+        
+        # Get neighbors
+        self.neighbors = self.graph_builder.get_market_cap_neighbors(self.stock_number, self.market, self.neighbor_count)
+        self.all_nodes = [self.stock_number] + self.neighbors
+        self.num_nodes = len(self.all_nodes)
+        
+        # Build Adjacency Matrix
+        self.adj_matrix = self.graph_builder.build_adjacency_matrix(self.all_nodes)
 
-    def build_dataset(self):
-        """整合 OHLCV、情緒、籌碼、基本面，建構多模態 Dataframe"""
-        cost_data, Date_data = StockUtils.load_data_c('stock_cost', self.stock_number)
+    def build_dataset_for_symbol(self, symbol):
+        """為單一隻股票建立 Dataframe"""
+        clean_sym = symbol.replace('.TW', '').replace('.TWO', '')
+        cost_data, Date_data = StockUtils.load_data_c('stock_cost', symbol)
         if cost_data.empty:
-            cost_data, Date_data = StockUtils.load_data_c('stock_cost_us', self.stock_number)
+            cost_data, Date_data = StockUtils.load_data_c('stock_cost_us', symbol)
             
         if cost_data.empty:
-            logger.error(f"Cannot find price data for {self.stock_number} in DB.")
+            logger.error(f"Cannot find price data for {symbol} in DB.")
             return None
 
         cost_data.index = pd.to_datetime(Date_data['Date']).dt.normalize()
@@ -80,42 +97,105 @@ class IntegratedStockPredModel:
         price_feat = PriceLSTMFeatureExtractor.extract_features(cost_data)
         date_index_df = pd.DataFrame(index=cost_data.index)
         
-        senti_feat = SentimentProbabilityModel.get_sentiment_features(self.clean_number, date_index_df)
-        flow_feat = InstitutionalFlowModel.get_flow_features(self.clean_number, date_index_df)
-        fund_feat = FundamentalFeatureProcessor.get_fundamental_features(self.clean_number, date_index_df)
+        senti_feat = SentimentProbabilityModel.get_sentiment_features(clean_sym, date_index_df)
+        flow_feat = InstitutionalFlowModel.get_flow_features(clean_sym, date_index_df)
+        fund_feat = FundamentalFeatureProcessor.get_fundamental_features(clean_sym, date_index_df)
         
         full_df = pd.concat([price_feat, senti_feat, flow_feat, fund_feat], axis=1)
         full_df.dropna(inplace=True)
         return full_df
 
-    def prepare_training_data(self, full_df):
-        """切割 Sliding Window 特徵，準備 Keras 輸入格式"""
-        df_vals = full_df.to_numpy()
-        cols = full_df.columns
+    def build_all_nodes_datasets(self):
+        """
+        取得 [Target, Neighbor 1, Neighbor 2...] 各自的 DataFrame
+        回傳: dict {symbol: DataFrame}
+        並且確保對齊相同的日期 Index
+        """
+        dfs = {}
+        common_index = None
+
+        # Build target first
+        target_df = self.build_dataset_for_symbol(self.stock_number)
+        if target_df is None or target_df.empty: return None
+        
+        dfs[self.stock_number] = target_df
+        common_index = target_df.index
+        
+        # Build neighbors
+        for n in self.neighbors:
+            df_n = self.build_dataset_for_symbol(n)
+            if df_n is not None and not df_n.empty:
+                # 確保共同時間窗 (取最晚重疊的開始點與最早的結束點) 
+                common_index = common_index.intersection(df_n.index)
+                dfs[n] = df_n
+        
+        if len(common_index) == 0: return None
+        
+        # Align all DataFrames
+        for k in dfs.keys():
+            dfs[k] = dfs[k].loc[common_index]
+            
+            # Record max values for normalization
+            if k not in self.max_vals_dict:
+                self.max_vals_dict[k] = dfs[k].max().replace(0, 1)
+
+        return dfs
+
+    def prepare_training_data(self, dfs_dict):
+        """為圖網路構建 (Batch, Nodes, Time, Features) Tensor"""
+        target_df = dfs_dict[self.stock_number]
+        cols = target_df.columns
         
         ext_cols = [c for c in cols if 'finbert_emb_' in c] + ['Net_Buy_Volume', 'EPS_Quarterly', 'Revenue_Growth']
-        ext_idx = [full_df.columns.get_loc(c) for c in ext_cols if c in full_df.columns]
+        ext_idx = [target_df.columns.get_loc(c) for c in ext_cols if c in target_df.columns]
         ts_idx = [i for i in range(len(cols)) if i not in ext_idx]
         
-        close_col_idx = full_df.columns.get_loc('Close')
+        close_col_idx = target_df.columns.get_loc('Close')
         
-        X_ts, X_ext, Y = [], [], []
-        if len(df_vals) <= self.time_steps + self.predict_steps:
+        X_ts, X_ext, Y, A = [], [], [], []
+        num_samples = len(target_df)
+        
+        if num_samples <= self.time_steps + self.predict_steps:
             return None
             
-        for i in range(len(df_vals) - self.time_steps - self.predict_steps + 1):
-            window = df_vals[i : i + self.time_steps]
-            target = df_vals[i + self.time_steps : i + self.time_steps + self.predict_steps, close_col_idx]
-            X_ts.append(window[:, ts_idx])
-            X_ext.append(window[-1, ext_idx])
+        # 轉換為 NumPy array 字典，避免 pandas iloc 效能低落
+        norm_arrays = {}
+        for k, v_df in dfs_dict.items():
+             norm_arrays[k] = (v_df / self.max_vals_dict[k]).to_numpy()
+             
+        for i in range(num_samples - self.time_steps - self.predict_steps + 1):
+            batch_ts_nodes = []
+            batch_ext_nodes = []
+            
+            # 每一個 timestamp，走訪圖結構對應的股票
+            # 這裡依賴順序：[Target, Neighbor 1, Neighbor 2...]
+            for node_name in self.all_nodes:
+                if node_name in norm_arrays:
+                    data = norm_arrays[node_name]
+                else: 
+                    # Drop-in padding if neighbor somehow missing but was in logic
+                    data = np.zeros((num_samples, len(cols)))
+                    
+                window = data[i : i + self.time_steps]
+                batch_ts_nodes.append(window[:, ts_idx])
+                batch_ext_nodes.append(window[-1, ext_idx])
+                
+                # 只有目標股票才拿 Y (Index 0 就是 Target)
+                if node_name == self.stock_number:
+                     target = data[i + self.time_steps : i + self.time_steps + self.predict_steps, close_col_idx]
+                     
+            X_ts.append(batch_ts_nodes)
+            X_ext.append(batch_ext_nodes)
             Y.append(target)
+            A.append(self.adj_matrix)
             
         self.lstm_features = len(ts_idx)
         self.dense_features = len(ext_idx)
         self.ts_idx = ts_idx
         self.ext_idx = ext_idx
         
-        return np.array(X_ts), np.array(X_ext), np.array(Y)
+        # X_ts: (Batch, Nodes, Time, Feat), X_ext: (Batch, Nodes, Feat)
+        return np.array(X_ts), np.array(X_ext), np.array(A), np.array(Y)
 
     def train_incremental(self, epochs=None, batch_size=None):
         """增量訓練邏輯 (Incremental Learning)"""
@@ -124,9 +204,12 @@ class IntegratedStockPredModel:
         if batch_size is None:
             batch_size = self.config.get('batch_size', 32)
             
-        full_df = self.build_dataset()
-        if full_df is None or len(full_df) < self.time_steps + self.predict_steps: 
+        dfs_dict = self.build_all_nodes_datasets()
+        if dfs_dict is None or self.stock_number not in dfs_dict: 
             return False
+            
+        if len(dfs_dict[self.stock_number]) < self.time_steps + self.predict_steps:
+             return False
         
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
@@ -136,26 +219,26 @@ class IntegratedStockPredModel:
             )
         ]
         
-        self.max_vals = full_df.max().replace(0, 1)
-        norm_df = full_df / self.max_vals
-        
-        prepared = self.prepare_training_data(norm_df)
+        prepared = self.prepare_training_data(dfs_dict)
         if not prepared: return False
-        X_ts, X_ext, Y = prepared
+        X_ts, X_ext, A, Y = prepared
         
         if self.model is None:
             self.model = StockModelArchitectures.build_multi_input_model(self.lstm_features, self.dense_features, self.config)
             weights_h5 = self.weights_path.replace('.weights.h5', '.h5')
-            if os.path.exists(self.weights_path):
-                self.model.load_weights(self.weights_path)
-            elif os.path.exists(weights_h5):
-                self.model.load_weights(weights_h5)
+            try:
+                if os.path.exists(self.weights_path):
+                    self.model.load_weights(self.weights_path)
+                elif os.path.exists(weights_h5):
+                    self.model.load_weights(weights_h5)
+            except (ValueError, Exception) as e:
+                logger.warning(f"Weight loading failed (architecture mismatch from v2->v3?): {e}. Training from scratch.")
                     
         logger.info(f"Training Incremental Model for {self.stock_number} (Target: {epochs} epochs)...")
         
         val_split = self.config.get('val_split', 0.1)
         self.model.fit(
-            [X_ts, X_ext], Y, 
+            [X_ts, X_ext, A], Y, 
             epochs=epochs, 
             batch_size=batch_size, 
             verbose=0, 
@@ -169,8 +252,10 @@ class IntegratedStockPredModel:
 
     def predict_5_days(self):
         """推論未來 5 天股價，並給出看漲機率"""
-        full_df = self.build_dataset()
-        if full_df is None or len(full_df) < self.time_steps: return None
+        dfs_dict = self.build_all_nodes_datasets()
+        if dfs_dict is None or self.stock_number not in dfs_dict: return None
+        target_df = dfs_dict[self.stock_number]
+        if len(target_df) < self.time_steps: return None
         
         weights_h5 = self.weights_path.replace('.weights.h5', '.h5')
         if not os.path.exists(self.weights_path) and not os.path.exists(weights_h5):
@@ -179,29 +264,41 @@ class IntegratedStockPredModel:
             self.train_incremental(epochs=self.config.get('finetune_epochs', 2))
             
         if not hasattr(self, 'ts_idx') or self.ts_idx is None:
-            _ = self.prepare_training_data(full_df)
+            _ = self.prepare_training_data(dfs_dict)
             
-        if not hasattr(self, 'max_vals') or self.max_vals is None:
-             self.max_vals = full_df.max().replace(0, 1)
-             
-        recent_window = full_df.iloc[-self.time_steps:].copy()
-        norm_window = (recent_window / self.max_vals).to_numpy()
+        x_ts_nodes = []
+        x_ext_nodes = []
         
-        x_ts = np.array([norm_window[:, self.ts_idx]])
-        x_ext = np.array([norm_window[-1, self.ext_idx]])
+        for node_name in self.all_nodes:
+             if node_name in dfs_dict:
+                 data = dfs_dict[node_name].iloc[-self.time_steps:].copy()
+                 norm_window = (data / self.max_vals_dict[node_name]).to_numpy()
+             else:
+                 norm_window = np.zeros((self.time_steps, len(target_df.columns)))
+                 
+             x_ts_nodes.append(norm_window[:, self.ts_idx])
+             x_ext_nodes.append(norm_window[-1, self.ext_idx])
+             
+        # Add Batch dimension
+        x_ts = np.array([x_ts_nodes])
+        x_ext = np.array([x_ext_nodes])
+        a_mat = np.array([self.adj_matrix])
         
         if self.model is None:
              self.model = StockModelArchitectures.build_multi_input_model(self.lstm_features, self.dense_features, self.config)
-             if os.path.exists(self.weights_path):
-                 self.model.load_weights(self.weights_path)
-             elif os.path.exists(weights_h5):
-                 self.model.load_weights(weights_h5)
+             try:
+                 if os.path.exists(self.weights_path):
+                     self.model.load_weights(self.weights_path)
+                 elif os.path.exists(weights_h5):
+                     self.model.load_weights(weights_h5)
+             except (ValueError, Exception) as e:
+                 logger.warning(f"Weight loading failed in predict_5_days: {e}. Inference will use initial weights.")
              
-        pred_norm = self.model.predict([x_ts, x_ext], verbose=0)
-        close_max = self.max_vals['Close']
+        pred_norm = self.model.predict([x_ts, x_ext, a_mat], verbose=0)
+        close_max = self.max_vals_dict[self.stock_number]['Close']
         pred_real = pred_norm[0] * close_max
         
-        last_close = full_df['Close'].iloc[-1]
+        last_close = target_df['Close'].iloc[-1]
         avg_pred = np.mean(pred_real)
         
         trend_prob = 0.5 + ((avg_pred - last_close) / (last_close + 1e-9)) * 5.0
@@ -210,5 +307,5 @@ class IntegratedStockPredModel:
         return {
             'predictions': pred_real.tolist(),
             'trend_probability': float(trend_prob),
-            'latest_feature_date': full_df.index[-1].strftime('%Y-%m-%d')
+            'latest_feature_date': target_df.index[-1].strftime('%Y-%m-%d')
         }

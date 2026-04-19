@@ -75,63 +75,80 @@ class SentimentProbabilityModel:
 
     @classmethod
     def get_sentiment_features(cls, stock_number, date_index_df):
-        """取得新聞語義特徵 (FinBERT 768維 Embedding)"""
-        # 注意: 這裡我們假設 StockUtils.Sentiment_indicators 仍能提供日期與新聞文本
-        # 需要原本的資料結構有文字資訊 (例如 'Title' + 'Content') 才能轉 Vector。
-        # 如果現有寫法只給出 Pos_Ratio, Neg_Ratio (因為是在 MySQL 被算好了的)，我們可能需要抓取原始新聞標題。
-        # 等等, 目前 StockUtils.Sentiment_indicators 在哪裡? 我們直接呼叫並查看.
-        # 但為了滿足 V2 架構，我們先假定其已經有 text，或者如果只有 Pos/Neg，我們先暫時填0 的 768維。
-        # 為了避免中斷，我們先回傳 768維 的 Zero Embedding 若找不到文本。
-        
-        # NOTE: 由於目前 StockUtils 內部的行為可能只有回傳 Ratio，我們先做結構兼容
-        # 回傳的全特徵為 finbert_emb_0 ~ finbert_emb_767
-        
-        # 嘗試取得原始新聞 (TODO: 確認實體資料庫有新聞欄位或呼叫 nlp_service 取得文本)
-        sentiment_df = StockUtils.Sentiment_indicators(stock_number, date_index_df)
-        
+        """取得新聞語義特徵 (具備資料庫快取機制)"""
         embedding_dim = 768
         embedding_cols = [f'finbert_emb_{i}' for i in range(embedding_dim)]
-        zeros_matrix = np.zeros((len(date_index_df), embedding_dim))
-        fallback_df = pd.DataFrame(zeros_matrix, index=date_index_df.index, columns=embedding_cols)
+        
+        # Initialize result DataFrame
+        result_df = pd.DataFrame(0.0, index=date_index_df.index, columns=embedding_cols)
+        
+        if date_index_df.empty:
+            return result_df
+            
+        sql_op = OP_Fun()
+        start_date = date_index_df.index.min().strftime('%Y-%m-%d')
+        end_date = date_index_df.index.max().strftime('%Y-%m-%d')
+        
+        # 1. 嘗試從快取讀取
+        cached_embeddings = sql_op.get_sentiment_embeddings(stock_number, start_date, end_date)
+        
+        # 2. 判斷缺失日期
+        missing_dates = []
+        for d in date_index_df.index:
+            d_str = d.strftime('%Y-%m-%d')
+            if d_str in cached_embeddings:
+                result_df.loc[d, embedding_cols] = cached_embeddings[d_str]
+            else:
+                missing_dates.append(d)
+        
+        if not missing_dates:
+            return result_df[embedding_cols]
+            
+        # 3. 僅針對缺失日期進行推論
+        logger.info(f"快取未命中，正在計算 {stock_number} 共 {len(missing_dates)} 天的語義向量...")
+        
+        # 建立僅包含缺失日期的臨時 index df 供爬蟲使用
+        # 注意: 這裡我們使用原本的邏輯去抓新聞文本
+        sentiment_df = StockUtils.Sentiment_indicators(stock_number, pd.DataFrame(index=missing_dates))
         
         if sentiment_df.empty:
-            return fallback_df
-            
-        # 若資料庫有文本欄位，則實際轉換
+            return result_df[embedding_cols]
+
         text_col = None
         for col in ['Content', 'Title', 'text', '新聞內容', '新聞標題']:
             if col in sentiment_df.columns:
                 text_col = col
                 break
-                
+
         if text_col:
             sentiment_df['text'] = sentiment_df[text_col].fillna("").astype(str)
             sentiment_df = sentiment_df[sentiment_df['text'].str.strip() != ""]
-            if sentiment_df.empty:
-                return fallback_df
+            
+            if not sentiment_df.empty:
+                embeddings = cls._get_embeddings_batch(sentiment_df['text'].tolist())
+                sentiment_df['embedding'] = list(embeddings)
                 
-            embeddings = cls._get_embeddings_batch(sentiment_df['text'].tolist())
-            sentiment_df['embedding'] = list(embeddings)
-            
-            # 以 Date 聚合
-            if 'Date' in sentiment_df.columns:
-                sentiment_df.set_index('Date', inplace=True)
-            
-            daily_df = sentiment_df.groupby(sentiment_df.index)['embedding'].apply(
-                lambda x: np.mean(np.stack(x.values), axis=0)
-            )
-            daily_matrix = np.stack(daily_df.values)
-            daily_feature_df = pd.DataFrame(daily_matrix, index=daily_df.index, columns=embedding_cols)
-            
-            # Merge with original index
-            merged = date_index_df.copy()
-            merged = merged.merge(daily_feature_df, left_index=True, right_index=True, how='left')
-            merged.fillna(0, inplace=True)
-            return merged[embedding_cols]
-        else:
-            # 兼容模式：若原始爬蟲尚未改寫，用目前已知的 Ratio 作為假特徵填充
-            # 未來應徹底從 crawler/DB 讀取文本
-            return fallback_df
+                # 以 Date 聚合 (確保它是 string 格式以便與快取邏輯一致)
+                if 'Date' in sentiment_df.columns:
+                    sentiment_df['Date_str'] = pd.to_datetime(sentiment_df['Date']).dt.strftime('%Y-%m-%d')
+                else:
+                    sentiment_df['Date_str'] = pd.to_datetime(sentiment_df.index).dt.strftime('%Y-%m-%d')
+                
+                daily_groups = sentiment_df.groupby('Date_str')['embedding'].apply(
+                    lambda x: np.mean(np.stack(x.values), axis=0)
+                )
+                
+                # 4. 寫回快取並更新結果
+                new_cache_data = {}
+                for d_str, emb in daily_groups.items():
+                    new_cache_data[d_str] = emb
+                    d_ts = pd.Timestamp(d_str)
+                    if d_ts in result_df.index:
+                        result_df.loc[d_ts, embedding_cols] = emb
+                
+                sql_op.save_sentiment_embeddings(stock_number, new_cache_data)
+        
+        return result_df[embedding_cols]
 
 class InstitutionalFlowModel:
     @staticmethod

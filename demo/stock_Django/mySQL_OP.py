@@ -10,7 +10,13 @@ import os
 from dotenv import load_dotenv
 from typing import Dict, Any
 
-load_dotenv()
+# Use consistent .env loading relative to this file
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    # Try parent directory as fallback
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 class OP_Fun:
     # Use class-level variables to ensure singleton engine/pool
@@ -358,3 +364,53 @@ class OP_Fun:
             except Exception as e:
                 logger.error(f"{market.upper()} 股票資訊更新失敗: {e}")
                 raise e
+
+    def save_sentiment_embeddings(self, symbol: str, daily_embeddings: Dict[Any, Any]) -> None:
+        """儲存語義向量到快取表 (Stock Sentiment Embeddings)"""
+        if not daily_embeddings:
+            return
+            
+        import numpy as np
+        sql = """
+            INSERT INTO stock_sentiment_embeddings (symbol, date, embedding_vector)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE embedding_vector = VALUES(embedding_vector)
+        """
+        
+        data_list = []
+        for d, emb in daily_embeddings.items():
+            if isinstance(emb, np.ndarray):
+                # Convert to float32 to save space and ensure consistency
+                # 768 * 4 bytes = 3072 bytes
+                binary_data = emb.astype(np.float32).tobytes()
+                data_list.append((str(symbol), str(d), binary_data))
+
+        if not data_list:
+            return
+
+        with self.engine.begin() as conn:
+            try:
+                conn.exec_driver_sql(sql, data_list)
+                logger.info(f"成功快取 {symbol} 的 {len(data_list)} 筆語義向量")
+            except Exception as e:
+                logger.error(f"快取語義向量失敗 ({symbol}): {e}")
+
+    def get_sentiment_embeddings(self, symbol: str, start_date: str, end_date: str) -> Dict[str, Any]:
+        """從快取表讀取特定範圍的語義向量"""
+        import numpy as np
+        # Explicitly conversion to string for SQL safety
+        sql = "SELECT date, embedding_vector FROM stock_sentiment_embeddings WHERE symbol = :sym AND date >= :start AND date <= :end"
+        
+        results = {}
+        try:
+            with self.engine.connect() as conn:
+                res = conn.execute(text(sql), {"sym": str(symbol), "start": str(start_date), "end": str(end_date)}).fetchall()
+                for row in res:
+                    # row[0] might be a datetime.date object
+                    d_obj = row[0]
+                    d_str = d_obj.strftime('%Y-%m-%d') if hasattr(d_obj, 'strftime') else str(d_obj)
+                    results[d_str] = np.frombuffer(row[1], dtype=np.float32)
+            return results
+        except Exception as e:
+            logger.error(f"讀取語義向量快取失敗 ({symbol}): {e}")
+            return {}
