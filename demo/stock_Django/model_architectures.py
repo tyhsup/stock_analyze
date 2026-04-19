@@ -33,56 +33,94 @@ class GCNLayer(keras.layers.Layer):
         output = tf.matmul(support, self.kernel)
         return self.activation(output)
 
+class CrossModalAttention(keras.layers.Layer):
+    """
+    跨模態注意力融合層 (Cross-Modal Attention Fusion)
+    將技術面、輿情面、財務面特徵進行動態權重匯聚
+    """
+    def __init__(self, d_model, num_heads=4, dropout=0.1, **kwargs):
+        super(CrossModalAttention, self).__init__(**kwargs)
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.mha = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads)
+        self.layernorm = keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout = keras.layers.Dropout(dropout)
+
+    def call(self, inputs):
+        # inputs: [ts_feat, senti_feat, fin_feat]
+        # 每個輸入形狀皆為 [batch, nodes, d_model]
+        
+        # 1. 堆疊模態: [batch, nodes, 3, d_model]
+        stacked = tf.stack(inputs, axis=2)
+        
+        # 2. 自注意力機制 (在模態維度進行 MHA)
+        # 我們將 (nodes * batch) 視為序列背景，對 3 個模態進行交互
+        batch_size = tf.shape(stacked)[0]
+        num_nodes = tf.shape(stacked)[1]
+        
+        # 重塑為 [Batch*Nodes, 3, d_model] 進行標準 Transformer-like MHA
+        reshaped = tf.reshape(stacked, [-1, 3, self.d_model])
+        attn_output = self.mha(reshaped, reshaped)
+        attn_output = self.dropout(attn_output)
+        
+        # 3. 殘差連接與 LayerNorm
+        out = self.layernorm(reshaped + attn_output)
+        
+        # 4. 匯聚模態 (使用 Global Average Pooling Over Modalities 或 Flatten)
+        # 這裡選擇取平均，代表融合後的節點特徵
+        fused = tf.reduce_mean(out, axis=1) # [Batch*Nodes, d_model]
+        
+        # 5. 回原形狀: [Batch, Nodes, d_model]
+        return tf.reshape(fused, [batch_size, num_nodes, self.d_model])
+
 class StockModelArchitectures:
     @staticmethod
-    def build_multi_input_model(lstm_feat_dim, ext_feat_dim, config):
-        """建構 v3.0 GNN 增強型模型"""
+    def build_multi_input_model(lstm_feat_dim, senti_feat_dim, fin_feat_dim, config):
+        """建構 v4.0 Cross-Modal Attention + GNN 模型"""
         time_steps = config.get('time_steps', 20)
         predict_steps = config.get('predict_steps', 5)
-        num_nodes = config.get('neighbor_count', 5) + 1 # 1 target + K neighbors
+        num_nodes = config.get('neighbor_count', 5) + 1
+        d_model = config.get('attention_dim', 128)
         
-        # 4D Input for Time Series: (Batch, Nodes, Time, Feat)
+        # --- 輸入端定義 ---
         input_ts = Input(shape=(num_nodes, time_steps, lstm_feat_dim), name="time_series_input")
-        # 3D Input for External: (Batch, Nodes, Feat)
-        input_ext = Input(shape=(num_nodes, ext_feat_dim), name="external_features_input")
-        # 3D Input for Adjacency Matrix: (Batch, Nodes, Nodes)
+        input_senti = Input(shape=(num_nodes, senti_feat_dim), name="sentiment_input")
+        input_fin = Input(shape=(num_nodes, fin_feat_dim), name="financial_input")
         input_adj = Input(shape=(num_nodes, num_nodes), name="adj_input")
         
-        # --- 節點特徵提取分支 ---
-        # 使用 TimeDistributed 將同一套 LSTM 套用在圖中的每個節點
+        # --- 1. 技術面分支 (Temporal) ---
         x = TimeDistributed(LSTM(config.get('lstm_units_1', 128), return_sequences=True))(input_ts)
         x = TimeDistributed(Dropout(config.get('dropout_rate', 0.2)))(x)
-        x = TimeDistributed(LSTM(config.get('lstm_units_2', 64)))(x) # Output: (Batch, Nodes, 64)
+        x = TimeDistributed(LSTM(config.get('lstm_units_2', d_model)))(x) # Output: (Batch, Nodes, d_model)
         
-        # 外部特徵提取 (Dense)
-        y = TimeDistributed(Dense(config.get('dense_units_ext', 256), activation='relu'))(input_ext)
-        y = TimeDistributed(Dropout(config.get('dropout_rate', 0.2)))(y) # Output: (Batch, Nodes, 256)
+        # --- 2. 輿情面分支 (Sentiment) ---
+        y = TimeDistributed(Dense(config.get('dense_units_senti', 256), activation='relu'))(input_senti)
+        y = TimeDistributed(Dense(d_model, activation='relu'))(y) # Output: (Batch, Nodes, d_model)
         
-        # 拼接跨模態特徵
-        node_features = Concatenate(axis=-1)([x, y]) # Output: (Batch, Nodes, 320)
+        # --- 3. 財務籌碼面分支 (Financials) ---
+        z = TimeDistributed(Dense(config.get('dense_units_fin', 64), activation='relu'))(input_fin)
+        z = TimeDistributed(Dense(d_model, activation='relu'))(z) # Output: (Batch, Nodes, d_model)
         
-        # --- GNN 關聯建模 ---
-        # 透過 GCNLayer 讓節點間交換資訊
-        gnn_out = GCNLayer(config.get('gnn_units', 32), activation='relu')([node_features, input_adj])
+        # --- 4. Cross-Modal Attention 融合 ---
+        fused_features = CrossModalAttention(d_model=d_model, num_heads=config.get('num_heads', 4))([x, y, z])
+        
+        # --- 5. GNN 關聯建模 ---
+        gnn_out = GCNLayer(config.get('gnn_units', 64), activation='relu')([fused_features, input_adj])
         gnn_out = Dropout(config.get('dropout_rate', 0.2))(gnn_out)
         
-        # 提取目標節點 (index 0) 的預測結果
-        # 我們只關心目標股票的預測，或者也可以輸出全圖的預測
-        # 這裡採取 Reshape + Lambda 取出 Node 0
-        def select_target_node(tensor):
-            return tensor[:, 0, :]
-            
-        target_features = keras.layers.Lambda(select_target_node, name="target_selector")(gnn_out)
+        # 提取目標節點
+        target_features = keras.layers.Lambda(lambda t: t[:, 0, :], name="target_selector")(gnn_out)
         
-        # 最後的預測層
-        z = Dense(config.get('dense_units_combined', 128), activation='relu')(target_features)
-        out_price = Dense(predict_steps, name='price_prediction')(z)
+        # 最後預測
+        dense_final = Dense(config.get('dense_units_combined', 128), activation='relu')(target_features)
+        out_price = Dense(predict_steps, name='price_prediction')(dense_final)
         
-        model = Model(inputs=[input_ts, input_ext, input_adj], outputs=out_price)
+        model = Model(inputs=[input_ts, input_senti, input_fin, input_adj], outputs=out_price)
         
+        # 針對 GPU 優化編譯
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=config.get('learning_rate', 0.001)), 
-            loss=tf.keras.losses.Huber(delta=config.get('huber_delta', 1.0)), 
+            optimizer=tf.keras.optimizers.Adam(learning_rate=config.get('learning_rate', 0.0005)), 
+            loss=tf.keras.losses.Huber(delta=1.0), 
             metrics=['mae']
         )
         return model

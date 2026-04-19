@@ -80,6 +80,22 @@ class IntegratedStockPredModel:
         
         # Build Adjacency Matrix
         self.adj_matrix = self.graph_builder.build_adjacency_matrix(self.all_nodes)
+        
+        # --- GPU Optimization ---
+        self._setup_gpu()
+
+    def _setup_gpu(self):
+        """配置 GPU 資源以進行高效訓練"""
+        try:
+            gpus = tf.config.list_physical_devices('GPU')
+            if gpus:
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                logger.info(f"Detected {len(gpus)} GPUs. Memory growth enabled.")
+            else:
+                logger.debug("No GPU detected, falling back to CPU.")
+        except Exception as e:
+            logger.warning(f"GPU setup failed: {e}")
 
     def build_dataset_for_symbol(self, symbol):
         """為單一隻股票建立 Dataframe"""
@@ -142,60 +158,63 @@ class IntegratedStockPredModel:
         return dfs
 
     def prepare_training_data(self, dfs_dict):
-        """為圖網路構建 (Batch, Nodes, Time, Features) Tensor"""
+        """為圖網路構建 (Batch, Nodes, Time, Features) Tensor (v4.0 三模態切分)"""
         target_df = dfs_dict[self.stock_number]
         cols = target_df.columns
         
-        ext_cols = [c for c in cols if 'finbert_emb_' in c] + ['Net_Buy_Volume', 'EPS_Quarterly', 'Revenue_Growth']
-        ext_idx = [target_df.columns.get_loc(c) for c in ext_cols if c in target_df.columns]
-        ts_idx = [i for i in range(len(cols)) if i not in ext_idx]
+        # 1. 切分模態
+        senti_cols = [c for c in cols if 'finbert_emb_' in c]
+        fin_cols = ['Net_Buy_Volume', 'EPS_Quarterly', 'Revenue_Growth']
+        
+        senti_idx = [target_df.columns.get_loc(c) for c in senti_cols if c in target_df.columns]
+        fin_idx = [target_df.columns.get_loc(c) for c in fin_cols if c in target_df.columns]
+        ts_idx = [i for i in range(len(cols)) if i not in senti_idx and i not in fin_idx]
         
         close_col_idx = target_df.columns.get_loc('Close')
         
-        X_ts, X_ext, Y, A = [], [], [], []
+        X_ts, X_senti, X_fin, Y, A = [], [], [], [], []
         num_samples = len(target_df)
         
         if num_samples <= self.time_steps + self.predict_steps:
             return None
             
-        # 轉換為 NumPy array 字典，避免 pandas iloc 效能低落
         norm_arrays = {}
         for k, v_df in dfs_dict.items():
              norm_arrays[k] = (v_df / self.max_vals_dict[k]).to_numpy()
              
         for i in range(num_samples - self.time_steps - self.predict_steps + 1):
             batch_ts_nodes = []
-            batch_ext_nodes = []
+            batch_senti_nodes = []
+            batch_fin_nodes = []
             
-            # 每一個 timestamp，走訪圖結構對應的股票
-            # 這裡依賴順序：[Target, Neighbor 1, Neighbor 2...]
             for node_name in self.all_nodes:
                 if node_name in norm_arrays:
                     data = norm_arrays[node_name]
                 else: 
-                    # Drop-in padding if neighbor somehow missing but was in logic
                     data = np.zeros((num_samples, len(cols)))
                     
                 window = data[i : i + self.time_steps]
                 batch_ts_nodes.append(window[:, ts_idx])
-                batch_ext_nodes.append(window[-1, ext_idx])
+                batch_senti_nodes.append(window[-1, senti_idx])
+                batch_fin_nodes.append(window[-1, fin_idx])
                 
-                # 只有目標股票才拿 Y (Index 0 就是 Target)
                 if node_name == self.stock_number:
                      target = data[i + self.time_steps : i + self.time_steps + self.predict_steps, close_col_idx]
                      
             X_ts.append(batch_ts_nodes)
-            X_ext.append(batch_ext_nodes)
+            X_senti.append(batch_senti_nodes)
+            X_fin.append(batch_fin_nodes)
             Y.append(target)
             A.append(self.adj_matrix)
             
         self.lstm_features = len(ts_idx)
-        self.dense_features = len(ext_idx)
+        self.senti_features = len(senti_idx)
+        self.fin_features = len(fin_idx)
         self.ts_idx = ts_idx
-        self.ext_idx = ext_idx
+        self.senti_idx = senti_idx
+        self.fin_idx = fin_idx
         
-        # X_ts: (Batch, Nodes, Time, Feat), X_ext: (Batch, Nodes, Feat)
-        return np.array(X_ts), np.array(X_ext), np.array(A), np.array(Y)
+        return np.array(X_ts), np.array(X_senti), np.array(X_fin), np.array(A), np.array(Y)
 
     def train_incremental(self, epochs=None, batch_size=None):
         """增量訓練邏輯 (Incremental Learning)"""
@@ -221,10 +240,12 @@ class IntegratedStockPredModel:
         
         prepared = self.prepare_training_data(dfs_dict)
         if not prepared: return False
-        X_ts, X_ext, A, Y = prepared
+        X_ts, X_senti, X_fin, A, Y = prepared
         
         if self.model is None:
-            self.model = StockModelArchitectures.build_multi_input_model(self.lstm_features, self.dense_features, self.config)
+            self.model = StockModelArchitectures.build_multi_input_model(
+                self.lstm_features, self.senti_features, self.fin_features, self.config
+            )
             weights_h5 = self.weights_path.replace('.weights.h5', '.h5')
             try:
                 if os.path.exists(self.weights_path):
@@ -232,13 +253,13 @@ class IntegratedStockPredModel:
                 elif os.path.exists(weights_h5):
                     self.model.load_weights(weights_h5)
             except (ValueError, Exception) as e:
-                logger.warning(f"Weight loading failed (architecture mismatch from v2->v3?): {e}. Training from scratch.")
+                logger.warning(f"Weight loading failed (architecture mismatch from v3->v4?): {e}. Training from scratch.")
                     
-        logger.info(f"Training Incremental Model for {self.stock_number} (Target: {epochs} epochs)...")
+        logger.info(f"Training Incremental Model (v4.0) for {self.stock_number} (Target: {epochs} epochs)...")
         
         val_split = self.config.get('val_split', 0.1)
         self.model.fit(
-            [X_ts, X_ext, A], Y, 
+            [X_ts, X_senti, X_fin, A], Y, 
             epochs=epochs, 
             batch_size=batch_size, 
             verbose=0, 
@@ -267,7 +288,8 @@ class IntegratedStockPredModel:
             _ = self.prepare_training_data(dfs_dict)
             
         x_ts_nodes = []
-        x_ext_nodes = []
+        x_senti_nodes = []
+        x_fin_nodes = []
         
         for node_name in self.all_nodes:
              if node_name in dfs_dict:
@@ -277,24 +299,28 @@ class IntegratedStockPredModel:
                  norm_window = np.zeros((self.time_steps, len(target_df.columns)))
                  
              x_ts_nodes.append(norm_window[:, self.ts_idx])
-             x_ext_nodes.append(norm_window[-1, self.ext_idx])
+             x_senti_nodes.append(norm_window[-1, self.senti_idx])
+             x_fin_nodes.append(norm_window[-1, self.fin_idx])
              
         # Add Batch dimension
         x_ts = np.array([x_ts_nodes])
-        x_ext = np.array([x_ext_nodes])
+        x_senti = np.array([x_senti_nodes])
+        x_fin = np.array([x_fin_nodes])
         a_mat = np.array([self.adj_matrix])
         
         if self.model is None:
-             self.model = StockModelArchitectures.build_multi_input_model(self.lstm_features, self.dense_features, self.config)
+             self.model = StockModelArchitectures.build_multi_input_model(
+                 self.lstm_features, self.senti_features, self.fin_features, self.config
+             )
              try:
                  if os.path.exists(self.weights_path):
                      self.model.load_weights(self.weights_path)
                  elif os.path.exists(weights_h5):
                      self.model.load_weights(weights_h5)
              except (ValueError, Exception) as e:
-                 logger.warning(f"Weight loading failed in predict_5_days: {e}. Inference will use initial weights.")
+                 logger.warning(f"Weight loading failed in predict_5_days (v4.0): {e}. Inference will use initial weights.")
              
-        pred_norm = self.model.predict([x_ts, x_ext, a_mat], verbose=0)
+        pred_norm = self.model.predict([x_ts, x_senti, x_fin, a_mat], verbose=0)
         close_max = self.max_vals_dict[self.stock_number]['Close']
         pred_real = pred_norm[0] * close_max
         
