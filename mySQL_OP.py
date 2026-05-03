@@ -1,19 +1,23 @@
 import mysql.connector
-import pymysql
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text, types
 import pandas as pd
 import logging
+
+# 加載環境變數
+load_dotenv(dotenv_path='demo/stock_Django/.env')
 
 logger = logging.getLogger(__name__)
 
 class OP_Fun:
     def __init__(self):
         self.db_config = {
-            'host': 'your host',
-            'port': '3306',
-            'user': 'root',
-            'password': 'please input password', # 請確認您的密碼
-            'database': 'your database name'
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': os.getenv('DB_PORT', '3306'),
+            'user': os.getenv('DB_USER', 'root'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'database': os.getenv('DB_NAME', 'stock_tw_analyse')
         }
         self.engine = create_engine(
             f"mysql+pymysql://{self.db_config['user']}:{self.db_config['password']}@"
@@ -22,35 +26,88 @@ class OP_Fun:
         )
 
     def upload_all(self, data, table_name):
-        """原本的通用上傳函式，供 stock_cost 使用"""
+        """優化後的通用上傳函式，支援 ON DUPLICATE KEY UPDATE 與自動欄位遷移"""
         if data.empty:
             return
 
-        dtype_dict = {}
-        if 'number' in data.columns:
-            dtype_dict['number'] = types.VARCHAR(20)
+        # 1. 欄位名稱標準化 (小寫)
+        data.columns = [c.lower() for c in data.columns]
         
-        date_col = 'Date' if 'Date' in data.columns else ('日期' if '日期' in data.columns else None)
-        if date_col:
-            dtype_dict[date_col] = types.DateTime() if 'Date' in data.columns else types.VARCHAR(20)
+        # 處理日期欄位名稱 (DataFrame 端)
+        if 'date' not in data.columns and '日期' in data.columns:
+            data.rename(columns={'日期': 'date'}, inplace=True)
+            
+        # 轉換日期格式
+        if 'date' in data.columns:
+            try:
+                data['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
+            except:
+                pass
 
-        temp_table = f"{table_name}_temp"
-        try:
-            data.to_sql(name=temp_table, con=self.engine, if_exists='replace', index=False, dtype=dtype_dict, method='multi')
-            with self.engine.begin() as conn:
-                check_table = conn.execute(text(f"SHOW TABLES LIKE '{table_name}'")).fetchone()
-                if not check_table:
-                    conn.execute(text(f"CREATE TABLE {table_name} LIKE {temp_table}"))
-                    if date_col and 'number' in data.columns:
-                        index_name = f"idx_{table_name}_unique"
-                        conn.execute(text(f"ALTER TABLE {table_name} ADD UNIQUE INDEX {index_name} ({date_col}, number)"))
+        with self.engine.begin() as conn:
+            # 2. 檢查表是否存在
+            check_table = conn.execute(text(f"SHOW TABLES LIKE '{table_name}'")).fetchone()
+            if not check_table:
+                logger.info(f"正在初始化資料表 {table_name}...")
+                dtype_dict = {'number': types.VARCHAR(20), 'date': types.DATE()}
+                data.head(0).to_sql(name=table_name, con=self.engine, if_exists='replace', index=False, dtype=dtype_dict)
+                # 建立唯一索引
+                index_name = f"idx_{table_name}_unique"
+                conn.execute(text(f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` (`date`, `number`)"))
+            else:
+                # 3. 自動遷移：處理亂碼或中文欄位名稱 (使用 INFORMATION_SCHEMA 確保準確性)
+                # 取得第一個欄位名稱
+                query_info = text("""
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = :t AND TABLE_SCHEMA = :s AND ORDINAL_POSITION = 1
+                """)
+                res = conn.execute(query_info, {'t': table_name, 's': self.db_config['database']}).fetchone()
+                
+                if res:
+                    first_col = res[0]
+                    # 如果第一個欄位不是 'date'，且不是 'number' (排除特殊情況)
+                    # 或者第一個欄位包含非 ASCII 字元
+                    is_not_ascii = not all(ord(c) < 128 for c in first_col)
+                    if first_col != 'date' and (is_not_ascii or first_col == '日期'):
+                        safe_col_name = first_col.encode('utf-8', errors='ignore').decode('utf-8')
+                        logger.info(f"正在遷移 {table_name}: 將欄位 '{safe_col_name}' 重新命名為 'date'...")
+                        try:
+                            # 使用 RENAME COLUMN (MySQL 8.0+)
+                            conn.execute(text(f"ALTER TABLE `{table_name}` RENAME COLUMN `{first_col}` TO `date`"))
+                            # 確保類型正確
+                            conn.execute(text(f"ALTER TABLE `{table_name}` MODIFY COLUMN `date` DATE"))
+                            # 強制提交 DDL 變更
+                            conn.commit()
+                        except Exception as e:
+                            logger.warning(f"遷移失敗: {e}")
 
-                conn.execute(text(f"INSERT IGNORE INTO {table_name} SELECT * FROM {temp_table}"))
-                conn.execute(text(f"DROP TABLE {temp_table}"))
-            logger.info(f"成功更新 {table_name}")
-        except Exception as e:
-            logger.error(f"上傳至 {table_name} 失敗: {e}")
-            raise
+            # 4. 再次檢查欄位一致性 (確保 SQL 欄位存在於資料庫中)
+            # 這裡簡單處理，只選取資料庫中已有的欄位
+            cols_after = conn.execute(text(f"SHOW COLUMNS FROM `{table_name}`")).fetchall()
+            db_cols = [c[0].lower() for c in cols_after]
+            final_data_cols = [c for c in data.columns if c in db_cols]
+            data = data[final_data_cols]
+
+            # 5. 構建 UPSERT SQL
+            cols_sql = ", ".join([f"`{c}`" for c in data.columns])
+            placeholders = ", ".join(["%s"] * len(data.columns))
+            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in data.columns if c not in ['date', 'number']])
+            
+            sql = f"""
+                INSERT INTO `{table_name}` ({cols_sql}) 
+                VALUES ({placeholders})
+                ON DUPLICATE KEY UPDATE {update_cols}
+            """
+            
+            # 6. 執行批量寫入
+            data_list = [tuple(x) for x in data.values]
+            try:
+                conn.exec_driver_sql(sql, data_list)
+                logger.info(f"成功更新 {table_name} (共 {len(data)} 筆)")
+            except Exception as e:
+                logger.error(f"批量寫入 {table_name} 失敗: {e}")
+                raise e
 
     def get_cost_data(self, table_name, columns_name='*', stock_number=None):
         """讀取資料函式"""
@@ -67,41 +124,7 @@ class OP_Fun:
             return pd.DataFrame()
     
     def upload_investor_bulk(self, df, table_name='stock_investor'):
-        if df.empty:
-            return
+        """統一調用 upload_all 實作三大法人寫入"""
+        self.upload_all(df, table_name)
 
-        with self.engine.begin() as conn:
-            # --- 新增：自動建表與索引檢查邏輯 ---
-            check_table = conn.execute(text(f"SHOW TABLES LIKE '{table_name}'")).fetchone()
-            
-            if not check_table:
-                logger.info(f"偵測到資料表 {table_name} 不存在，正在執行初始化...")
-                # 1. 先用 pandas 建立一個結構相同的表 (暫不寫入數據)
-                # 我們利用 to_sql 建立一個空表，並定義好 number 欄位長度以利索引
-                from sqlalchemy import types
-                dtype_dict = {'number': types.VARCHAR(20), '日期': types.VARCHAR(20)}
-                df.head(0).to_sql(name=table_name, con=self.engine, if_exists='replace', index=False, dtype=dtype_dict)
-                
-                # 2. 建立唯一索引 (日期 + number)，這是 UPSERT (ON DUPLICATE KEY) 運作的基礎
-                index_name = f"idx_{table_name}_unique"
-                conn.execute(text(f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` (`日期`, `number`)"))
-                logger.info(f"已成功建立資料表 {table_name} 與唯一索引。")
 
-            # --- 原有的批量寫入邏輯 ---
-            cols = ", ".join([f"`{c}`" for c in df.columns])
-            placeholders = ", ".join(["%s"] * len(df.columns))
-            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in df.columns if c not in ['日期', 'number']])
-        
-            sql = f"""
-                INSERT INTO `{table_name}` ({cols}) 
-                VALUES ({placeholders})
-                ON DUPLICATE KEY UPDATE {update_cols}
-            """
-            data_list = [tuple(x) for x in df.values]
-            
-            try:
-                conn.exec_driver_sql(sql, data_list)
-                logger.info(f"三大法人批量寫入完成：{table_name} (共 {len(df)} 筆)")
-            except Exception as e:
-                logger.error(f"三大法人批量寫入 SQL 執行失敗: {e}")
-                raise e
