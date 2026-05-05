@@ -131,18 +131,7 @@ class OP_Fun:
         new_cols = list(df.columns)
         for idx, name in mapping.items():
             if idx < len(new_cols):
-                # Only overwrite if the current column name looks suspicious (mangled or generic)
-                curr = str(new_cols[idx])
-                if len(curr) < 2 or '?' in curr or any(ord(c) > 65533 for c in curr):
-                    new_cols[idx] = name
-                elif curr.strip() == '':
-                    new_cols[idx] = name
-        
-        # Fallback: if columns still look like Column_1, Column_2 etc, just force names
-        if len(new_cols) > 2 and 'number' not in [c.lower() for c in new_cols]:
-            for idx, name in mapping.items():
-                if idx < len(new_cols):
-                    new_cols[idx] = name
+                new_cols[idx] = name
 
         df.columns = new_cols
         return df

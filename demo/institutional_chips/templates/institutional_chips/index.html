@@ -32,14 +32,20 @@
 </div>
 
 <!-- Market Selector Tabs -->
+<style>
+    .market-tab.nav-link:not(.active) {
+        background-color: white !important;
+        color: var(--bs-secondary);
+    }
+</style>
 <ul class="nav nav-pills mb-4" id="market-tabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active rounded-pill px-4 me-2 bg-white shadow-sm border" id="tw-tab" data-bs-toggle="pill" data-bs-target="#tw-content" type="button" role="tab" aria-selected="true">
+        <button class="nav-link active rounded-pill px-4 me-2 shadow-sm border market-tab" id="tw-tab" data-bs-toggle="pill" data-bs-target="#tw-content" type="button" role="tab" aria-selected="true">
             <span class="fs-5">🇹🇼 Taiwan Market</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link rounded-pill px-4 bg-white shadow-sm border" id="us-tab" data-bs-toggle="pill" data-bs-target="#us-content" type="button" role="tab" aria-selected="false">
+        <button class="nav-link rounded-pill px-4 shadow-sm border market-tab" id="us-tab" data-bs-toggle="pill" data-bs-target="#us-content" type="button" role="tab" aria-selected="false">
             <span class="fs-5">🇺🇸 USA Market</span>
         </button>
     </li>
@@ -124,14 +130,20 @@
 
     <!-- USA Content -->
     <div class="tab-pane fade" id="us-content" role="tabpanel" aria-labelledby="us-tab">
+        {% if error and "US chip data" in error %}
+        <div class="alert alert-danger shadow-sm border-0 d-flex align-items-center mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
         <div class="row">
             <div class="col-12 py-5 text-center bg-white rounded shadow-sm">
                 <div class="bg-light p-5 rounded-circle d-inline-block mb-3">
                     <i class="bi bi-building-gear text-secondary display-1"></i>
                 </div>
                 <h3>USA Institutional Holders</h3>
-                <p class="text-muted mb-0">Institutional data for US markets (Stockzoa) is loading...</p>
-                <div id="us-charts-container" class="mt-4 row">
+                <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
+                <div id="us-charts-container" class="mt-4 row text-start">
                     <!-- US Charts will be injected here via JS -->
                 </div>
             </div>
@@ -296,6 +308,10 @@
         // --- US Market Charts ---
         if (usInvestorData && usInvestorData.length > 0) {
             const usContainer = document.getElementById('us-charts-container');
+            const usLoadingText = document.getElementById('us-loading-text');
+            if (usLoadingText) {
+                usLoadingText.style.display = 'none';
+            }
             usContainer.innerHTML = '';
             
             usInvestorData.forEach((data, idx) => {

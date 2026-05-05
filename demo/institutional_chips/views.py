@@ -23,7 +23,12 @@ def chips_view(request):
         if not tw_data_clean.empty:
             buysell_json = chart.investor_buysell_top_apex(tw_data_clean, amount=10)
             comparison_json = chart.investor_comparison_apex(tw_data_clean, amount=5, days=5)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Chips TW view error: {e}")
+        error = f"Failed to load TW chip data: {e}"
 
+    try:
         # US Data (Benchmark tickers for dashboard)
         from stock_Django.stock_investor_us import USStockInvestorManager
         us_mgr = USStockInvestorManager()
@@ -38,8 +43,11 @@ def chips_view(request):
 
     except Exception as e:
         import logging
-        logging.getLogger(__name__).error(f"Chips view error: {e}")
-        error = f"Failed to load chip data: {e}"
+        logging.getLogger(__name__).error(f"Chips US view error: {e}")
+        if error:
+            error += f" | Failed to load US chip data: {e}"
+        else:
+            error = f"Failed to load US chip data: {e}"
 
     return render(request, 'institutional_chips/index.html', {
         'buysell_json': buysell_json,

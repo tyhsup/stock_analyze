@@ -1,9 +1,15 @@
-import tensorflow as tf
-from keras.layers import Dense, LSTM, Dropout, Input, Concatenate, TimeDistributed, Reshape
-from keras.models import Model
-import keras
+try:
+    import tensorflow as tf
+    from keras.layers import Dense, LSTM, Dropout, Input, Concatenate, TimeDistributed, Reshape
+    from keras.models import Model
+    import keras
+    HAS_TF_KERAS = True
+except ImportError:
+    HAS_TF_KERAS = False
+    tf = None
+    keras = None
 
-class GCNLayer(keras.layers.Layer):
+class GCNLayer(keras.layers.Layer if HAS_TF_KERAS else object):
     """
     簡單的圖卷積層 (Graph Convolutional Layer)
     公式: Z = A * X * W
@@ -33,7 +39,7 @@ class GCNLayer(keras.layers.Layer):
         output = tf.matmul(support, self.kernel)
         return self.activation(output)
 
-class CrossModalAttention(keras.layers.Layer):
+class CrossModalAttention(keras.layers.Layer if HAS_TF_KERAS else object):
     """
     跨模態注意力融合層 (Cross-Modal Attention Fusion)
     將技術面、輿情面、財務面特徵進行動態權重匯聚

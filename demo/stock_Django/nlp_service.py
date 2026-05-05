@@ -5,7 +5,11 @@ import pandas as pd
 import numpy as np
 from typing import Optional, List, Dict, Any
 from transformers import BertTokenizer, BertForSequenceClassification
-from ckiptagger import WS, POS, NER
+try:
+    from ckiptagger import WS, POS, NER
+    HAS_CKIP_PKG = True
+except ImportError:
+    HAS_CKIP_PKG = False
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,14 +48,18 @@ class NLPService:
             self.model.eval()
             
             # CKIP Tagger 模型 (設為可選)
-            try:
-                logger.info("正在載入 CKIP Tagger 模型...")
-                self.ws = WS(self.ckip_data_dir)
-                self.pos = POS(self.ckip_data_dir)
-                self.ner = NER(self.ckip_data_dir)
-                self.has_ckip = True
-            except Exception as e_ckip:
-                logger.warning(f"CKIP 載入失敗 (將跳過斷詞): {e_ckip}")
+            if HAS_CKIP_PKG:
+                try:
+                    logger.info("正在載入 CKIP Tagger 模型...")
+                    self.ws = WS(self.ckip_data_dir)
+                    self.pos = POS(self.ckip_data_dir)
+                    self.ner = NER(self.ckip_data_dir)
+                    self.has_ckip = True
+                except Exception as e_ckip:
+                    logger.warning(f"CKIP 載入失敗 (將跳過斷詞): {e_ckip}")
+                    self.has_ckip = False
+            else:
+                logger.warning("CKIP Tagger 套件未安裝 (或是相依的 TensorFlow 未安裝)，將跳過斷詞功能。")
                 self.has_ckip = False
             
             # 載入停用詞

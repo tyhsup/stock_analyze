@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class GemmaAdvisorService:
     def __init__(self):
         # 腳本路徑相對於專案根目錄
-        self.reasoner_path = os.path.abspath(os.path.join(os.getcwd(), ".agents", "helpers", "gemma_reasoner.py"))
+        self.reasoner_path = os.path.abspath(os.path.join(os.getcwd(), "gemma_reasoner.py"))
 
     def generate_stock_report(self, ticker: str, technical_summary: str, sentiment_data: Dict[str, Any], valuation_data: Dict[str, Any]) -> str:
         """

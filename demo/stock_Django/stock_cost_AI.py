@@ -3,7 +3,12 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+try:
+    import tensorflow as tf
+    HAS_TENSORFLOW = True
+except ImportError:
+    HAS_TENSORFLOW = False
+    tf = None
 
 try:
     from stock_Django.stock_utils import StockUtils
