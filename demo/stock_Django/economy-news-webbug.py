@@ -26,11 +26,7 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tqdm.notebook import tqdm
 import tkinter as tk
 from tkinter import messagebox
-from transformers import BertTokenizer, BertModel, BertForSequenceClassification, Trainer, TrainingArguments,pipeline
-from torch.optim import AdamW
-from torch.utils.data import DataLoader, Dataset
-import torch
-from datasets import load_dataset
+from agent_news_analyzer import AgentNewsAnalyzer
 
 class economy_news_webbug:
     def __init__(self):
@@ -42,7 +38,7 @@ class economy_news_webbug:
         self.headless_mode = False
         self.gpu_acc = False
         self.news_count = 500
-        self.file_path = f'E:/Infinity/webbug/{self.stock_number}_news.xlsx'
+        self.file_path = f'E:/Infinity/mydjango/demo/newsapp/news_data/{self.stock_number}.xlsx'
         #self.ckiptagger_data = data_utils.download_data_gdown("./")
         self.ws = WS("./data")
         self.pos = POS("./data")
@@ -50,8 +46,7 @@ class economy_news_webbug:
         self.model_path = 'final_model_stock_news_BERT.h5'
         self.weights_path = 'ositive_or_negative_nofunctional_stock_news_BERT.h5'
         self.token_path ='words_to_vector_stock_news.pickle'
-        self.bert_tokenizer = BertTokenizer.from_pretrained('final_tokenizer_stock_news_BERT_1k')
-        self.bert_model = BertForSequenceClassification.from_pretrained('final_model_stock_news_BERT_1k')
+        self.agent_analyzer = AgentNewsAnalyzer()
         
     def scroll_controller(self, driver):
         SCROLL_PAUSE_TIME = 2
@@ -304,23 +299,9 @@ class economy_news_webbug:
         result = model.predict(input_news)
         return result
     
-    def _predictions_BERT(self, text):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        tokenizer = self.bert_tokenizer
-        model = self.bert_model.to(device)
-        model.eval()
-        inputs = tokenizer(
-            text,
-            return_tensors = "pt",
-            padding = "max_length",
-            truncation = True,
-            max_length = 50
-        ).to(device)
-        with torch.no_grad():
-            outputs = model(**inputs)
-            score = torch.sigmoid(outputs.logits)[0].item()
-            print(score)
-        return 1 if score >= 0.5 else 0
+    def _predictions_Agent(self, news_dict):
+        result = self.agent_analyzer.analyze_news(news_dict)
+        return result
     
     def GB_analyze_LSTM(self, news_number):
         os.chdir('E:/Infinity/webbug/')
@@ -345,31 +326,31 @@ class economy_news_webbug:
         else:
             print('負面' , result)'''
     
-    def GB_analyze_BERT(self, news_number):
-        os.chdir('E:/Infinity/webbug/')
-        # 載入新聞
+    def GB_analyze_Agent(self, news_number):
         news_df = self._read_excel()
-        content = news_df.loc[:,'內文'][news_number]
-        # 去除停用詞（可選）
-        stopwords = self._read_stop_words('cn_stop_words.txt')
-        ws = WS('E:/Infinity/webbug/data')
-        word_sentence_list = ws([content])
-        filtered_words = [w for w in word_sentence_list[0] if w not in stopwords]
-        clean_text = " ".join(filtered_words)
-        # 預測
-        score = self._predictions_BERT(clean_text)
-        #print(f'新聞第 {news_number} 篇 預測分數: {score:.3f}')
-        return score
+        row = news_df.iloc[news_number]
+        news_dict = {
+            'title': row.get('標題', ''),
+            'date': row.get('發布時間', ''),
+            'content': row.get('內文', ''),
+            'link': row.get('連結', '')
+        }
+        result = self._predictions_Agent(news_dict)
+        return result
     
     def _result_plot(self):
         pos = 0
         neg = 0
         for i in range(self.news_count):
-            result = webbug.GB_analyze_BERT(news_number = i)
-            if (result >= 0.5):
-                pos += 1
-            else:
-                neg += 1
+            try:
+                result = webbug.GB_analyze_Agent(news_number = i)
+                # 將情緒歸類為正向與負向，為了相容原本的圖表繪製邏輯
+                if (result.get('positive_negative_analysis', '') == '正面' or float(result.get('sentiment_score', 0)) >= 0):
+                    pos += 1
+                else:
+                    neg += 1
+            except IndexError:
+                break
         attribute = ['positive','Negative']
         news_analytz_result = [pos,neg]
         data = {'attribute': attribute, 'news_analytz_result' : news_analytz_result}
@@ -394,18 +375,16 @@ class economy_news_webbug:
         canvas = FigureCanvasTkAgg(fig, master=window)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
-    def GB_analyze_BERT_ver2(self, data):
-        os.chdir('E:/Infinity/webbug/')
-        # 去除停用詞（可選）
-        stopwords = self._read_stop_words('cn_stop_words.txt')
-        ws = WS('E:/Infinity/webbug/data')
-        # 載入新聞
-        word_sentence_list = ws([data])
-        filtered_words = [w for w in word_sentence_list[0] if w not in stopwords]
-        clean_text = " ".join(filtered_words)
-        # 預測
-        score = self._predictions_BERT(clean_text)
-        return score
+    def GB_analyze_Agent_ver2(self, row):
+        news_dict = {
+            'title': row.get('標題', ''),
+            'date': row.get('發布時間', ''),
+            'content': row.get('內文', ''),
+            'link': row.get('連結', '')
+        }
+        result = self._predictions_Agent(news_dict)
+        # 為了相容原本的 DataFrame apply 寫入邏輯，直接傳回 result dict 或 series
+        return pd.Series(result)
     
     def GB_percent(self, data):
         date = list(dict.fromkeys(data['發布時間']))
@@ -429,7 +408,14 @@ class economy_news_webbug:
         data = pd.read_excel(path)
         data['發布時間'] = pd.DatetimeIndex(data['發布時間']).to_period('D')
         data.sort_values(by = '發布時間', ascending = True, inplace = True)
-        data['情緒分析結果'] = data['內文'].apply(self.GB_analyze_BERT_ver2)
+        
+        # 透過 apply 一次性取得所有新欄位
+        agent_results = data.apply(self.GB_analyze_Agent_ver2, axis=1)
+        data = pd.concat([data, agent_results], axis=1)
+        
+        # 這裡的 情緒分析結果 欄位可能原本用於算百分比，為相容保留：
+        data['情緒分析結果'] = data['sentiment_score']
+        
         final_data = self.GB_percent(data)
         return final_data
 
