@@ -137,10 +137,10 @@ class economy_news_webbug:
                     paragraphs = content_div.find_all("p")
                     content = "\n".join(p.get_text(strip=True) for p in paragraphs)
                     news_data.append({
-                        "標題": title,
-                        "發布時間": publish_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "內文": content,
-                        "連結": link
+                        "title": title,
+                        "date": publish_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "content": content,
+                        "link": link
                     })
                 except Exception as e:
                     print(f"錯誤擷取新聞：{e}, 連結：{link}")
@@ -161,7 +161,7 @@ class economy_news_webbug:
         
     def add_news(self, url):
         df = self._read_excel()
-        if url in df['連結'].values:
+        if url in df['link'].values:
             print('該新聞已存在')
             return
         article = url
@@ -178,10 +178,10 @@ class economy_news_webbug:
             paragraphs = content_div.find_all('p')
             content = '\n'.join(p.get_text(strip=True) for p in paragraphs)
             news_data.append({
-                "標題": title,
-                "發布時間": publish_date.strftime("%Y-%m-%d %H:%M:%S"),
-                "內文": content,
-                "連結": article
+                "title": title,
+                "date": publish_date.strftime("%Y-%m-%d %H:%M:%S"),
+                "content": content,
+                "link": article
                 })
             df = pd.concat([df,pd.DataFrame(news_data)])#, ignore_index = True)
             driver.quit()
@@ -193,11 +193,11 @@ class economy_news_webbug:
     def delete_news(self,df, identifier, by='title'):
         #df = self._read_excel()
         if by == 'title':
-            df = df[df['標題'] != identifier]
+            df = df[df['title'] != identifier]
         elif by == 'link':
-            df = df[df['連結'] != identifier]
+            df = df[df['link'] != identifier]
         elif by == 'time':
-            df = df[df['時間'] != identifier]
+            df = df[df['date'] != identifier]
         else:
             print("請指定正確的刪除依據：'title' 或 'link' 或 'time'")
             return
@@ -207,15 +207,15 @@ class economy_news_webbug:
     
     def search_news(self,keyword,limit = 5):
         df = self._read_excel()
-        filtered = df[df['標題'].str.contains(keyword,case=False,na=False)]
+        filtered = df[df['title'].str.contains(keyword,case=False,na=False)]
         print(filtered.head(limit))
         
     def _update_database(self):
         data = self.get_news()
-        titles = list(data.loc[:,'標題'])
+        titles = list(data.loc[:,'title'])
         df = self._read_excel()
         for title in titles:
-            if title in df['標題'].values:
+            if title in df['title'].values:
                 print('該新聞已存在')
                 data = self.delete_news(data, identifier = title, by = 'title')
         df = pd.concat([df,data])
@@ -230,7 +230,7 @@ class economy_news_webbug:
         return
     
     def print_word_pos_array(self, news_number):
-        sentence_list = self._read_excel()['內文']
+        sentence_list = self._read_excel()['content']
         word_sentence_list = self.ws(sentence_list)
         pos_sentence_list = self.pos(word_sentence_list)
         entity_sentence_list = self.ner(word_sentence_list, pos_sentence_list)
@@ -238,11 +238,11 @@ class economy_news_webbug:
         return entity_sentence_dataframe
     
     def word_pos_DataFrame(self, data):
-        dataFrame = pd.DataFrame(data).drop([0,1],axis = 1).rename(columns = {2:'詞性', 3:'文字'})
+        dataFrame = pd.DataFrame(data).drop([0,1],axis = 1).rename(columns = {2:'pos', 3:'word'})
         return dataFrame
     
     def print_one_hot_code(self, data):
-        one_hot_code_frame = pd.get_dummies(data['詞性'], dtype = int)
+        one_hot_code_frame = pd.get_dummies(data['pos'], dtype = int)
         return one_hot_code_frame
     
     def _read_stop_words(self, data_txt):
@@ -377,44 +377,44 @@ class economy_news_webbug:
         
     def GB_analyze_Agent_ver2(self, row):
         news_dict = {
-            'title': row.get('標題', ''),
-            'date': row.get('發布時間', ''),
-            'content': row.get('內文', ''),
-            'link': row.get('連結', '')
+            'title': row.get('title', ''),
+            'date': row.get('date', ''),
+            'content': row.get('content', ''),
+            'link': row.get('link', '')
         }
         result = self._predictions_Agent(news_dict)
         # 為了相容原本的 DataFrame apply 寫入邏輯，直接傳回 result dict 或 series
         return pd.Series(result)
     
     def GB_percent(self, data):
-        date = list(dict.fromkeys(data['發布時間']))
+        date_list = list(dict.fromkeys(data['date']))
         pos = []
         nes = []
-        for i in date:
-            search_data = data[data['發布時間'] == str(i)]['情緒分析結果']
+        for i in date_list:
+            search_data = data[data['date'] == str(i)]['sentiment_score']
             pos_value = sum(search_data)/len(search_data)*100
             nes_value = 100 - pos_value
             pos.append(pos_value)
             nes.append(nes_value)
         GB_data = {
-            'Date': date,
-            '正面新聞占比': pos,
-            '負面新聞占比': nes
+            'Date': date_list,
+            'positive_percent': pos,
+            'negative_percent': nes
             }
         return_data = pd.DataFrame(GB_data)
         return return_data
     
     def calculatedaynewspercent(self, path):
         data = pd.read_excel(path)
-        data['發布時間'] = pd.DatetimeIndex(data['發布時間']).to_period('D')
-        data.sort_values(by = '發布時間', ascending = True, inplace = True)
+        data['date'] = pd.DatetimeIndex(data['date']).to_period('D')
+        data.sort_values(by = 'date', ascending = True, inplace = True)
         
         # 透過 apply 一次性取得所有新欄位
         agent_results = data.apply(self.GB_analyze_Agent_ver2, axis=1)
         data = pd.concat([data, agent_results], axis=1)
         
-        # 這裡的 情緒分析結果 欄位可能原本用於算百分比，為相容保留：
-        data['情緒分析結果'] = data['sentiment_score']
+        # 為了保持原有的算百分比邏輯
+        data['sentiment_score'] = data['sentiment_score'].fillna(0)
         
         final_data = self.GB_percent(data)
         return final_data

@@ -1,76 +1,124 @@
 import os
 import glob
 import pandas as pd
+import sys
 from agent_news_analyzer import AgentNewsAnalyzer
+
+# 強制控制台輸出使用 UTF-8，避免 cp950 編碼錯誤
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8')
+
+def clean_and_migrate_columns(df):
+    """
+    使用模糊匹配將中文欄位轉換為英文。
+    """
+    # 定義模糊匹配規則
+    rules = {
+        'title': ['標題', 'title', 'Title'],
+        'date': ['日期', '時間', 'date', 'Date', '發布時間', 'Publish Date'],
+        'content': ['內容', '內文', 'content', 'Content', '描述'],
+        'link': ['連結', 'URL', 'link', 'Link', 'url'],
+        'source': ['來源', 'source', 'Source', '媒體'],
+        'positive_negative_analysis': ['正負分析', '情緒', 'sentiment', 'Sentiment'],
+        'sentiment_score': ['情緒分析結果', '分數', 'score', 'Score', 'sentiment_score']
+    }
+    
+    new_df = pd.DataFrame()
+    original_cols = df.columns.tolist()
+    used_cols = set()
+
+    for eng_key, keywords in rules.items():
+        found = False
+        for col in original_cols:
+            if any(k in str(col) for k in keywords):
+                if eng_key not in new_df.columns:
+                    new_df[eng_key] = df[col]
+                else:
+                    # 如果有多個匹配欄位，嘗試合併
+                    new_df[eng_key] = new_df[eng_key].fillna(df[col])
+                used_cols.add(col)
+                found = True
+        
+        if not found:
+            new_df[eng_key] = None
+
+    # 保留原本沒被匹配到的其他欄位 (如果是英文的)
+    for col in original_cols:
+        if col not in used_cols and not any('\u4e00' <= char <= '\u9fff' for char in str(col)):
+            new_df[col] = df[col]
+            
+    # 確保所有必要的 Agent 產出欄位都存在
+    agent_fields = ['market', 'confidence', 'impact_scope', 'reasoning_summary']
+    for field in agent_fields:
+        if field not in new_df.columns:
+            new_df[field] = None
+            
+    return new_df
 
 def migrate_historical_news():
     data_dir = "E:/Infinity/mydjango/demo/newsapp/news_data"
     
     if not os.path.exists(data_dir):
-        print(f"Directory {data_dir} does not exist.")
+        print(f"目錄 {data_dir} 不存在。")
         return
         
     excel_files = glob.glob(os.path.join(data_dir, "*.xlsx"))
     
     if not excel_files:
-        print(f"No Excel files found in {data_dir}.")
+        print(f"在 {data_dir} 中找不到 Excel 檔案。")
         return
         
     analyzer = AgentNewsAnalyzer()
     
     for file_path in excel_files:
-        print(f"Processing {file_path}...")
+        print(f"正在處理: {os.path.basename(file_path)}")
         try:
             df = pd.read_excel(file_path)
             
-            # Check if sentiment_score exists
-            if 'sentiment_score' not in df.columns:
-                df['market'] = ''
-                df['positive_negative_analysis'] = ''
-                df['sentiment_score'] = 0.0
-                df['confidence'] = 0.0
-                df['impact_scope'] = ''
-                df['reasoning_summary'] = ''
-                df['source'] = df.get('來源', '')
-                df['link'] = df.get('連結', '')
-                df['title'] = df.get('標題', '')
-                df['date'] = df.get('發布時間', '')
-                df['content'] = df.get('內文', '')
-                
-            for index, row in df.iterrows():
-                # Only analyze if sentiment_score is missing or 0.0 for newly added columns
-                if pd.isna(row.get('sentiment_score')) or row.get('sentiment_score') == 0.0:
+            # 1. 欄位清洗
+            df = clean_and_migrate_columns(df)
+            
+            # 2. 檢查是否需要 AI 分析 (僅在配額允許時執行)
+            # 注意：這裡我們先執行清洗，即便 AI 失敗也會存檔
+            needs_save = True
+            
+            # 嘗試處理前 3 筆缺失資料作為測試
+            missing_indices = df[df['sentiment_score'].isna() | (df['sentiment_score'] == 0)].index.tolist()
+            
+            if missing_indices:
+                print(f"  [提示] 發現 {len(missing_indices)} 條缺失分析的資料。")
+                for index in missing_indices[:5]: # 每次嘗試處理少量資料，避免卡死
+                    row = df.loc[index]
                     news_data = {
-                        'title': row.get('標題', row.get('title', '')),
-                        'date': row.get('發布時間', row.get('date', '')),
-                        'content': row.get('內文', row.get('content', '')),
-                        'link': row.get('連結', row.get('link', '')),
-                        'source': row.get('來源', row.get('source', ''))
+                        'title': row.get('title', ''),
+                        'date': str(row.get('date', '')),
+                        'content': row.get('content', ''),
+                        'link': row.get('link', ''),
+                        'source': row.get('source', '')
                     }
                     
-                    print(f"Analyzing row {index}: {news_data['title']}")
-                    result = analyzer.analyze_news(news_data)
+                    if not news_data['title']: continue
                     
-                    df.at[index, 'market'] = result.get('market', '')
-                    df.at[index, 'positive_negative_analysis'] = result.get('positive_negative_analysis', '')
-                    df.at[index, 'sentiment_score'] = result.get('sentiment_score', 0.0)
-                    df.at[index, 'confidence'] = result.get('confidence', 0.0)
-                    df.at[index, 'impact_scope'] = result.get('impact_scope', '')
-                    df.at[index, 'reasoning_summary'] = result.get('reasoning_summary', '')
-                    df.at[index, 'source'] = result.get('source', '')
-                    df.at[index, 'link'] = result.get('link', '')
-                    df.at[index, 'title'] = result.get('title', '')
-                    df.at[index, 'date'] = result.get('date', '')
-                    df.at[index, 'content'] = result.get('content', '')
+                    try:
+                        print(f"  [AI 分析] {news_data['title'][:20]}...")
+                        result = analyzer.analyze_news(news_data)
+                        if result:
+                            for key in ['market', 'positive_negative_analysis', 'sentiment_score', 
+                                        'confidence', 'impact_scope', 'reasoning_summary']:
+                                if key in result:
+                                    df.at[index, key] = result[key]
+                    except Exception as e:
+                        if "429" in str(e):
+                            print("  [停止] 已達 Groq 配額限制，停止本次 AI 分析，僅執行欄位清洗。")
+                            break
+                        print(f"  [跳過] 錯誤: {e}")
             
-            # Save the updated dataframe back to the excel file
+            # 3. 儲存更新後的檔案
             df.to_excel(file_path, index=False)
-            print(f"Successfully updated {file_path}")
+            print(f"  [完成] 檔案已標準化為英文欄位。")
             
         except Exception as e:
-            print(f"Error processing {file_path}: {e}")
+            print(f"處理檔案 {file_path} 時發生錯誤: {e}")
 
 if __name__ == "__main__":
-    print("Starting historical news migration...")
     migrate_historical_news()
-    print("Migration completed.")
