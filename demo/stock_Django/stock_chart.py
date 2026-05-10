@@ -149,7 +149,7 @@ class chart_create:
         data = data.sort_index()
         
         # Vectorized timestamp and series data construction
-        timestamps = (data.index.astype(np.int64) // 10**6).tolist()
+        timestamps = (data.index.values.astype('datetime64[ms]').astype(np.int64)).tolist()
         opens = data['Open'].tolist()
         highs = data['High'].tolist()
         lows = data['Low'].tolist()

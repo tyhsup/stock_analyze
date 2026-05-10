@@ -424,17 +424,14 @@
     // ============================================================
     function resampleOHLCV(data, period) {
         // data = array of {x: timestamp_ms, y: [O,H,L,C]}
-        // volume = array of {x: timestamp_ms, y: vol, fillColor: ...}
-        // Returns {candles, volume}
-        if (period === 'D') return null;  // use raw data
-
-        const periodMs = period === 'W' ? 7 * 86400000 : 30 * 86400000;
+        // Returns {candles, volumes}
+        if (period === 'D') return null;
 
         function getBucket(ts) {
             const d = new Date(ts);
             if (period === 'W') {
                 // Start of week (Monday)
-                const day = d.getDay(); // 0=Sun
+                const day = d.getDay(); 
                 const diff = (day === 0 ? -6 : 1 - day);
                 const mon = new Date(d);
                 mon.setDate(d.getDate() + diff);
@@ -449,7 +446,7 @@
         const buckets = {};
         const volBuckets = {};
 
-        _rawKlineConfig.candlestick.data.forEach((pt, i) => {
+        data.forEach((pt, i) => {
             const key = getBucket(pt.x);
             const [o, h, l, c] = pt.y;
             if (!buckets[key]) {
@@ -471,7 +468,6 @@
         }));
         const volumes = sortedKeys.map(k => {
             const b = buckets[k];
-            // green=up, red=down (standard international convention)
             const isUp = b.close >= b.open;
             return { x: k, y: volBuckets[k].vol, fillColor: isUp ? '#26a69a' : '#ef5350' };
         });
@@ -676,7 +672,7 @@
         let volData = _rawKlineConfig.volume.data;
 
         if (_currentPeriod !== 'D') {
-            const resampled = resampleOHLCV(null, _currentPeriod);
+            const resampled = resampleOHLCV(_rawKlineConfig.candlestick.data, _currentPeriod);
             if (resampled) {
                 candleData = resampled.candles;
                 volData = resampled.volumes;
@@ -715,9 +711,9 @@
         // Bollinger Bands
         const bbChecked = document.getElementById('ind-bb') && document.getElementById('ind-bb').checked;
         if (bbChecked) {
-            // Use TA-Lib data if available, fallback to JS compute
+            // Force re-calculation if not Daily view to ensure alignment
             let upper, middle, lower;
-            if (_taConfig && _taConfig.overlap && _taConfig.overlap.BB_UPPER) {
+            if (_currentPeriod === 'D' && _taConfig && _taConfig.overlap && _taConfig.overlap.BB_UPPER) {
                 upper = _taConfig.overlap.BB_UPPER;
                 middle = _taConfig.overlap.BB_MIDDLE;
                 lower = _taConfig.overlap.BB_LOWER;
@@ -737,7 +733,7 @@
 
         // Parabolic SAR
         const sarChecked = document.getElementById('ind-sar') && document.getElementById('ind-sar').checked;
-        if (sarChecked && _taConfig && _taConfig.overlap && _taConfig.overlap.SAR) {
+        if (sarChecked && _currentPeriod === 'D' && _taConfig && _taConfig.overlap && _taConfig.overlap.SAR) {
             const sarSer = timestamps.map((ts, i) => ({ x: ts, y: _taConfig.overlap.SAR[i] !== null ? parseFloat(_taConfig.overlap.SAR[i].toFixed(2)) : null }));
             mainSeries.push({ name: 'SAR', type: 'scatter', data: sarSer });
             maWidths.push(4);
@@ -784,20 +780,22 @@
             maColors.push('#e91e63');
         }
 
-        // AI Predictions
-        if (_rawKlineConfig.ai_history && _rawKlineConfig.ai_history.length > 0) {
-            _rawKlineConfig.ai_history.forEach(ser => {
-                mainSeries.push(ser);
-                maWidths.push(2);
-                maColors.push(ser.color);
-            });
-        }
-        if (_rawKlineConfig.ai_future && _rawKlineConfig.ai_future.length > 0) {
-            _rawKlineConfig.ai_future.forEach(ser => {
-                mainSeries.push(ser);
-                maWidths.push(2);
-                maColors.push(ser.color);
-            });
+        // AI Predictions - ONLY show on Daily view as they are daily-trained predictions
+        if (_currentPeriod === 'D') {
+            if (_rawKlineConfig.ai_history && _rawKlineConfig.ai_history.length > 0) {
+                _rawKlineConfig.ai_history.forEach(ser => {
+                    mainSeries.push(ser);
+                    maWidths.push(2);
+                    maColors.push(ser.color);
+                });
+            }
+            if (_rawKlineConfig.ai_future && _rawKlineConfig.ai_future.length > 0) {
+                _rawKlineConfig.ai_future.forEach(ser => {
+                    mainSeries.push(ser);
+                    maWidths.push(2);
+                    maColors.push(ser.color);
+                });
+            }
         }
 
         const mainOptions = {
@@ -811,7 +809,16 @@
             },
             xaxis: {
                 type: 'datetime',
-                labels: { style: { fontSize: '18px', fontWeight: 600 } }
+                labels: { 
+                    style: { fontSize: '18px', fontWeight: 600 },
+                    datetimeUTC: false, // Ensure labels match localized resampling
+                    datetimeFormatter: {
+                        year: 'yyyy',
+                        month: "MMM 'yy",
+                        day: 'dd MMM',
+                        hour: 'HH:mm'
+                    }
+                }
             },
             yaxis: {
                 tooltip: { enabled: true },
@@ -930,7 +937,11 @@
                     },
                     xaxis: {
                         type: 'datetime',
-                        labels: { style: { fontSize: '18px' } }
+                        labels: { 
+                            style: { fontSize: '18px' },
+                            datetimeUTC: false,
+                            datetimeFormatter: { year: 'yyyy', month: "MMM 'yy", day: 'dd MMM', hour: 'HH:mm' }
+                        }
                     },
                     yaxis: {
                         min: 0, max: 100, tickAmount: 5,
@@ -979,7 +990,11 @@
                     },
                     xaxis: {
                         type: 'datetime',
-                        labels: { style: { fontSize: '18px' } }
+                        labels: { 
+                            style: { fontSize: '18px' },
+                            datetimeUTC: false,
+                            datetimeFormatter: { year: 'yyyy', month: "MMM 'yy", day: 'dd MMM', hour: 'HH:mm' }
+                        }
                     },
                     yaxis: {
                         labels: {
@@ -1015,7 +1030,11 @@
                     },
                     xaxis: {
                         type: 'datetime',
-                        labels: { style: { fontSize: '18px' } }
+                        labels: { 
+                            style: { fontSize: '18px' },
+                            datetimeUTC: false,
+                            datetimeFormatter: { year: 'yyyy', month: "MMM 'yy", day: 'dd MMM', hour: 'HH:mm' }
+                        }
                     },
                     yaxis: yaxisConfig || { labels: { style: { fontSize: '18px' } } },
                     stroke: { 
