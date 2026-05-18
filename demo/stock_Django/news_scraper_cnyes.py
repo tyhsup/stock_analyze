@@ -1,10 +1,10 @@
 """
-news_scraper_cnyes.py — 鉅亨網 (cnyes.com) news scraper using Selenium.
+news_scraper_cnyes.py — 鉅亨網 (cnyes.com) news scraper using cnyes-cli and BeautifulSoup.
 
 Supports:
-- TW stock news: /news/cat/tw_stock?keyword={ticker}
-- US stock news: /news/cat/us_stock?keyword={keyword}
-- General search: /news/search?keyword={query}
+- TW stock news: get-news-list-by-symbol TWS:{ticker}:STOCK
+- US stock news: get-news-list-by-symbol USS:{ticker}:STOCK
+- General search: get-news-list-by-category tw_stock --keyword {query}
 
 If total articles < 10, automatically tries to fetch the maximum available.
 """
@@ -12,11 +12,11 @@ If total articles < 10, automatically tries to fetch the maximum available.
 import logging
 import time
 import random
+import json
+import subprocess
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
+from bs4 import BeautifulSoup
 
 CNYES_WWW = "https://www.cnyes.com"
 logger = logging.getLogger(__name__)
@@ -41,24 +41,6 @@ USER_AGENTS = [
 ]
 
 
-def _make_driver(headless: bool = True):
-    """Create a configured Edge WebDriver."""
-    options = webdriver.EdgeOptions()
-    if headless:
-        options.add_argument('--headless')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1280,800')
-    options.add_argument('--blink-settings=imagesEnabled=false')
-    
-    # User-Agent Rotation
-    ua = random.choice(USER_AGENTS)
-    options.add_argument(f'--user-agent={ua}')
-    
-    return webdriver.Edge(options=options)
-
-
 def _analyze_sentiment(text: str, content: str = None) -> str:
     """Advanced BERT sentiment analysis with keyword fallback. Prioritizes content."""
     # 優先分析內容，若內容過短則分析標題
@@ -68,7 +50,6 @@ def _analyze_sentiment(text: str, content: str = None) -> str:
     if _nlp_service:
         res = _nlp_service.analyze_sentiment(analysis_text)
         if res.get('label') != 'error':
-            # label is already handled in nlp_service update to follow
             if res.get('label') == 'positive': return '正面'
             if res.get('label') == 'negative': return '負面'
             return '中性'
@@ -102,256 +83,203 @@ def _parse_cnyes_timestamp(ts_str: str) -> str:
     return datetime.now().strftime('%Y-%m-%d')
 
 
-class CnyesScraper:
-    """Scrapes 鉅亨網 (cnyes.com) for stock news using Selenium."""
+def _to_cnyes_symbol(ticker: str, market: str = 'tw') -> str:
+    """將 Ticker 轉換為鉅亨網標準 Symbol 格式。"""
+    t = str(ticker).strip().upper()
+    # 去除常見的字尾
+    if t.endswith('.TW'):
+        t = t[:-3]
+    elif t.endswith('.TWO'):
+        t = t[:-4]
+        
+    # 如果已經是標準格式，直接回傳
+    if t.startswith('TWS:') or t.startswith('USS:'):
+        return t
+        
+    # 判斷是否為台股（純數字代碼）
+    if t.isdigit() or market == 'tw':
+        return f"TWS:{t}:STOCK"
+    else:
+        return f"USS:{t}:STOCK"
 
-    def __init__(self, headless: bool = True):
-        self.headless = headless
-        self.min_articles = 10  # If we get fewer than this, try to fetch more
 
-    def _fetch_article_content(self, driver, url: str) -> str:
-        """進入新聞頁面抓取文章主體內容。"""
-        # P0: Implement Retry Logic
-        for attempt in range(2):
-            try:
-                driver.get(url)
-                # 增加隨機等待時間以確保 JS 內容渲染完成 (2-5s)
-                time.sleep(random.uniform(2.5, 4.5)) 
-                
-                # 使用多種方式嘗試抓取內容
-                content = driver.execute_script("""
-                    let art = document.querySelector('article') || 
-                              document.querySelector('[itemprop="articleBody"]') ||
-                              document.querySelector('section[class*="ArticleContent"]') ||
-                              document.querySelector('.news-content') ||
-                              document.querySelector('.article-content');
-                    return art ? art.innerText : '';
-                """)
-                
-                if not content or len(content) < 100:
-                    selectors = ['article', 'div[itemprop="articleBody"]', 'section[class*="ArticleContent"]', '.news-content', '.article-content']
-                    for res in selectors:
-                        try:
-                            element = driver.find_element(By.CSS_SELECTOR, res)
-                            content = element.text.strip()
-                            if len(content) > 100: break
-                        except: continue
+def _run_cnyes_cli(cmd_args: list) -> dict:
+    """呼叫 cnyes-cli 並回傳解析後的 JSON 物件。"""
+    cmd = ["cnyes-cli"] + cmd_args + ["--agent"]
+    try:
+        cmd_str = " ".join(cmd)
+        logger.info(f"執行 CLI 命令: {cmd_str}")
+        res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, encoding="utf-8", errors="ignore")
+        if res.returncode == 0:
+            return json.loads(res.stdout)
+        else:
+            logger.error(f"cnyes-cli 執行錯誤 (Exit {res.returncode}): {res.stderr}")
+    except Exception as e:
+        logger.error(f"無法執行 cnyes-cli: {e}")
+    return {}
 
-                if content:
-                    content = " ".join(content.split())
-                    return content[:2000]
-            except Exception as e:
-                logger.warning(f"無法抓取文章內容 (嘗試 {attempt+1}) {url}: {e}")
-                time.sleep(2)
-        return ""
 
-    def _scroll_and_collect(self, driver, wait, max_articles: int, source_label: str) -> list:
-        """
-        Scroll down to load more articles via infinite scroll.
-        Collects up to max_articles news items.
-        """
-        articles = []
-        seen_urls = set()
-        scroll_attempts = 0
-        max_scrolls = 300 
-        consecutive_no_new = 0
-
-        while len(articles) < max_articles and scroll_attempts < max_scrolls:
-            try:
-                # Optimized selectors: added 'div.news-item' and similar variations found in latest Cnyes
-                items = driver.find_elements(By.CSS_SELECTOR, 'a.news, article, [class*="NewsItem"], div[class*="news-item"]')
-
-                new_found_this_cycle = 0
-                for item in items:
-                    try:
-                        link = item.get_attribute('href')
-                        if not link:
-                            # Try finding 'a' child
-                            try:
-                                link = item.find_element(By.TAG_NAME, 'a').get_attribute('href')
-                            except: pass
-                        
-                        if not link or link in seen_urls:
-                            continue
-                        seen_urls.add(link)
-
-                        # Title
-                        title = ""
-                        for sel in ['h3', 'h2', 'h1', '[class*="title"]', '.text']:
-                            try:
-                                title_el = item.find_element(By.CSS_SELECTOR, sel)
-                                title = title_el.text.strip()
-                                if title: break
-                            except: pass
-                        
-                        if not title: title = item.text.strip().split('\n')[0][:80]
-                        if not title: continue
-
-                        # Date
-                        date_text = ''
-                        for sel in ['time', '[class*="date"]', '[class*="time"]', 'span']:
-                            try:
-                                el = item.find_element(By.CSS_SELECTOR, sel)
-                                date_text = el.get_attribute('datetime') or el.text
-                                if date_text and (':' in date_text or '/' in date_text or '-' in date_text): break
-                            except: pass
-
-                        parsed_date = _parse_cnyes_timestamp(date_text)
-                        
-                        articles.append({
-                            '標題': title,
-                            '日期': parsed_date,
-                            '連結': link,
-                            '正負分析': '中性',
-                            '來源': source_label,
-                        })
-                        new_found_this_cycle += 1
-
-                        if len(articles) >= max_articles:
-                            break
-                    except Exception:
-                        continue
-
-                if len(articles) >= max_articles: break
-
-                # 2. Infinite scroll trigger
-                prev_height = driver.execute_script("return document.body.scrollHeight")
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight - 200);")
-                time.sleep(random.uniform(0.3, 0.6))
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(random.uniform(1.2, 2.0))
-                
-                new_height = driver.execute_script("return document.body.scrollHeight")
-                if new_found_this_cycle == 0:
-                    consecutive_no_new += 1
-                else:
-                    consecutive_no_new = 0
-
-                if consecutive_no_new >= 5 and new_height == prev_height:
-                    break
-                scroll_attempts += 1
-            except Exception as e:
-                logger.error(f"滾動抓取異常: {e}")
-                break
-
-        # --- 第二階段：逐一獲取內容並分析情緒 ---
-        logger.info(f"開始抓取 {len(articles)} 篇新聞的詳細內容...")
-        for article in articles:
-            content = self._fetch_article_content(driver, article['連結'])
-            article['內容'] = content
-            article['正負分析'] = _analyze_sentiment(article['標題'], content)
+def _fetch_html_content(url: str) -> str:
+    """使用 requests 抓取新聞網頁，並使用 BeautifulSoup 解析出純文字內文。"""
+    headers = {
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    try:
+        # 加上隨機微小延遲防止觸發防爬機制
+        time.sleep(random.uniform(0.1, 0.3))
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
             
-        return articles
+            # 策略：尋找所有 article 標籤，並挑選內容最長且大於 100 字的那個以防 SEO 標籤干擾
+            articles = soup.find_all('article')
+            art = None
+            if articles:
+                sorted_articles = sorted(articles, key=lambda a: len(a.get_text(strip=True)), reverse=True)
+                longest_art = sorted_articles[0]
+                if len(longest_art.get_text(strip=True)) > 100:
+                    art = longest_art
+            
+            # 如果沒有合適的 article 標籤，再嘗試其他 selectors
+            if not art:
+                art = (soup.find(attrs={"itemprop": "articleBody"}) or 
+                       soup.find('section', class_=lambda c: c and 'ArticleContent' in c) or 
+                       soup.find(class_='news-content') or 
+                       soup.find(class_='article-content'))
+                       
+            if art:
+                text = art.get_text(separator=' ', strip=True)
+                text = " ".join(text.split())
+                return text[:2000]
+    except Exception as e:
+        logger.warning(f"抓取內文失敗 {url}: {e}")
+    return ""
+
+
+class CnyesScraper:
+    """
+    透過 cnyes-cli (API) 與輕量 HTTP 抓取技術重構的新一代鉅亨網新聞抓取器。
+    與原有 Selenium Scraper 介面 100% 相容。
+    """
+    def __init__(self, headless: bool = True):
+        # 為了向後相容保留 headless 參數，但不做任何 Selenium 啟動
+        self.headless = headless
+        self.min_articles = 10
 
     def fetch_news(self, ticker: str, market: str = 'tw', limit: int = 1000) -> list:
         """
-        Fetch stock news for a given ticker from 鉅亨網.
-
-        Args:
-            ticker: Stock ticker (e.g., '2330', 'AAPL')
-            market: 'tw' for Taiwan stock, 'us' for US stock
-            limit: Max articles to fetch. If result < 10, auto-expands to try more.
-
-        Returns:
-            List of news dicts with keys: 標題, 日期, 內容, 連結, 正負分析, 來源
-        """
-        # Build search URL
-        # Ticker news on Anue is best fetched via the search endpoint for reliable filtering
-        # The category URLs (cat/tw_stock_news) don't support keyword filtering reliably
-        url = f"{CNYES_WWW}/search/news?keyword={ticker}"
+        獲取特定個股的新聞列表。
         
-        if market == 'tw':
-            source_label = f"鉅亨網-台股-{ticker}"
-        else:
-            source_label = f"鉅亨網-美股-{ticker}"
-
-        logger.info(f"[CnyesScraper] Fetching news for {ticker} ({market}): {url}, limit: {limit}")
-
-        driver = _make_driver(self.headless)
+        Args:
+            ticker: 股票代碼 (例如 '2330', 'AAPL')
+            market: 'tw' 代表台股，'us' 代表美股
+            limit: 限制回傳的新聞筆數
+            
+        Returns:
+            新聞字典陣列，包含鍵值：標題, 日期, 內容, 連結, 正負分析, 來源
+        """
+        start_time = time.time()
+        symbol = _to_cnyes_symbol(ticker, market)
+        logger.info(f"[CnyesScraper] 開始透過 cnyes-cli 獲取個股新聞: {symbol}, limit: {limit}")
+        
+        # 清除 symbol 尾端的市場標記以符合舊版來源名稱標記行為
+        clean_ticker = ticker.replace('.TW', '').replace('.TWO', '')
+        source_label = f"鉅亨網-台股-{clean_ticker}" if market == 'tw' else f"鉅亨網-美股-{clean_ticker}"
+        
+        # 1. 呼叫 cnyes-cli 獲取列表
+        cmd_args = ["media", "get-news-list-by-symbol", symbol, "--limit", str(limit)]
+        json_data = _run_cnyes_cli(cmd_args)
+        
+        # 解析列表數據
+        articles_data = json_data.get("results", {}).get("items", {}).get("data", [])
+        if not articles_data:
+            logger.warning(f"[CnyesScraper] 未能獲取 {symbol} 的新聞列表或列表為空")
+            return []
+            
         articles = []
-        try:
-            driver.get(url)
-            wait = WebDriverWait(driver, 15)
-
-            # Wait for page content to load
-            time.sleep(3)
-
-            articles = self._scroll_and_collect(driver, wait, limit, source_label)
-
-            # If fewer than requested, try expanding — fetch more aggressively
-            if len(articles) < limit and len(articles) < self.min_articles:
-                logger.info(f"[CnyesScraper] Only {len(articles)} articles found for {ticker}, trying broader search...")
-                driver.get(url)
-                time.sleep(3)
-                articles = self._scroll_and_collect(driver, wait, limit * 2, source_label)
-
-            logger.info(f"[CnyesScraper] {ticker}: collected {len(articles)} articles")
-
-        except Exception as e:
-            logger.error(f"[CnyesScraper] fetch_news error for {ticker}: {e}")
-        finally:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-        return articles[:limit] if len(articles) > limit else articles
+        # 2. 迭代列表並透過輕量 HTTP GET 補全內文與情緒分析
+        for item in articles_data[:limit]:
+            title = item.get("title", "").strip()
+            publish_at = item.get("publishAt", 0)
+            
+            # 解析日期
+            parsed_date = _parse_cnyes_timestamp(str(publish_at))
+            
+            # 拼接網址，鉅亨網新聞網址格式為 https://news.cnyes.com/news/id/{newsId}
+            news_id = item.get("newsId")
+            link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
+            
+            # 抓取內文（個股 API 預設無 content）
+            content = _fetch_html_content(link) if link else ""
+            
+            # 進行情緒分析
+            sentiment = _analyze_sentiment(title, content)
+            
+            articles.append({
+                '標題': title,
+                '日期': parsed_date,
+                '連結': link,
+                '內容': content,
+                '正負分析': sentiment,
+                '來源': source_label,
+            })
+            
+        elapsed = time.time() - start_time
+        logger.info(f"[CnyesScraper] 成功獲取 {len(articles)} 篇新聞，總耗時: {elapsed:.2f} 秒")
+        return articles
 
     def search_news(self, query: str, limit: int = 1000) -> list:
         """
-        Search 鉅亨網 for any keyword (not restricted to a specific stock).
-        Uses the search endpoint.
-
-        Args:
-            query: Search keyword
-            limit: Max articles to fetch
-
-        Returns:
-            List of news dicts
+        搜尋鉅亨網新聞（不限特定個股，支援關鍵字搜尋）。
+        為了高效獲取並獲取完整內文，我們呼叫分類新聞 API 並在其中帶入 keyword 參數。
+        由於分類新聞 API 直接包含 content 欄位，這使得我們可以直接解析，速度極快。
         """
-        url = f"{CNYES_WWW}/news/search?keyword={query}"
-        # Also try the main search
-        alt_url = f"https://search.cnyes.com/?keyword={query}"
+        start_time = time.time()
+        logger.info(f"[CnyesScraper] 開始搜尋關鍵字: '{query}', limit: {limit}")
         source_label = f"鉅亨網-搜尋-{query}"
-
-        logger.info(f"[CnyesScraper] Searching: {url}")
-
-        driver = _make_driver(self.headless)
+        
+        # 我們主要在台股新聞中進行搜尋
+        cmd_args = ["media", "get-news-list-by-category", "tw_stock", "--keyword", query, "--limit", str(limit)]
+        json_data = _run_cnyes_cli(cmd_args)
+        
+        articles_data = json_data.get("results", {}).get("items", {}).get("data", [])
         articles = []
-        try:
-            driver.get(url)
-            wait = WebDriverWait(driver, 15)
-            time.sleep(3)
-
-            articles = self._scroll_and_collect(driver, wait, limit, source_label)
-
-            if len(articles) < self.min_articles:
-                driver.get(alt_url)
-                time.sleep(3)
-                articles += self._scroll_and_collect(driver, wait, limit, source_label)
-
-            # Deduplicate
-            seen = set()
-            unique = []
-            for a in articles:
-                key = a.get('連結', '') or a.get('標題', '')
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(a)
-            articles = unique
-
-            logger.info(f"[CnyesScraper] search '{query}': {len(articles)} results")
-
-        except Exception as e:
-            logger.error(f"[CnyesScraper] search_news error: {e}")
-        finally:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-        return articles[:limit]
+        
+        for item in articles_data[:limit]:
+            title = item.get("title", "").strip()
+            publish_at = item.get("publishAt", 0)
+            parsed_date = _parse_cnyes_timestamp(str(publish_at))
+            
+            news_id = item.get("newsId")
+            link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
+            
+            # 分類新聞直接含有 content（為 HTML 格式）
+            content_html = item.get("content", "")
+            content = ""
+            if content_html:
+                try:
+                    content = BeautifulSoup(content_html, 'html.parser').get_text(separator=' ', strip=True)
+                    content = " ".join(content.split())[:2000]
+                except Exception as e:
+                    logger.warning(f"解析分類新聞 HTML 失敗: {e}")
+                    
+            sentiment = _analyze_sentiment(title, content)
+            
+            articles.append({
+                '標題': title,
+                '日期': parsed_date,
+                '連結': link,
+                '內容': content,
+                '正負分析': sentiment,
+                '來源': source_label,
+            })
+            
+        elapsed = time.time() - start_time
+        logger.info(f"[CnyesScraper] 搜尋 '{query}' 成功返回 {len(articles)} 筆結果，總耗時: {elapsed:.2f} 秒")
+        return articles
 
     def get_latest_news_url(self, ticker: str, market: str = 'tw') -> str:
-        """Return the 鉅亨網 news URL for a given ticker (for direct link in UI)."""
-        return f"{CNYES_WWW}/search/news?keyword={ticker}"
+        """回傳 UI 用來連結至鉅亨網個股新聞的 URL。"""
+        return f"https://www.cnyes.com/search/news?keyword={ticker}"

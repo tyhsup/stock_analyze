@@ -231,29 +231,33 @@ _news_cooldown = {}
 
 def refresh_news_background(ticker: str, market: str, limit: int = 1000):
     """Background thread to fetch news from 鉅亨網."""
+    import time
     from stock_Django.news_scraper_cnyes import CnyesScraper
     from stock_Django.news_excel import NewsExcelManager
     
     ticker = ticker.upper()
     _set_status(ticker, 'running', 10, f'正在從 鉅亨網 抓取 {ticker} 最新新聞...')
     
+    start_time = time.time()
     try:
         scraper = CnyesScraper()
         news_mgr = NewsExcelManager()
         
-        # Scrape
-        results = scraper.fetch_news(ticker.replace('.TW', ''), market=market, limit=limit)
+        # Scrape using high-performance cnyes-cli hybrid architecture
+        results = scraper.fetch_news(ticker, market=market, limit=limit)
         
+        elapsed = time.time() - start_time
         if results:
             _set_status(ticker, 'running', 80, f'抓取完成，正在儲存 {len(results)} 則新聞並進行 BERT 情緒分析...')
-            # NOTE: Sentiment is analyzed inside scraper.fetch_news calling _analyze_sentiment
             news_mgr.write_news(ticker, results)
-            _set_status(ticker, 'done', 100, f'✅ {ticker} 新聞更新完成，共新增 {len(results)} 則資料')
+            _set_status(ticker, 'done', 100, f'✅ {ticker} 新聞更新完成，共新增 {len(results)} 則資料，耗時 {elapsed:.2f} 秒')
+            logger.info(f"[Freshness] News refresh for {ticker} completed successfully. Found {len(results)} items. Time elapsed: {elapsed:.2f}s (cnyes-cli hybrid architecture)")
         else:
-            _set_status(ticker, 'done', 100, f'✅ {ticker} 抓取完成，但未發現新新聞')
+            _set_status(ticker, 'done', 100, f'✅ {ticker} 抓取完成，但未發現新新聞，耗時 {elapsed:.2f} 秒')
+            logger.info(f"[Freshness] News refresh for {ticker} completed with no new items. Time elapsed: {elapsed:.2f}s")
             
     except Exception as e:
-        logger.error(f"News refresh failed for {ticker}: {e}")
+        logger.error(f"News refresh failed for {ticker}: {e}", exc_info=True)
         _set_status(ticker, 'error', 0, f'❌ 新聞更新錯誤: {e}')
 
 
