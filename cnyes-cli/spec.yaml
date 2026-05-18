@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: CNYES News API
+  description: 非官方的鉅亨網新聞列表 API。
+  version: 1.0.0
+servers:
+  - url: https://api.cnyes.com
+paths:
+  /media/api/v1/newslist/category/{categoryId}:
+    get:
+      summary: 取得特定分類的新聞列表
+      description: |
+        取得鉅亨網的新聞列表，支援多種分類：
+        - `headline` (頭條新聞)
+        - `tw_stock` (台股新聞)
+        - `us_stock` (美股新聞)
+        - `cn_stock` (陸港股新聞)
+        - `forex` (外匯新聞)
+        - `wd_macro` (全球/總經新聞)
+      operationId: getNewsListByCategory
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          description: 新聞分類代碼 (例如：headline, tw_stock, us_stock, cn_stock, forex, wd_macro)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: 每頁顯示的新聞筆數 (預設 30)
+          schema:
+            type: integer
+            default: 30
+        - name: page
+          in: query
+          required: false
+          description: 頁碼
+          schema:
+            type: integer
+            default: 1
+        - name: startAt
+          in: query
+          required: false
+          description: 開始時間戳記 (Epoch seconds)
+          schema:
+            type: integer
+        - name: endAt
+          in: query
+          required: false
+          description: 結束時間戳記 (Epoch seconds)
+          schema:
+            type: integer
+        - name: stock
+          in: query
+          required: false
+          description: 股票代號 (例如：2330)
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          description: 關鍵字搜尋
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功取得新聞列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: object
+                    properties:
+                      current_page:
+                        type: integer
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            newsId:
+                              type: integer
+                            title:
+                              type: string
+                            publishAt:
+                              type: integer
+                            content:
+                              type: string
+                            summary:
+                              type: string
+                            url:
+                              type: string
+                  message:
+                    type: string
+                  statusCode:
+                    type: integer
+
+  /media/api/v1/newslist/{symbol}/symbolNews:
+    get:
+      summary: 取得特定個股的新聞列表
+      description: |
+        取得鉅亨網特定個股的新聞列表，支援台股/美股等股票。
+        例如台積電為 `TWS:2330:STOCK`。
+      operationId: getNewsListBySymbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: 股票識別碼 (例如台積電為 `TWS:2330:STOCK`，美股蘋果為 `USS:AAPL:STOCK`)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: 每頁顯示的新聞筆數 (預設 30)
+          schema:
+            type: integer
+            default: 30
+        - name: page
+          in: query
+          required: false
+          description: 頁碼
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: 成功取得新聞列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: object
+                    properties:
+                      current_page:
+                        type: integer
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            newsId:
+                              type: integer
+                            title:
+                              type: string
+                            publishAt:
+                              type: integer
+                            content:
+                              type: string
+                            summary:
+                              type: string
+                            url:
+                              type: string
+                  message:
+                    type: string
+                  statusCode:
+                    type: integer
