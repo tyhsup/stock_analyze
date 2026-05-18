@@ -30,6 +30,7 @@ ENV/
 
 # 環境變數與敏感資訊
 .env
+.gitignore
 *.pma
 *.bdic
 gemma_plan_result.txt
