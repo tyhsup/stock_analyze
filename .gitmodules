@@ -1,0 +1,3 @@
+[submodule "notebooklm-mcp-cli"]
+	path = notebooklm-mcp-cli
+	url = https://github.com/jacob-bd/notebooklm-mcp-cli
