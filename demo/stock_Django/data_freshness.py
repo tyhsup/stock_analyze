@@ -248,10 +248,49 @@ def refresh_news_background(ticker: str, market: str, limit: int = 1000):
         
         elapsed = time.time() - start_time
         if results:
-            _set_status(ticker, 'running', 80, f'抓取完成，正在儲存 {len(results)} 則新聞並進行 BERT 情緒分析...')
-            news_mgr.write_news(ticker, results)
-            _set_status(ticker, 'done', 100, f'✅ {ticker} 新聞更新完成，共新增 {len(results)} 則資料，耗時 {elapsed:.2f} 秒')
-            logger.info(f"[Freshness] News refresh for {ticker} completed successfully. Found {len(results)} items. Time elapsed: {elapsed:.2f}s (cnyes-cli hybrid architecture)")
+            from stock_Django.agent_news_analyzer import AgentNewsAnalyzer
+            
+            try:
+                agent = AgentNewsAnalyzer()
+            except Exception as e:
+                logger.error(f"Failed to initialize AgentNewsAnalyzer: {e}")
+                agent = None
+                
+            enhanced_results = []
+            for idx, item in enumerate(results):
+                _set_status(ticker, 'running', 80 + int(15 * (idx / len(results))), f'AI 強化分析中 ({idx+1}/{len(results)})...')
+                if agent:
+                    try:
+                        analysis = agent.analyze_news({
+                            "title": item.get('標題', ''),
+                            "date": item.get('日期', ''),
+                            "content": item.get('內容', ''),
+                            "link": item.get('連結', ''),
+                            "source": item.get('來源', '')
+                        })
+                        item['正負分析'] = analysis['positive_negative_analysis']
+                        item['市場'] = analysis['market']
+                        item['信心度'] = f"{analysis['confidence']:.0%}"
+                        item['影響範疇'] = analysis['impact_scope']
+                        item['分析摘要'] = analysis['reasoning_summary']
+                    except Exception as e:
+                        logger.warning(f"AI analysis failed for news: {e}")
+                        item['市場'] = '未知'
+                        item['信心度'] = 'N/A'
+                        item['影響範疇'] = '短期'
+                        item['分析摘要'] = f"分析異常: {e}"
+                else:
+                    item['市場'] = '未知'
+                    item['信心度'] = 'N/A'
+                    item['影響範疇'] = '短期'
+                    item['分析摘要'] = 'AI 分析未啟用'
+                
+                enhanced_results.append(item)
+
+            _set_status(ticker, 'running', 95, f'寫入 {len(enhanced_results)} 則新聞資料...')
+            news_mgr.write_news(ticker, enhanced_results)
+            _set_status(ticker, 'done', 100, f'✅ {ticker} 新聞更新完成，共新增 {len(enhanced_results)} 則資料，耗時 {elapsed:.2f} 秒')
+            logger.info(f"[Freshness] News refresh for {ticker} completed successfully. Found {len(enhanced_results)} items. Time elapsed: {elapsed:.2f}s (cnyes-cli hybrid architecture)")
         else:
             _set_status(ticker, 'done', 100, f'✅ {ticker} 抓取完成，但未發現新新聞，耗時 {elapsed:.2f} 秒')
             logger.info(f"[Freshness] News refresh for {ticker} completed with no new items. Time elapsed: {elapsed:.2f}s")

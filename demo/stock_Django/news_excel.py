@@ -8,7 +8,7 @@ Folder structure:
         _general.xlsx      (general/unbounded news)
 
 Schema per sheet (columns):
-    標題 | 日期 | 內容 | 連結 | 正負分析 | 來源
+    標題 | 日期 | 內容 | 連結 | 正負分析 | 來源 | 市場 | 信心度 | 影響範疇 | 分析摘要
 """
 
 import os
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Absolute path to news data folder - FIXED as per user request
 NEWS_DATA_DIR = Path(r'E:\Infinity\mydjango\demo\newsapp\news_data')
 
-SCHEMA_COLUMNS = ['標題', '日期', '內容', '連結', '正負分析', '來源']
+SCHEMA_COLUMNS = ['標題', '日期', '內容', '連結', '正負分析', '來源', '市場', '信心度', '影響範疇', '分析摘要']
 
 # Threading lock for file operations
 _excel_lock = threading.Lock()
@@ -98,14 +98,19 @@ class NewsExcelManager:
             # Old schema: 標題, 日期, 連結, 正負分析, 來源
             df.columns = ['標題', '日期', '連結', '正負分析', '來源']
             df['內容'] = ''
-        elif len(cols) == 6:
-            # New schema: 標題, 日期, 內容, 連結, 正負分析, 來源
+        elif len(cols) == 6 and '內容' in cols:
+            # New schema without AI fields: 標題, 日期, 內容, 連結, 正負分析, 來源
+            df.columns = ['標題', '日期', '內容', '連結', '正負分析', '來源']
+        elif len(cols) == 10:
+            # Full schema with AI fields
             df.columns = SCHEMA_COLUMNS
         else:
             # Unknown schema, try to map available ones, fill missing
-            for col in SCHEMA_COLUMNS:
-                if col not in df.columns:
-                    df[col] = ''
+            pass
+            
+        for col in SCHEMA_COLUMNS:
+            if col not in df.columns:
+                df[col] = ''
         
         return df[SCHEMA_COLUMNS]
 
