@@ -3,7 +3,7 @@ from django.core.cache import cache
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
-import os, json, requests, logging
+import os, json, requests, logging, subprocess
 import yfinance as yf
 from .stock_utils import StockUtils
 from stock_Django import mySQL_OP
@@ -14,6 +14,7 @@ from sqlalchemy import text
 from .stock_cost_AI import IntegratedStockPredModel
 from .stock_cost import StockCostManager
 from datetime import datetime
+from .twse_service import get_sbl_volume
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,55 @@ class StockService:
             
         return result_dict
 
+    def _get_twse_cli_info(self, symbol: str) -> dict:
+        """內部方法：透過 twse-cli 取得台股基本指標，並使用快取避免頻繁執行 subprocess"""
+        cache_key = "twse_cli_bwibbu_all"
+        all_stocks = cache.get(cache_key)
+        
+        if not all_stocks:
+            # 找到 Django 專案上層的 twse-cli-v2 目錄
+            import platform
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            cli_ext = ".exe" if platform.system() == "Windows" else ""
+            cli_path = os.path.join(base_dir, "twse-cli-v2", "bin", f"twse-cli{cli_ext}")
+            
+            if not os.path.exists(cli_path):
+                cli_path = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+                
+            cmd = [cli_path, "exchange-report", "list-exchangereport-3", "--agent"]
+            
+            try:
+                process = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+                parsed = json.loads(process.stdout)
+                if isinstance(parsed, dict) and 'results' in parsed:
+                    all_stocks = parsed['results']
+                elif isinstance(parsed, list):
+                    all_stocks = parsed
+                else:
+                    all_stocks = []
+                
+                if all_stocks:
+                    cache.set(cache_key, all_stocks, 3600)  # 快取 1 小時
+            except Exception as e:
+                logger.error(f"Error fetching twse-cli data: {e}")
+                return {}
+
+        if all_stocks:
+            target_stock = next((item for item in all_stocks if str(item.get('Code', item.get('證券代號', ''))) == str(symbol)), None)
+            if target_stock:
+                def safe_float(val):
+                    try:
+                        return float(val) if val and str(val).strip() not in ["", "-"] else None
+                    except:
+                        return None
+                        
+                return {
+                    'pe': safe_float(target_stock.get('PEratio')),
+                    'pb': safe_float(target_stock.get('PBratio')),
+                    'dividend_yield': safe_float(target_stock.get('DividendYield'))
+                }
+        return {}
+
     def get_stock_data(self, number: str, days: int) -> Dict[str, Any]:
         """
         全量獲取股票相關資料，包括股價、法人、技術指標等。使用了快取機制。
@@ -315,12 +365,13 @@ class StockService:
             # To avoid 429 Rate Limit from yfinance.Ticker.info, we calculate locally or scrape
             format_large_number = self.format_large_number
             # Fetch info from yfinance (Fallback and Metadata)
-            ticker = yf.Ticker(valuation_symbol, session=self.yf_session)
             info = {}
-            try:
-                info = ticker.get_info()
-            except:
-                info = {}
+            if not is_tw:
+                ticker = yf.Ticker(valuation_symbol, session=self.yf_session)
+                try:
+                    info = ticker.get_info()
+                except:
+                    info = {}
 
             # Helper for name scraping fallback
             def scrape_name_fallback(symbol):
@@ -340,11 +391,17 @@ class StockService:
                 return None
 
             try:
+                # 取得 twse-cli 資料 (僅台股)
+                twse_info = {}
+                if is_tw:
+                    clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+                    twse_info = self._get_twse_cli_info(clean_sym)
+
                 # Always provide a skeleton so the layout renders with "--" instead of an error message
                 fin_summary = {
                     'short_name': info.get('longName') or info.get('shortName') or valuation_symbol,
-                    'pe': None, 'marketCap': None, 'eps': None, 'roe': None,
-                    'dividend_yield': None, 'book_value': None, 'pb': None,
+                    'pe': twse_info.get('pe'), 'marketCap': None, 'eps': None, 'roe': None,
+                    'dividend_yield': twse_info.get('dividend_yield'), 'book_value': None, 'pb': twse_info.get('pb'),
                     'gross_margin': None, 'revenue_growth': None, 'fiftyTwoWeekHigh': None
                 }
                 
@@ -610,13 +667,15 @@ class StockService:
                                     fin_summary['eps'] = round(float(info['trailingEps']), 2)
                                 
                                 final_eps = fin_summary.get('eps')
-                                if current_price and final_eps and final_eps > 0:
-                                    fin_summary['pe'] = round(current_price / final_eps, 2)
-                                elif 'trailingPE' in info:
-                                    fin_summary['pe'] = round(float(info['trailingPE']), 2)
-                                    
-                                if current_price and bps and bps > 0:
-                                    fin_summary['pb'] = round(current_price / bps, 2)
+                                if not fin_summary.get('pe'):
+                                    if current_price and final_eps and final_eps > 0:
+                                        fin_summary['pe'] = round(current_price / final_eps, 2)
+                                    elif 'trailingPE' in info:
+                                        fin_summary['pe'] = round(float(info['trailingPE']), 2)
+                                        
+                                if not fin_summary.get('pb'):
+                                    if current_price and bps and bps > 0:
+                                        fin_summary['pb'] = round(current_price / bps, 2)
                                     
                             # 4. Market Cap Calculation (Shares * Price)
                             # Final Dynamic Calculation for PE/PB is handled below
@@ -828,6 +887,18 @@ class StockService:
                     except:
                         pass
                 
+                # --- TWSE-CLI Integration: 即時可借券賣出股數 (僅台股) ---
+                if is_tw:
+                    try:
+                        sbl_vol = get_sbl_volume(valuation_symbol)
+                        if sbl_vol:
+                            fin_summary['sbl_volume'] = sbl_vol
+                        else:
+                            fin_summary['sbl_volume'] = None
+                    except Exception as e_sbl:
+                        logger.warning(f"SBL volume fetch failed for {valuation_symbol}: {e_sbl}")
+                        fin_summary['sbl_volume'] = None
+
                 result['financial_summary'] = fin_summary
                 
             except Exception as e:

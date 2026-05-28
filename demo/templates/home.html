@@ -146,6 +146,18 @@
                             </div>
                         </div>
                     </div>
+                    {% if financial_summary.sbl_volume %}
+                    <div class="col-md-3">
+                        <div class="p-3 bg-white rounded shadow-xs border-start border-4"
+                            style="border-color: #e53935 !important;">
+                            <div class="text-muted small mb-1 d-flex align-items-center gap-1">
+                                <i class="bi bi-graph-down-arrow text-danger"></i>
+                                <span>可借券賣出 <span class="badge bg-danger bg-opacity-10 text-danger fw-normal" style="font-size:10px;">即時 TWSE</span></span>
+                            </div>
+                            <div class="h5 mb-0 fw-bold text-danger">{{ financial_summary.sbl_volume }} 股</div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
                 
                 {% if sentiment_summary %}
