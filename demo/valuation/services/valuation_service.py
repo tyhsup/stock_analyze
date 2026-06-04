@@ -144,6 +144,19 @@ class ValuationService:
                 val = fcf_val_abs / ((1 + wacc)**(i + 1))
                 discounted_fcfs_list.append(round(val / 1000000, 2))
 
+            # 組裝 twse-cli 官方數據區塊（僅台股有值）
+            twse_pe = hist_multiples.get('twse_pe')
+            twse_pb = hist_multiples.get('twse_pb')
+            twse_dy = hist_multiples.get('twse_dividend_yield')
+            twse_valuation = None
+            if any(v is not None for v in [twse_pe, twse_pb, twse_dy]):
+                twse_valuation = {
+                    "pe": round(twse_pe, 2) if twse_pe else None,
+                    "pb": round(twse_pb, 2) if twse_pb else None,
+                    "dividend_yield": round(twse_dy, 2) if twse_dy else None,
+                    "source": "TWSE 證交所官方",
+                }
+
             results = {
                 "symbol": ticker_symbol,
                 "current_price": round(current_price, 2),
@@ -171,6 +184,7 @@ class ValuationService:
                         "ev_ebitda": round(hist_multiples['ev_ebitda'], 1)
                     }
                 },
+                "twse_valuation": twse_valuation,
                 "assumptions": {
                     "revenue_growth_rate": assumptions.revenue_growth_rate,
                     "ebit_margin": float(assumptions.ebit_margin),

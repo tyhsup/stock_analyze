@@ -3,19 +3,32 @@ import numpy as np
 import logging
 import sys
 import os
+import subprocess
+import json
+import platform
 from sqlalchemy import text
 import datetime
 import requests
 import pickle
 import time
 from pathlib import Path
+from typing import Optional, Dict, Any
 
-# Adapt imports for Django environment
-from stock_Django.mySQL_OP import OP_Fun
 # Adapt imports for Django environment
 from stock_Django.mySQL_OP import OP_Fun
 
 logger = logging.getLogger(__name__)
+
+# twse-cli 執行檔路徑 (跨平台支援)
+_CLI_BASE_DIR = Path(__file__).resolve().parents[3] / "twse-cli-v2" / "bin"
+_CLI_EXE = str(_CLI_BASE_DIR / ("twse-cli.exe" if platform.system() == "Windows" else "twse-cli"))
+if not Path(_CLI_EXE).exists():
+    # Fallback: 絕對路徑 (Windows 環境保底)
+    _CLI_EXE = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+
+# In-process 記憶體快取：避免頻繁啟動 CLI 子進程
+_TWSE_CLI_CACHE: Dict[str, Dict[str, Any]] = {}
+_TWSE_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時
 
 class FinancialDataLoader:
     def __init__(self, ticker_symbol):
@@ -571,31 +584,164 @@ class FinancialDataLoader:
         """
         pass
 
+    def _get_twse_cli_info(self) -> dict:
+        """
+        內部方法：透過 twse-cli 取得台股當前市場指標 (PE, PB, Dividend Yield)。
+        僅適用於台灣市場股票 (self.market == 'tw')。
+
+        快取策略：使用模組級別的 Dict 快取，TTL = 1 小時，
+        避免頻繁啟動 CLI 子進程消耗系統資源。
+
+        回傳值：
+            dict 包含以下鍵值（皆為 float 或 None）：
+                'pe'            本益比 (Price-to-Earnings Ratio)
+                'pb'            股價淨值比 (Price-to-Book Ratio)
+                'dividend_yield' 現金殖利率 (%)
+            若查無資料或執行失敗則回傳空 dict {}。
+        """
+        if self.market != 'tw':
+            return {}
+
+        cache_key = "twse_cli_bwibbu_all"
+        now = time.time()
+
+        # 嘗試從 Django Cache 讀取 (若 Django 環境可用)
+        all_stocks = None
+        try:
+            from django.core.cache import cache as django_cache
+            all_stocks = django_cache.get(cache_key)
+        except Exception:
+            pass
+
+        # 若 Django Cache miss，嘗試 in-process dict 快取
+        if not all_stocks:
+            cached = _TWSE_CLI_CACHE.get(cache_key)
+            if cached and (now - cached.get("ts", 0)) < _TWSE_CLI_CACHE_TTL_SECONDS:
+                all_stocks = cached["data"]
+
+        # 快取完全 miss，呼叫 CLI
+        if not all_stocks:
+            if not Path(_CLI_EXE).exists():
+                logger.warning(f"twse-cli 不存在於路徑：{_CLI_EXE}，PE/PB 降級使用歷史計算。")
+                return {}
+
+            cmd = [_CLI_EXE, "exchange-report", "list-exchangereport-3",
+                   "--json", "--no-color", "--no-input", "--yes"]
+            try:
+                process = subprocess.run(
+                    cmd,
+                    capture_output=True,  # bytes mode; 避免 text= 引起的編碼錯誤
+                    timeout=30
+                )
+                # 手動 decode 並容忍無效字元，再移除 JSON 不允許的控制字元
+                raw_text = process.stdout.decode("utf-8", errors="replace")
+                # 移除 U+0000–U+001F 中不合法的 JSON 控制字元（保留 \t \n \r）
+                import re as _re
+                cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw_text)
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict) and "results" in parsed:
+                    all_stocks = parsed["results"]
+                elif isinstance(parsed, list):
+                    all_stocks = parsed
+                else:
+                    all_stocks = []
+
+                if all_stocks:
+                    # 更新 in-process 快取
+                    _TWSE_CLI_CACHE[cache_key] = {"data": all_stocks, "ts": now}
+                    # 同步更新 Django Cache (若可用)
+                    try:
+                        from django.core.cache import cache as django_cache
+                        django_cache.set(cache_key, all_stocks, _TWSE_CLI_CACHE_TTL_SECONDS)
+                    except Exception:
+                        pass
+            except subprocess.TimeoutExpired:
+                logger.error("twse-cli 呼叫逾時 (>30s)，PE/PB 降級使用歷史計算。")
+                return {}
+            except Exception as e:
+                logger.error(f"twse-cli 呼叫或解析失敗：{e}，PE/PB 降級使用歷史計算。")
+                return {}
+
+        if not all_stocks:
+            return {}
+
+        # 從全市場數據中找出目標股票
+        target = next(
+            (item for item in all_stocks
+             if str(item.get("Code", item.get("證券代號", ""))).strip() == self.symbol),
+            None
+        )
+        if not target:
+            return {}
+
+        def safe_float(val) -> Optional[float]:
+            """安全轉換字串為浮點數，無效值（空字串、'-'）回傳 None。"""
+            try:
+                return float(val) if val and str(val).strip() not in ["", "-"] else None
+            except (ValueError, TypeError):
+                return None
+
+        return {
+            "pe": safe_float(target.get("PEratio")),
+            "pb": safe_float(target.get("PBratio")),
+            "dividend_yield": safe_float(target.get("DividendYield"))
+        }
+
     def get_historical_multiples(self):
-        """從資料庫數據估算歷史平均 P/E 與 EV/EBITDA"""
+        """估算歷史平均 P/E 與 EV/EBITDA。台股優先使用 twse-cli 官方數據。
+
+        資料優先順序 (台股)：
+            Tier 1: twse-cli (exchange-report) → 證交所官方即時 PE
+            Tier 2: 本地歷史計算 (TTM EPS + 當前收盤價)
+        美股：
+            Tier 1: 本地歷史計算 (TTM EPS + 當前收盤價)
+        """
         # 1. 獲取財務數據
         start_data = self.extract_projection_start()
-        if not start_data: return {'pe': 15, 'ev_ebitda': 10}
-        
-        # 2. 獲取最近幾年的淨利與 EBITDA (簡化：取 TTM 並參考目前的市值)
+        if not start_data:
+            return {'pe': 15, 'ev_ebitda': 10}
+
+        # 2. 取得當前收盤價
         current_price = self.get_market_price()
-        if current_price <= 0: return {'pe': 15, 'ev_ebitda': 10}
-        
+        if current_price <= 0:
+            return {'pe': 15, 'ev_ebitda': 10}
+
+        # 3. 計算本地 TTM 本益比 (Fallback 基準)
         eps = start_data['net_income'] / max(start_data['shares_outstanding'], 1)
         current_pe = current_price / eps if eps > 0 else 15
-        
+
+        # 4. 台股：優先使用 twse-cli 的官方 PE (Tier 1)
+        avg_pe = max(min(current_pe, 30), 10)  # 本地計算預設值 (Tier 2)
+        twse_info = {}
+        if self.market == 'tw':
+            twse_info = self._get_twse_cli_info()
+            twse_pe = twse_info.get('pe')
+            if twse_pe and 3.0 < twse_pe < 200.0:  # 排除明顯異常值
+                avg_pe = max(min(float(twse_pe), 80), 5)  # 台股 PE 範圍放寬至 5~80
+                logger.info(
+                    f"{self.symbol}: 使用 twse-cli 官方 PE = {avg_pe:.2f} "
+                    f"(本地估算 = {current_pe:.2f})"
+                )
+            else:
+                logger.debug(
+                    f"{self.symbol}: twse-cli PE 不可用或超出範圍 ({twse_pe})，"
+                    f"使用本地估算 PE = {avg_pe:.2f}"
+                )
+
+        # 5. 計算 EV/EBITDA
         ebitda = start_data['ebitda']
         market_cap = current_price * start_data['shares_outstanding']
         ev = market_cap + (start_data['total_debt'] - start_data['cash'])
         current_ev_ebitda = ev / ebitda if ebitda > 0 else 10
-        
-        # 限制在合理範圍
-        avg_pe = max(min(current_pe, 30), 10)
         avg_ev_ebitda = max(min(current_ev_ebitda, 20), 8)
-        
+
         return {
             'pe': avg_pe,
             'ev_ebitda': avg_ev_ebitda,
             'current_pe': current_pe,
-            'current_ev_ebitda': current_ev_ebitda
+            'current_ev_ebitda': current_ev_ebitda,
+            # twse-cli 數據（若有）附於回傳值供外部使用
+            'twse_pe': twse_info.get('pe'),
+            'twse_pb': twse_info.get('pb'),
+            'twse_dividend_yield': twse_info.get('dividend_yield'),
         }

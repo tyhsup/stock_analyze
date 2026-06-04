@@ -178,6 +178,63 @@
         </div>
     </div>
 
+    {% if valuation.twse_valuation %}
+    <!-- TWSE Official Metrics Card (台股專屬) -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0" style="border-left: 4px solid #0d6efd !important;">
+                <div class="card-header py-3" style="background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);">
+                    <h5 class="m-0 fw-bold text-white">
+                        <i class="bi bi-bank me-2"></i>
+                        TWSE Official Metrics
+                        <span class="badge bg-warning text-dark ms-2 small">{{ valuation.twse_valuation.source }}</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center g-3">
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded-3">
+                                <div class="small text-muted text-uppercase fw-bold mb-1">P/E Ratio (本益比)</div>
+                                <div class="display-6 fw-bold text-primary">
+                                    {% if valuation.twse_valuation.pe %}
+                                        {{ valuation.twse_valuation.pe|floatformat:2 }}
+                                    {% else %}
+                                        <span class="text-muted fs-5">N/A</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded-3">
+                                <div class="small text-muted text-uppercase fw-bold mb-1">P/B Ratio (股價淨值比)</div>
+                                <div class="display-6 fw-bold text-info">
+                                    {% if valuation.twse_valuation.pb %}
+                                        {{ valuation.twse_valuation.pb|floatformat:2 }}
+                                    {% else %}
+                                        <span class="text-muted fs-5">N/A</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 bg-light rounded-3">
+                                <div class="small text-muted text-uppercase fw-bold mb-1">Dividend Yield (殖利率)</div>
+                                <div class="display-6 fw-bold text-success">
+                                    {% if valuation.twse_valuation.dividend_yield %}
+                                        {{ valuation.twse_valuation.dividend_yield|floatformat:2 }}%
+                                    {% else %}
+                                        <span class="text-muted fs-5">N/A</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- DCF Projections Table -->
     <div class="row mb-4">
         <div class="col-12">
