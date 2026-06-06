@@ -12,10 +12,7 @@ GLOBAL_HELPER_PATH = r"c:\Users\許廷宇\.gemini\antigravity\scripts"
 if GLOBAL_HELPER_PATH not in sys.path:
     sys.path.append(GLOBAL_HELPER_PATH)
 
-try:
-    from groq import Groq
-except ImportError:
-    raise ImportError("無法載入 groq 庫。請執行: pip install groq")
+# Groq library imports are no longer mandatory as we use Gemini CLI
 
 logger = logging.getLogger(__name__)
 
@@ -95,38 +92,36 @@ class FinBertScorer:
 
 
 # ══════════════════════════════════════════════════════════════════
-# Stage 2：Llama 3.3 70B 定性解釋器 (Groq API)
+# Stage 2：Gemini CLI 雲端 Gemma 4 31B 定性解釋器
 # ══════════════════════════════════════════════════════════════════
-LLAMA_SYSTEM_PROMPT = """你是專業金融分析師。本地模型已提供情緒初步評分，請你補充定性分析並輸出 JSON：
+GEMINI_SYSTEM_PROMPT = """你是專業金融分析師。請基於提供的新聞，補充定性分析並輸出 JSON 格式。請不要包含任何 markdown 標記（如 ```json）或額外文字。JSON 格式如下：
 {
-  "market": "TW 或 US",
-  "impact_scope": "短期 或 中期 或 長期",
-  "reasoning_summary": "50字以內的深度判斷理由"
-}
-只輸出 JSON。"""
+  "market": "TW",
+  "impact_scope": "短期",
+  "reasoning_summary": "原因說明"
+}"""
 
 
 class AgentNewsAnalyzer:
     """
     金融新聞混合分析器。
     Stage 1: 本地 Roberta 模型 (快速評分)
-    Stage 2: Groq Llama 70B (深度解釋)
+    Stage 2: Gemini CLI 雲端 Gemma 4 31B (深度解釋)
     """
 
     def __init__(self):
         # 讀取 API Key (優先從環境變數，次之從 .env)
-        self.api_key = os.getenv("GROQ_API_KEY")
-        if not self.api_key:
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not self.gemini_api_key:
             from dotenv import load_dotenv
             dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
             load_dotenv(dotenv_path)
-            self.api_key = os.getenv("GROQ_API_KEY")
+            self.gemini_api_key = os.getenv("GEMINI_API_KEY")
         
-        if not self.api_key:
-            raise ValueError("找不到 GROQ_API_KEY。")
-
-        self.llm_model = "llama-3.3-70b-versatile"
-        self.groq_client = Groq(api_key=self.api_key)
+        import shutil
+        self.gemini_path = shutil.which("gemini")
+        if not self.gemini_path:
+            logger.warning("[AgentNewsAnalyzer] 警告：在系統中找不到 gemini CLI 指令。")
 
         logger.info("[AgentNewsAnalyzer] 載入本地 Scorer...")
         self.scorer = FinBertScorer()
@@ -142,11 +137,11 @@ class AgentNewsAnalyzer:
         score_res = self.scorer.analyze(title, content)
         
         # 升級判斷
-        llama_res = {}
+        gemini_res = {}
         should_upgrade = force_llm or len(content) > 200 or score_res["confidence"] < 0.75
         
         if should_upgrade:
-            llama_res = self._call_llama(title, content, score_res) or {}
+            gemini_res = self._call_gemini(title, content, score_res) or {}
 
         # 合併
         return {
@@ -158,26 +153,86 @@ class AgentNewsAnalyzer:
             "positive_negative_analysis": score_res["positive_negative_analysis"],
             "sentiment_score": score_res["sentiment_score"],
             "confidence": score_res["confidence"],
-            "market": llama_res.get("market", self._infer_market(source, content)),
-            "impact_scope": llama_res.get("impact_scope", "短期"),
-            "reasoning_summary": llama_res.get("reasoning_summary", f"本地評分完成 (信心度 {score_res['confidence']:.0%})")
+            "market": gemini_res.get("market", self._infer_market(source, content)),
+            "impact_scope": gemini_res.get("impact_scope", "短期"),
+            "reasoning_summary": gemini_res.get("reasoning_summary", f"本地評分完成 (信心度 {score_res['confidence']:.0%})")
         }
 
-    def _call_llama(self, title: str, content: str, score_res: dict) -> Optional[dict]:
-        prompt = f"新聞：{title}\n內容摘要：{content[:300]}\n本地評分：{score_res}\n請提供市場與定性分析。"
+    def _call_gemini(self, title: str, content: str, score_res: dict) -> Optional[dict]:
+        import subprocess
+        
+        # 解析本地評分以避免在 prompt 參數中傳遞含有引號和括號的 dict 字串
+        local_label = score_res.get("positive_negative_analysis", "中立")
+        local_score = score_res.get("sentiment_score", 0.0)
+        local_conf = score_res.get("confidence", 0.0)
+
+        # 強制將換行換成空白，以防止 Windows 下參數被截斷
+        prompt = (
+            f"請以專業金融分析師的角色，對以下新聞進行定性分析，並【僅】以 JSON 格式輸出，不要有任何額外文字或說明。 "
+            f"新聞標題：{title}。 "
+            f"新聞內文：{content[:300]}。 "
+            f"本地評分：{local_label}，情緒得分：{local_score}，信心度：{local_conf}。 "
+            f"請嚴格輸出 JSON 格式如下： "
+            f"{{\"market\": \"TW\" 或 \"US\", \"impact_scope\": \"短期\" 或 \"中期\" 或 \"長期\", \"reasoning_summary\": \"50字以內理由\"}}"
+        )
+        full_prompt = f"{GEMINI_SYSTEM_PROMPT} {prompt}"
+        full_prompt = full_prompt.replace("\n", " ").replace("\r", " ").strip()
+        
+        if not self.gemini_path:
+            import shutil
+            self.gemini_path = shutil.which("gemini")
+            if not self.gemini_path:
+                logger.error("[AgentNewsAnalyzer] 找不到 gemini CLI。")
+                return None
+
+        env = os.environ.copy()
+        if self.gemini_api_key:
+            env["GEMINI_API_KEY"] = self.gemini_api_key
+
         try:
-            completion = self.groq_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": LLAMA_SYSTEM_PROMPT},
-                    {"role": "user",   "content": prompt}
-                ],
-                temperature=0.2,
-                response_format={"type": "json_object"}
+            logger.info("[AgentNewsAnalyzer] 調用 Gemini CLI 雲端 Gemma 4 31B 模型...")
+            args = [self.gemini_path, "-m", "gemma-4-31b-it", "--skip-trust", "-o", "json", "-p", full_prompt]
+            
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                env=env,
+                shell=False
             )
-            return json.loads(completion.choices[0].message.content)
+            
+            if result.returncode != 0:
+                stderr_msg = result.stderr.decode("utf-8", errors="replace")
+                logger.warning(f"[AgentNewsAnalyzer] Gemini CLI 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
+                return None
+
+            stdout_decoded = result.stdout.decode("utf-8", errors="replace")
+            
+            if "{" in stdout_decoded:
+                json_start = stdout_decoded.index("{")
+                json_data = json.loads(stdout_decoded[json_start:])
+                response_text = json_data.get("response", "").strip()
+                
+                # 移除可能存在的 markdown wrapper
+                clean_res = response_text
+                if clean_res.startswith("```"):
+                    lines = clean_res.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    clean_res = "\n".join(lines).strip()
+                
+                try:
+                    return json.loads(clean_res)
+                except Exception as je:
+                    logger.warning(f"[AgentNewsAnalyzer] 無法解析模型回覆的 JSON: {je}. 原始內容: {clean_res}")
+                    return None
+            else:
+                logger.warning(f"[AgentNewsAnalyzer] 輸出中找不到 JSON 物件。原始輸出: {stdout_decoded}")
+                return None
+                
         except Exception as e:
-            logger.warning(f"Llama 呼叫失敗: {e}")
+            logger.error(f"[AgentNewsAnalyzer] Gemini CLI 呼叫異常: {e}")
             return None
 
     def _infer_market(self, source: str, content: str) -> str:
