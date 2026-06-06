@@ -192,10 +192,15 @@ class CnyesScraper:
         cmd_args = ["media", "get-news-list-by-symbol", symbol, "--limit", str(limit)]
         json_data = _run_cnyes_cli(cmd_args)
         
+        # 區分 CLI 執行失敗（回傳空 dict）與成功查詢但無資料
+        if not json_data:
+            logger.error(f"[CnyesScraper] cnyes-cli 執行失敗，無法獲取 {symbol} 新聞列表")
+            return None  # None = CLI 失敗，與 [] (無結果) 區分
+        
         # 解析列表數據
         articles_data = json_data.get("results", {}).get("items", {}).get("data", [])
         if not articles_data:
-            logger.warning(f"[CnyesScraper] 未能獲取 {symbol} 的新聞列表或列表為空")
+            logger.info(f"[CnyesScraper] {symbol} 新聞列表為空（API 回傳無資料）")
             return []
             
         articles = []

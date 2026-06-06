@@ -38,6 +38,35 @@ def _set_status(ticker: str, status: str, progress: int, message: str):
         }
 
 
+def _news_status_key(ticker: str) -> str:
+    """產生新聞專用的狀態追蹤 key，避免與 OHLCV/法人狀態衝突。"""
+    return f"{ticker.upper()}_NEWS"
+
+
+def get_news_refresh_status(ticker: str) -> dict:
+    """
+    取得新聞專用更新狀態。
+    自動清除超過 10 分鐘的 zombie running 狀態。
+    """
+    news_key = _news_status_key(ticker)
+    with _refresh_lock:
+        status = _refresh_status.get(news_key, {'status': 'idle', 'progress': 0, 'message': ''})
+        # 自動清除超過 10 分鐘仍為 running 的 zombie 狀態
+        if status.get('status') == 'running':
+            ts_ms = status.get('timestamp_ms', 0)
+            if ts_ms and (int(time.time() * 1000) - ts_ms) > 600_000:
+                logger.warning(f"[Zombie] 自動清除 {news_key} 的 zombie running 狀態 (超過 10 分鐘)")
+                status = {
+                    'status': 'error',
+                    'progress': 0,
+                    'message': '❌ 更新逾時，已自動重置',
+                    'timestamp': datetime.now().isoformat(),
+                    'timestamp_ms': int(time.time() * 1000)
+                }
+                _refresh_status[news_key] = status
+        return dict(status)
+
+
 def check_ohlcv_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, str | None]:
     """
     Returns (is_fresh, last_date_str).
@@ -105,7 +134,8 @@ def check_investor_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, st
 
 def check_news_freshness(ticker: str) -> bool:
     """
-    Check if news for a ticker is fresh (last news >= today - 1 day).
+    Check if news for a ticker is fresh (last news >= last business day).
+    動態計算上一個工作日，正確處理週末。
     """
     from stock_Django.news_excel import NewsExcelManager
     try:
@@ -113,13 +143,17 @@ def check_news_freshness(ticker: str) -> bool:
         latest_date_str = mgr.get_latest_date(ticker)
         if not latest_date_str:
             return False
-            
+
         latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d').date()
         today = date.today()
-        
-        # Fresh if news is from today or yesterday
-        # (For weekends, simplified check: within 2 days)
-        return (today - latest_date).days <= 1
+
+        # 動態計算上一個工作日（跳過週六日）
+        days_back = 1
+        while (today - timedelta(days=days_back)).weekday() >= 5:
+            days_back += 1
+        last_biz_day = today - timedelta(days=days_back)
+
+        return latest_date >= last_biz_day
     except Exception as e:
         logger.warning(f"News freshness check failed for {ticker}: {e}")
         return False
@@ -229,97 +263,142 @@ def trigger_refresh_if_stale(ticker: str, is_tw: bool, engine) -> bool:
 # Global cooldown tracker
 _news_cooldown = {}
 
-def refresh_news_background(ticker: str, market: str, limit: int = 1000):
-    """Background thread to fetch news from 鉅亨網."""
+def refresh_news_background(ticker: str, market: str, limit: int = 50):
+    """
+    Background thread to fetch news from 鉅亨網.
+    使用新聞專用 status key ({ticker}_NEWS) 避免與 OHLCV/法人狀態衝突。
+    """
     import time
+    import concurrent.futures
     from stock_Django.news_scraper_cnyes import CnyesScraper
     from stock_Django.news_excel import NewsExcelManager
-    
+
     ticker = ticker.upper()
-    _set_status(ticker, 'running', 10, f'正在從 鉅亨網 抓取 {ticker} 最新新聞...')
-    
+    news_key = _news_status_key(ticker)
+    _set_status(news_key, 'running', 10, f'正在從 鉅亨網 抓取 {ticker} 最新新聞...')
+
     start_time = time.time()
     try:
         scraper = CnyesScraper()
         news_mgr = NewsExcelManager()
-        
+
         # Scrape using high-performance cnyes-cli hybrid architecture
         results = scraper.fetch_news(ticker, market=market, limit=limit)
-        
-        elapsed = time.time() - start_time
-        if results:
-            from stock_Django.agent_news_analyzer import AgentNewsAnalyzer
-            
-            try:
-                agent = AgentNewsAnalyzer()
-            except Exception as e:
-                logger.error(f"Failed to initialize AgentNewsAnalyzer: {e}")
-                agent = None
-                
-            enhanced_results = []
+
+        # 區分 CLI 失敗（None）與成功查詢但無新聞（空 list）
+        if results is None:
+            elapsed = time.time() - start_time
+            _set_status(news_key, 'error', 0,
+                        f'❌ cnyes-cli 執行失敗，無法取得 {ticker} 新聞 (耗時 {elapsed:.1f}s)')
+            logger.error(f"[Freshness] News refresh for {ticker} FAILED: cnyes-cli returned None (CLI error). Elapsed: {elapsed:.2f}s")
+            return
+
+        if not results:
+            elapsed = time.time() - start_time
+            _set_status(news_key, 'done', 100,
+                        f'✅ {ticker} 抓取完成，但未發現新新聞，耗時 {elapsed:.2f} 秒')
+            logger.info(f"[Freshness] News refresh for {ticker} completed with no new items. Elapsed: {elapsed:.2f}s")
+            # 成功查詢但無結果，仍設定 cooldown 避免無意義重複抓取
+            _news_cooldown[ticker] = time.time()
+            return
+
+        # 有新聞資料，進行 AI 強化分析
+        _set_status(news_key, 'running', 50,
+                    f'成功取得 {len(results)} 則新聞，開始 AI 分析...')
+
+        from stock_Django.agent_news_analyzer import AgentNewsAnalyzer
+
+        try:
+            agent = AgentNewsAnalyzer()
+        except Exception as e:
+            logger.error(f"Failed to initialize AgentNewsAnalyzer: {e}")
+            agent = None
+
+        enhanced_results = []
+
+        if agent:
             for idx, item in enumerate(results):
-                _set_status(ticker, 'running', 80 + int(15 * (idx / len(results))), f'AI 強化分析中 ({idx+1}/{len(results)})...')
-                if agent:
-                    try:
-                        analysis = agent.analyze_news({
-                            "title": item.get('標題', ''),
-                            "date": item.get('日期', ''),
-                            "content": item.get('內容', ''),
-                            "link": item.get('連結', ''),
-                            "source": item.get('來源', '')
-                        })
-                        item['正負分析'] = analysis['positive_negative_analysis']
-                        item['市場'] = analysis['market']
-                        item['信心度'] = f"{analysis['confidence']:.0%}"
-                        item['影響範疇'] = analysis['impact_scope']
-                        item['分析摘要'] = analysis['reasoning_summary']
-                    except Exception as e:
-                        logger.warning(f"AI analysis failed for news: {e}")
-                        item['市場'] = '未知'
-                        item['信心度'] = 'N/A'
-                        item['影響範疇'] = '短期'
-                        item['分析摘要'] = f"分析異常: {e}"
-                else:
+                _set_status(news_key, 'running',
+                            50 + int(40 * (idx / len(results))),
+                            f'AI 強化分析中 ({idx+1}/{len(results)})...')
+                ai_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                try:
+                    future = ai_executor.submit(agent.analyze_news, {
+                        "title": item.get('標題', ''),
+                        "date": item.get('日期', ''),
+                        "content": item.get('內容', ''),
+                        "link": item.get('連結', ''),
+                        "source": item.get('來源', '')
+                    })
+                    analysis = future.result(timeout=60)
+                    item['正負分析'] = analysis['positive_negative_analysis']
+                    item['市場'] = analysis['market']
+                    item['信心度'] = f"{analysis['confidence']:.0%}"
+                    item['影響範疇'] = analysis['impact_scope']
+                    item['分析摘要'] = analysis['reasoning_summary']
+                except concurrent.futures.TimeoutError:
+                    logger.warning(f"AI analysis timed out (60s) for: {item.get('標題', '')[:40]}")
                     item['市場'] = '未知'
                     item['信心度'] = 'N/A'
                     item['影響範疇'] = '短期'
-                    item['分析摘要'] = 'AI 分析未啟用'
-                
+                    item['分析摘要'] = 'AI 分析逾時 (60s)'
+                except Exception as e:
+                    logger.warning(f"AI analysis failed for news: {e}")
+                    item['市場'] = '未知'
+                    item['信心度'] = 'N/A'
+                    item['影響範疇'] = '短期'
+                    item['分析摘要'] = f"分析異常: {e}"
+                finally:
+                    ai_executor.shutdown(wait=False)
+
+                enhanced_results.append(item)
+        else:
+            for item in results:
+                item['市場'] = '未知'
+                item['信心度'] = 'N/A'
+                item['影響範疇'] = '短期'
+                item['分析摘要'] = 'AI 分析未啟用'
                 enhanced_results.append(item)
 
-            _set_status(ticker, 'running', 95, f'寫入 {len(enhanced_results)} 則新聞資料...')
-            news_mgr.write_news(ticker, enhanced_results)
-            _set_status(ticker, 'done', 100, f'✅ {ticker} 新聞更新完成，共新增 {len(enhanced_results)} 則資料，耗時 {elapsed:.2f} 秒')
-            logger.info(f"[Freshness] News refresh for {ticker} completed successfully. Found {len(enhanced_results)} items. Time elapsed: {elapsed:.2f}s (cnyes-cli hybrid architecture)")
-        else:
-            _set_status(ticker, 'done', 100, f'✅ {ticker} 抓取完成，但未發現新新聞，耗時 {elapsed:.2f} 秒')
-            logger.info(f"[Freshness] News refresh for {ticker} completed with no new items. Time elapsed: {elapsed:.2f}s")
-            
+        _set_status(news_key, 'running', 95,
+                    f'寫入 {len(enhanced_results)} 則新聞資料...')
+        news_mgr.write_news(ticker, enhanced_results)
+        elapsed = time.time() - start_time
+        _set_status(news_key, 'done', 100,
+                    f'✅ {ticker} 新聞更新完成，共 {len(enhanced_results)} 則，總耗時 {elapsed:.2f} 秒')
+        logger.info(f"[Freshness] News refresh for {ticker} completed. {len(enhanced_results)} items. Total elapsed: {elapsed:.2f}s")
+
+        # 成功後設定 cooldown
+        _news_cooldown[ticker] = time.time()
+
     except Exception as e:
         logger.error(f"News refresh failed for {ticker}: {e}", exc_info=True)
-        _set_status(ticker, 'error', 0, f'❌ 新聞更新錯誤: {e}')
+        _set_status(news_key, 'error', 0, f'❌ 新聞更新錯誤: {e}')
 
 
-def trigger_news_refresh(ticker: str, limit: int = 1000) -> bool:
-    """Trigger news refresh if not already running and cooldown passed."""
+def trigger_news_refresh(ticker: str, limit: int = 50) -> bool:
+    """
+    Trigger news refresh if not already running and cooldown passed.
+    Cooldown 僅在成功後設定，失敗時允許立即重試。
+    """
     ticker = ticker.upper()
-    
-    # 1. Check if already running
-    current = get_refresh_status(ticker)
-    if current.get('status') == 'running' and '新聞' in current.get('message', ''):
+
+    # 1. 使用新聞專用 status key 判斷是否正在執行
+    current = get_news_refresh_status(ticker)
+    if current.get('status') == 'running':
+        logger.info(f"[News] {ticker} news refresh already in progress, skipping.")
         return False
-        
-    # 2. Check Cooldown (5 minutes)
+
+    # 2. Check Cooldown (5 minutes) — 僅在 refresh_news_background 成功後才設定
     now = time.time()
     if ticker in _news_cooldown and (now - _news_cooldown[ticker]) < 300:
         logger.info(f"[Cooldown] News refresh for {ticker} skipped (too soon).")
         return False
-    
-    _news_cooldown[ticker] = now
-    
+
     is_tw = ticker.isdigit() or ".TW" in ticker
     market = 'tw' if is_tw else 'us'
-    
+
+    logger.info(f"[News] Triggering background news refresh for {ticker} (market={market}, limit={limit})")
     thread = threading.Thread(
         target=refresh_news_background,
         args=(ticker, market, limit),

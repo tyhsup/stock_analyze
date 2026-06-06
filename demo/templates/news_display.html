@@ -180,7 +180,7 @@
                     setTimeout(() => checkNewsRefreshStatus(ticker), 2000);
                 } else if (data.status === 'done' && data.progress === 100) {
                     // Only show 100% if news was actually part of the message
-                    if (data.message.includes('新聞')) {
+                    if (data.message.includes('新聞') && container.style.display === 'block') {
                         container.style.display = 'block';
                         document.getElementById('refresh-bar').style.width = '100%';
                         document.getElementById('refresh-bar').classList.remove('progress-bar-animated');
@@ -210,7 +210,9 @@
         icon.classList.add('bi-spin'); // Optional animation helper
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Refreshing...';
 
-        fetch(`/api/news-refresh/${ticker}/`)
+        const limitInput = document.getElementById('id_news_days');
+        const limit = limitInput ? limitInput.value : 50;
+        fetch(`/api/news-refresh/${ticker}/?limit=${limit}`)
             .then(r => r.json())
             .then(data => {
                 alert(`News refresh for ${ticker} triggered! Please check back in a few seconds.`);

@@ -13,7 +13,7 @@ from .stock_utils import StockUtils
 from .stock_investor_us import USStockInvestorManager
 from .news_excel import NewsExcelManager
 from .news_scraper_cnyes import CnyesScraper
-from .data_freshness import trigger_refresh_if_stale, get_refresh_status, trigger_news_refresh, check_news_freshness
+from .data_freshness import trigger_refresh_if_stale, get_refresh_status, get_news_refresh_status, trigger_news_refresh, check_news_freshness
 from .nlp_service import NLPService
 from django.http import JsonResponse
 import time
@@ -83,6 +83,9 @@ def News_display(request):
 
 def refresh_status_api(request, ticker):
     """API endpoint to check data refresh progress."""
+    news_status = get_news_refresh_status(ticker)
+    if news_status.get('status') in ['running', 'error'] or (news_status.get('status') == 'done' and '新聞' in news_status.get('message', '')):
+        return JsonResponse(news_status)
     status = get_refresh_status(ticker)
     return JsonResponse(status)
 
@@ -140,7 +143,12 @@ def smart_advisor_analysis(request, ticker):
 
 def news_refresh_api(request, ticker):
     """API endpoint to trigger news refresh from 鉅亨網."""
-    trigger_news_refresh(ticker)
+    limit = request.GET.get('limit', 20)
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 20
+    trigger_news_refresh(ticker, limit=limit)
     return JsonResponse({'status': 'triggered', 'ticker': ticker})
 
 from .services import StockService
