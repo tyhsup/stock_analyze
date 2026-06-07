@@ -346,3 +346,166 @@ class IntegratedStockPredModel:
             'trend_probability': float(trend_prob),
             'latest_feature_date': target_df.index[-1].strftime('%Y-%m-%d')
         }
+
+    def generate_gemini_advice(
+        self, 
+        lstm_pred: dict, 
+        chips_features: dict, 
+        sentiment_summary: dict, 
+        valuation_features: dict, 
+        latest_price: float
+    ) -> dict:
+        """
+        綜合分析技術面(LSTM)、籌碼面(法人)、情緒面(新聞)、基本面(估值)與最新股價，
+        調用雲端 Gemini.CLI 31b (gemma-4-31b-it) 取得買賣建議與指針分數。
+        """
+        import subprocess
+        import shutil
+        
+        if lstm_pred is None:
+            lstm_pred = {}
+        if chips_features is None:
+            chips_features = {}
+        if sentiment_summary is None:
+            sentiment_summary = {}
+        if valuation_features is None:
+            valuation_features = {}
+            
+        # 準備資料
+        pred_list = lstm_pred.get('predictions', [])
+        pred_str = ", ".join([f"{p:.2f}" for p in pred_list]) if pred_list else "暫無數據"
+        trend_prob = lstm_pred.get('trend_probability', 0.5)
+        
+        # 籌碼資料
+        chips_str = json.dumps(chips_features, ensure_ascii=False)
+        
+        # 輿情情緒
+        pos = sentiment_summary.get('positive', 0)
+        neg = sentiment_summary.get('negative', 0)
+        neu = sentiment_summary.get('neutral', 0)
+        senti_label = sentiment_summary.get('label', '中性')
+        senti_score = sentiment_summary.get('score', 50.0)
+        
+        # 估值數據
+        fair_val = valuation_features.get('fair_value', 'N/A')
+        upside = valuation_features.get('upside', 0.0)
+        val_rating = valuation_features.get('rating', 'N/A')
+        
+        # 構建 Prompt
+        prompt = (
+            f"您是專業的金融分析師。請綜合分析以下提供的股票（{self.stock_number}）數據，並給出投資建議：\n\n"
+            f"[技術分析與預測]\n"
+            f"- 最新收盤價: {latest_price:.2f}\n"
+            f"- LSTM 預測未來 5 日價格走勢: [{pred_str}]\n"
+            f"- LSTM 預估看漲機率: {trend_prob * 100:.1f}%\n\n"
+            f"[法人籌碼面]\n"
+            f"- 近期籌碼概況: {chips_str}\n\n"
+            f"[輿情情緒面]\n"
+            f"- 近期新聞情緒統計: 正面 {pos} 篇, 負面 {neg} 篇, 中性 {neu} 篇\n"
+            f"- 情緒強度評級: {senti_label} (情緒得分: {senti_score:.1f}/100)\n\n"
+            f"[基本面與估值]\n"
+            f"- 公允估值: {fair_val}\n"
+            f"- 目前股價與公允值差距 (Upside): {upside}%\n"
+            f"- 估值評級: {val_rating}\n\n"
+            f"任務：\n"
+            f"1. 綜合上述數據，分析該股票的最新投資前景。\n"
+            f"2. 給予買進或賣出的建議，評等必須嚴格限制為以下五個項目之一：'強力賣出', '賣出', '觀望', '買進', '強力買進'。\n"
+            f"3. 給予一個推薦分數 (score)，範圍為 0 至 100 之間（0-20: 強力賣出, 21-40: 賣出, 41-60: 觀望, 61-80: 買進, 81-100: 強力買進）。\n"
+            f"4. 提供 150 字以內的簡短中文推薦理由。\n\n"
+            f"請嚴格以下列 JSON 格式輸出，不要包含任何 markdown 標記（如 ```json）或額外的說明文字：\n"
+            f"{{\n"
+            f"  \"recommendation\": \"觀望\",\n"
+            f"  \"score\": 50,\n"
+            f"  \"reason\": \"理由說明\",\n"
+            f"  \"details\": {{\n"
+            f"    \"technical\": \"技術分析簡短評語\",\n"
+            f"    \"chips\": \"籌碼分析簡短評語\",\n"
+            f"    \"sentiment\": \"輿情分析簡短評語\",\n"
+            f"    \"valuation\": \"基本估值簡短評語\"\n"
+            f"  }}\n"
+            f"}}"
+        )
+        
+        # 換行轉換以防 Windows 參數問題
+        full_prompt = prompt.replace("\n", " ").replace("\r", " ").strip()
+        
+        gemini_path = shutil.which("gemini")
+        if not gemini_path:
+            logger.error("[GeminiAdvisor] 系統中找不到 gemini CLI。")
+            return self._default_advice("系統找不到 gemini CLI 執行檔")
+            
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            from dotenv import load_dotenv
+            dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
+            load_dotenv(dotenv_path)
+            gemini_api_key = os.getenv("GEMINI_API_KEY")
+            
+        env = os.environ.copy()
+        if gemini_api_key:
+            env["GEMINI_API_KEY"] = gemini_api_key
+            
+        try:
+            logger.info(f"[GeminiAdvisor] 正在呼叫雲端 Gemini.CLI 31b 分析股票 {self.stock_number}...")
+            args = [gemini_path, "-m", "gemma-4-31b-it", "--skip-trust", "-o", "json", "-p", full_prompt]
+            
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                env=env,
+                shell=False
+            )
+            
+            if result.returncode != 0:
+                stderr_msg = result.stderr.decode("utf-8", errors="replace")
+                logger.warning(f"[GeminiAdvisor] Gemini CLI 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
+                return self._default_advice(f"模型呼叫失敗，錯誤碼: {result.returncode}")
+                
+            stdout_decoded = result.stdout.decode("utf-8", errors="replace")
+            
+            if "{" in stdout_decoded:
+                json_start = stdout_decoded.index("{")
+                json_data = json.loads(stdout_decoded[json_start:])
+                response_text = json_data.get("response", "").strip()
+                
+                # 移除可能存在的 markdown wrapper
+                clean_res = response_text
+                if clean_res.startswith("```"):
+                    lines = clean_res.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    clean_res = "\n".join(lines).strip()
+                    
+                try:
+                    parsed_response = json.loads(clean_res)
+                    # 驗證必要欄位與值範圍
+                    if 'recommendation' in parsed_response and 'score' in parsed_response:
+                        rec = parsed_response['recommendation']
+                        if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
+                            parsed_response['recommendation'] = '觀望'
+                        return parsed_response
+                except Exception as je:
+                    logger.warning(f"[GeminiAdvisor] 無法解析模型回覆的 JSON: {je}. 原始內容: {clean_res}")
+            
+            logger.warning(f"[GeminiAdvisor] 輸出不符合預期 JSON 格式。原始輸出: {stdout_decoded}")
+            return self._default_advice("無法解析模型輸出之 JSON 結構")
+            
+        except Exception as e:
+            logger.error(f"[GeminiAdvisor] 呼叫 Gemini CLI 異常: {e}")
+            return self._default_advice(f"系統異常: {str(e)}")
+            
+    def _default_advice(self, error_msg: str) -> dict:
+        return {
+            "recommendation": "觀望",
+            "score": 50,
+            "reason": f"暫時無法取得雲端分析建議 ({error_msg})。建議投資人此時採取觀望策略，並參考下方 K 線與技術指標自行判斷。",
+            "details": {
+                "technical": "暫無建議",
+                "chips": "暫無建議",
+                "sentiment": "暫無建議",
+                "valuation": "暫無建議"
+            }
+        }
+

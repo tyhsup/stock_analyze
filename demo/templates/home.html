@@ -228,6 +228,163 @@
     </div>
 </div>
 
+<!-- Feature: Gemini AI Investment Advisor -->
+<div class="row mt-4 animate__animated animate__fadeIn" id="gemini-advisor-section" style="display: none;">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm bg-white overflow-hidden">
+            <div class="card-header bg-dark text-white py-3 fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-cpu-fill me-2 text-warning"></i> Gemini 雲端智慧投資建議 (Gemma-4-31B)</span>
+                <span class="badge bg-warning text-dark px-3 py-1" id="gemini-status-badge">分析準備中</span>
+            </div>
+            <div class="card-body p-4">
+                <div class="row align-items-center">
+                    <div class="col-md-4 text-center border-end">
+                        <div class="d-flex flex-column align-items-center justify-content-center">
+                            <div id="gemini-gauge-chart" style="min-height: 200px; width: 100%;"></div>
+                            <div class="mt-2">
+                                <span class="h4 fw-bold px-3 py-2 rounded" id="gemini-rec-label" style="display: inline-block;">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8 ps-md-4 mt-3 mt-md-0">
+                        <h5 class="fw-bold mb-2"><i class="bi bi-journal-text me-2 text-primary"></i>綜合分析理由</h5>
+                        <p class="text-muted" id="gemini-rec-reason" style="font-size: 15px; line-height: 1.6;">正在讀取數據，準備呼叫雲端 Gemini 進行綜合推理...</p>
+                        
+                        <div class="row g-3 mt-2">
+                            <div class="col-6 col-md-3">
+                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-primary">
+                                    <div class="text-muted small mb-1">技術面 (LSTM)</div>
+                                    <div class="small fw-semibold text-dark" id="gemini-detail-tech">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-info">
+                                    <div class="text-muted small mb-1">籌碼面 (法人)</div>
+                                    <div class="small fw-semibold text-dark" id="gemini-detail-chips">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-success">
+                                    <div class="text-muted small mb-1">情緒面 (輿情)</div>
+                                    <div class="small fw-semibold text-dark" id="gemini-detail-senti">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-warning">
+                                    <div class="text-muted small mb-1">基本面 (估值)</div>
+                                    <div class="small fw-semibold text-dark" id="gemini-detail-val">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const ticker = "{{ number }}";
+        if (ticker) {
+            const container = document.getElementById('gemini-advisor-section');
+            container.style.display = 'block';
+            
+            const badge = document.getElementById('gemini-status-badge');
+            badge.textContent = "雲端分析中...";
+            badge.className = "badge bg-info text-dark px-3 py-1";
+            
+            fetch(`/api/gemini-advisor/${ticker}/`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const report = data.report;
+                        const labelEl = document.getElementById('gemini-rec-label');
+                        labelEl.textContent = report.recommendation;
+                        
+                        // 動態設定標籤顏色與指針圖顏色 (強烈對比色)
+                        let chartColor = '#fdd835'; // 觀望 - 黃色
+                        let labelBg = 'bg-warning text-dark';
+                        if (report.recommendation === '強力買進') {
+                            chartColor = '#2e7d32'; // 深綠色
+                            labelBg = 'bg-success text-white';
+                        } else if (report.recommendation === '買進') {
+                            chartColor = '#4caf50'; // 翠綠色
+                            labelBg = 'bg-success text-white bg-opacity-75';
+                        } else if (report.recommendation === '賣出') {
+                            chartColor = '#ff5722'; // 橘紅色
+                            labelBg = 'bg-danger text-white bg-opacity-75';
+                        } else if (report.recommendation === '強力賣出') {
+                            chartColor = '#d84315'; // 深紅色
+                            labelBg = 'bg-danger text-white';
+                        } else {
+                            labelBg = 'bg-secondary text-white';
+                        }
+                        
+                        labelEl.className = `h4 fw-bold px-3 py-2 rounded ${labelBg}`;
+                        document.getElementById('gemini-rec-reason').textContent = report.reason;
+                        
+                        // 填入細節
+                        document.getElementById('gemini-detail-tech').textContent = report.details.technical || "暫無技術評語";
+                        document.getElementById('gemini-detail-chips').textContent = report.details.chips || "暫無籌碼評語";
+                        document.getElementById('gemini-detail-senti').textContent = report.details.sentiment || "暫無情緒評語";
+                        document.getElementById('gemini-detail-val').textContent = report.details.valuation || "暫無基本評語";
+                        
+                        badge.textContent = data.cached ? "已載入快取" : "最新分析";
+                        badge.className = data.cached ? "badge bg-secondary px-3 py-1" : "badge bg-success px-3 py-1";
+                        
+                        // 渲染 ApexCharts 半圓指針圖
+                        var options = {
+                            chart: {
+                                type: 'radialBar',
+                                height: 220,
+                                sparkline: { enabled: true }
+                            },
+                            plotOptions: {
+                                radialBar: {
+                                    startAngle: -90,
+                                    endAngle: 90,
+                                    track: {
+                                        background: "#e7e7e7",
+                                        strokeWidth: '97%',
+                                        margin: 5,
+                                    },
+                                    dataLabels: {
+                                        name: { show: false },
+                                        value: {
+                                            offsetY: -10,
+                                            fontSize: '24px',
+                                            fontWeight: 'bold',
+                                            formatter: function(val) { return val + "/100"; }
+                                        }
+                                    }
+                                }
+                            },
+                            grid: { padding: { top: -10 } },
+                            fill: {
+                                type: 'solid',
+                                colors: [chartColor]
+                            },
+                            series: [report.score],
+                            labels: ['Recommendation Score']
+                        };
+                        var chart = new ApexCharts(document.querySelector("#gemini-gauge-chart"), options);
+                        chart.render();
+                    } else {
+                        document.getElementById('gemini-rec-reason').textContent = "智慧分析生成失敗：" + data.message;
+                        badge.textContent = "分析失敗";
+                        badge.className = "badge bg-danger px-3 py-1";
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('gemini-rec-reason').textContent = "無法載入分析報告：" + err;
+                    badge.textContent = "網路異常";
+                    badge.className = "badge bg-danger px-3 py-1";
+                });
+        }
+    });
+</script>
+
 <div class="row mt-4">
     <div class="col-lg-12">
         <div class="card shadow-sm border-0">
