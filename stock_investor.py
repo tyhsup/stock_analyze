@@ -30,15 +30,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- 常用 User-Agent 清單 ---
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/122.0.0.0 Safari/537.36"
+]
+
+from typing import Optional
+from datetime import date
+
 class StockInvestorManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.sql = mySQL_OP.OP_Fun()
         self.session = self._init_session()
         # 改用 http 以避免某些環境下的 SSL 問題與 port 8443 重新導向
         self.api_url = 'http://www.twse.com.tw/rwd/zh/fund/T86'
 
-    def _init_session(self):
-        """初始化具備重試機制的 Session 並徹底禁用 SSL 驗證"""
+    def _init_session(self) -> requests.Session:
+        """
+        初始化具備安全防護與自動重試機制的 HTTP 聯絡 Session。
+        
+        工作原理：
+        透過自訂的 NoVerifyAdapter 徹底避免 Python Requests 常見的 SSL 憑證失效錯誤，
+        並隨機指派一個偽裝的瀏覽器 User-Agent Header。
+        
+        Returns:
+            requests.Session: 經配置後的 Requests 連線 Session 物件。
+        """
         session = requests.Session()
         
         class NoVerifyAdapter(HTTPAdapter):
@@ -53,13 +75,24 @@ class StockInvestorManager:
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': random.choice(USER_AGENTS)
         })
         session.verify = False 
         return session
 
-    def get_last_date(self):
-        """從資料庫獲取最後一筆資料的日期 (優化：相容不同欄位名稱)"""
+    def get_last_date(self) -> date:
+        """
+        查詢資料庫取得最後更新之三大法人資料日期。
+        
+        SQL 查詢邏輯：
+        先探查 stock_investor 資料表結構以確保欄位名稱（相容 date 與日期），
+        隨後查詢該日期欄位之最大紀錄以作為增量更新之依據。
+        若查詢耗時超過 0.5 秒，將記錄警告日誌。
+        
+        Returns:
+            date: 資料庫中最新資料的日期，若無紀錄則預設回傳 8 年前的日期。
+        """
+        start_time = time.time()
         try:
             with self.sql.engine.connect() as conn:
                 # 檢查欄位名稱
@@ -70,6 +103,11 @@ class StockInvestorManager:
                 if date_col:
                     query = f"SELECT {date_col} FROM stock_investor ORDER BY {date_col} DESC LIMIT 1"
                     result = conn.execute(text(query)).fetchone()
+                    
+                    elapsed = time.time() - start_time
+                    if elapsed > 0.5:
+                        logger.warning(f"SQL execution took too long: {elapsed:.2f} s for query: {query}")
+                        
                     if result:
                         d = result[0]
                         if isinstance(d, datetime):
@@ -82,14 +120,29 @@ class StockInvestorManager:
         # 若無資料，預設抓取 8 年前
         return (datetime.today() - timedelta(days=2920)).date()
 
-    def fetch_data_by_api(self, target_date):
-        """使用 TWSE API 抓取 JSON 資料 (具備 Curl 回退機制)"""
+    def fetch_data_by_api(self, target_date: date) -> Optional[pd.DataFrame]:
+        """
+        使用 TWSE RWD API 抓取指定日期的上市三大法人買賣超 JSON 數據。
+        
+        工作原理：
+        透過 HTTP 呼叫證交所三大法人日報表 API，若遇到 SSL 連線憑證錯誤，
+        則自動呼叫本機 curl.exe 工具進行安全回退抓取。
+        
+        Args:
+            target_date: 需要抓取的西元日期。
+            
+        Returns:
+            Optional[pd.DataFrame]: 解析後之 Pandas DataFrame，查無資料或異常時回傳 None。
+        """
         date_str = target_date.strftime('%Y%m%d')
         params = {
             'date': date_str,
             'selectType': 'ALL',
             'response': 'json'
         }
+        
+        # 動態更換 User-Agent 以防封鎖
+        self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
         try:
             # 嘗試標準 requests
@@ -126,12 +179,63 @@ class StockInvestorManager:
         if not records:
             return None
             
-        df = pd.DataFrame(records, columns=fields)
+        record_len = len(records[0])
+        fields_len = len(fields)
+        
+        # 處理 TWSE API 欄位長度與實際資料不一致或為舊版 16 欄位之情況
+        if record_len == 19:
+            fields = [
+                "證券代號", "證券名稱", 
+                "外陸資買進股數(不含外資自營商)", "外陸資賣出股數(不含外資自營商)", "外陸資買賣超股數(不含外資自營商)",
+                "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數",
+                "投信買進股數", "投信賣出股數", "投信買賣超股數",
+                "自營商買賣超股數",
+                "自營商買進股數(自行買賣)", "自營商賣出股數(自行買賣)", "自營商買賣超股數(自行買賣)",
+                "自營商買進股數(避險)", "自營商賣出股數(避險)", "自營商買賣超股數(避險)",
+                "三大法人買賣超股數"
+            ]
+            df = pd.DataFrame(records, columns=fields)
+        elif record_len == 16:
+            fields = [
+                "證券代號", "證券名稱", 
+                "外資買進股數", "外資賣出股數", "外資買賣超股數",
+                "投信買進股數", "投信賣出股數", "投信買賣超股數",
+                "自營商買賣超股數",
+                "自營商買進股數(自行買賣)", "自營商賣出股數(自行買賣)", "自營商買賣超股數(自行買賣)",
+                "自營商買進股數(避險)", "自營商賣出股數(避險)", "自營商買賣超股數(避險)",
+                "三大法人買賣超股數"
+            ]
+            df = pd.DataFrame(records, columns=fields)
+            # 插入外資自營商空欄位以符合 19 欄位結構
+            df.insert(5, "外資自營商買進股數", 0)
+            df.insert(6, "外資自營商賣出股數", 0)
+            df.insert(7, "外資自營商買賣超股數", 0)
+            # 重新命名以對齊資料庫欄位
+            df.rename(columns={
+                "外資買進股數": "外陸資買進股數(不含外資自營商)",
+                "外資賣出股數": "外陸資賣出股數(不含外資自營商)",
+                "外資買賣超股數": "外陸資買賣超股數(不含外資自營商)"
+            }, inplace=True)
+        else:
+            logger.warning(f"不支援的欄位數量: {record_len}")
+            # 保守策略：以預設欄位名稱截斷或補齊
+            if record_len > fields_len:
+                fields += [f"未知欄位_{i}" for i in range(fields_len, record_len)]
+            else:
+                fields = fields[:record_len]
+            df = pd.DataFrame(records, columns=fields)
+            
         df.insert(0, 'date', target_date.strftime('%Y-%m-%d'))
         return df
 
-    def update_investor_data(self):
-        """更新三大法人資料主程序"""
+    def update_investor_data(self) -> None:
+        """
+        更新三大法人日報表資料主程序。
+        
+        工作原理：
+        透過遞增日期的循環，逐日下載並進行欄位格式標準化、除逗號並轉為數值等清洗流程，
+        最後批次插入資料庫中。
+        """
         start_date = self.get_last_date() + timedelta(days=1)
         now_date = datetime.today().date()
         
@@ -166,8 +270,8 @@ class StockInvestorManager:
                     self.sql.upload_all(df, 'stock_investor')
                     logger.info(f"✅ {current_date} 成功寫入 {len(df)} 筆資料。")
                     
-                    # 避免請求過快
-                    time.sleep(random.uniform(2, 4))
+                    # 避免請求過快，隨機延遲 2 到 4 秒
+                    time.sleep(random.uniform(2.0, 4.0))
                 except Exception as e:
                     logger.error(f"資料處理/寫入錯誤 ({current_date}): {e}")
             

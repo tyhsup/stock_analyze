@@ -178,7 +178,7 @@ class OP_Fun:
             # --- 批量寫入邏輯 ---
             cols = ", ".join([f"`{c}`" for c in df.columns])
             placeholders = ", ".join(["%s"] * len(df.columns))
-            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in df.columns if c not in ['日期', 'number']])
+            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in df.columns if c not in ['日期', 'date', 'number']])
         
             sql = f"""
                 INSERT INTO `{table_name}` ({cols}) 
