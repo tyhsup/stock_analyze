@@ -22,6 +22,9 @@ from io import BytesIO
 import urllib,base64
 from PIL import Image
 import yfinance as yf
+import os
+import pickle
+
 
 
 class stock_cost_AI:
@@ -67,27 +70,37 @@ class stock_cost_AI:
         data[columns_name] = scaler.transform(data[columns_name])
         return data
     
-    def data_preprocesing(data, time_frame,split_rate,columns):
+    def data_preprocesing(data, time_frame, split_rate, columns):
         number_features = len(data.columns)
-        data = data.to_numpy()
-        result = []
-        if len(data) > 5:
-            for i in range(len(data)-(time_frame+1)):
-                result.append(data[i: i + (time_frame+1)])
-            result = np.array(result)
-            #取train data & test data 比例
-            data_split = int(result.shape[0]*split_rate)
-            X_train = result[:data_split, :-1]
-            #訓練資料中取最後一筆收盤價作為答案
-            Y_train = result[:data_split, -1][:,columns]
-            X_test = result[data_split:, :-1]
-            Y_test = result[data_split:, -1][:,columns]
-            #reshape data
-            X_train = np.reshape(X_train,(X_train.shape[0],X_train.shape[1],number_features))
-            X_test = np.reshape(X_test,(X_test.shape[0],X_test.shape[1],number_features))
-            return X_train,Y_train,X_test,Y_test
-        else:
-            pass
+        
+        # 先切分訓練與測試集，避免資料洩露
+        data_split = int(len(data) * split_rate)
+        train_data = data.iloc[:data_split].copy()
+        test_data = data.iloc[data_split:].copy()
+        
+        # 僅對訓練集進行 fit
+        columns_name = data.columns.to_list()
+        scaler = MinMaxScaler(feature_range=(0, 1)).fit(train_data[columns_name])
+        
+        train_data[columns_name] = scaler.transform(train_data[columns_name])
+        test_data[columns_name] = scaler.transform(test_data[columns_name])
+        
+        train_arr = train_data.to_numpy()
+        test_arr = test_data.to_numpy()
+        
+        X_train, Y_train = [], []
+        if len(train_arr) > time_frame:
+            for i in range(len(train_arr) - time_frame):
+                X_train.append(train_arr[i : i + time_frame])
+                Y_train.append(train_arr[i + time_frame, columns])
+                
+        X_test, Y_test = [], []
+        if len(test_arr) > time_frame:
+            for i in range(len(test_arr) - time_frame):
+                X_test.append(test_arr[i : i + time_frame])
+                Y_test.append(test_arr[i + time_frame, columns])
+                
+        return np.array(X_train), np.array(Y_train), np.array(X_test), np.array(Y_test), scaler
     
     def data_index(data):
         close_data = data['Close']
@@ -119,24 +132,36 @@ class stock_cost_AI:
         model.compile(optimizer='adam',loss='MSLE')
         return model
     
-    def model_train(table_name,time_frame,split_rate, cycle, b_size):
+    def model_train(table_name, time_frame, split_rate, cycle, b_size=64):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_dir = os.path.join(current_dir, 'demo', 'stock_Django', 'stock_model')
+        os.makedirs(model_dir, exist_ok=True)
+        
         stock_list = stock_cost_AI.load_stock_number('stock_table_tw')
         for i in range(len(stock_list)):
             try:
-                cost_data,Date_data = stock_cost_AI.load_data_c(table_name, str(stock_list.iat[i]))
+                stock_num = str(stock_list.iat[i])
+                cost_data, Date_data = stock_cost_AI.load_data_c(table_name, stock_num)
                 data = stock_cost_AI.data_index(cost_data)
                 data_copy = data.copy()
-                data_normalize = stock_cost_AI.normalize(data_copy, Min = 0, Max = 1)
-                X_train,Y_train,X_test,Y_test = stock_cost_AI.data_preprocesing(data_normalize, time_frame,split_rate,
-                                                                                columns = data_normalize.columns.get_loc('Close'))
-                model = stock_cost_AI.model_install(input_L = time_frame,input_d = len(data_normalize.columns))
-                model.fit(X_train, Y_train, epochs = cycle, batch_size = b_size, validation_data = (X_test,Y_test))
-                prediction = model.predict(X_test)
-                prediction_de = stock_cost_AI.de_normalize(data, prediction,data.columns.get_loc('Close'))
-                model.save_weights('E:/Infinity/mydjango/demo/stock_Django/stock_model/stock_model_weights_' +
-                                   str(stock_list.iat[i]) + '.h5')
+                
+                # 呼叫非資料洩露版
+                X_train, Y_train, X_test, Y_test, scaler = stock_cost_AI.data_preprocesing(
+                    data_copy, time_frame, split_rate, columns=data_copy.columns.get_loc('Close')
+                )
+                
+                model = stock_cost_AI.model_install(input_L=time_frame, input_d=len(data_copy.columns))
+                model.fit(X_train, Y_train, epochs=cycle, batch_size=b_size, validation_data=(X_test, Y_test))
+                
+                # 儲存權重與 scaler
+                weights_path = os.path.join(model_dir, f'stock_model_weights_{stock_num}.h5')
+                model.save_weights(weights_path)
+                
+                scaler_path = os.path.join(model_dir, f'stock_scaler_{stock_num}.pkl')
+                with open(scaler_path, 'wb') as f:
+                    pickle.dump(scaler, f)
             except Exception as e:
-                print(e)
+                print(f"Error training stock {stock_list.iat[i]}: {e}")
                 pass
 
     def de_normalize(Ori_data, norm_value, de_nor_column):
@@ -168,33 +193,86 @@ class stock_cost_AI:
         return buf
     
     def pred_data(data, stock_number):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        model_dir = os.path.join(current_dir, 'demo', 'stock_Django', 'stock_model')
+        
         data_index = stock_cost_AI.data_index(data)
         data_copy = data_index.copy()
-        model = stock_cost_AI.model_install(5,len(data_copy.columns))
-        model.load_weights('E:/Infinity/mydjango/demo/stock_Django/stock_model/stock_model_weights_' +
-                           str(stock_number) + '.h5')
-        data_normalize = stock_cost_AI.normalize(data_copy, Min = 0, Max = 1)
-        X_train,Y_train,X_test,Y_test = stock_cost_AI.data_preprocesing(data_normalize, 5,0.8,
-                                                                        data_normalize.columns.get_loc('Close'))
-        model.fit(X_train, Y_train, epochs = 100, batch_size = 512, validation_data = (X_test,Y_test))
-        prediction = model.predict(X_test)
-        prediction_de = stock_cost_AI.de_normalize(data_index, prediction,data_index.columns.get_loc('Close'))
-        pre_data = prediction_de[-1]
-        model.save_weights('E:/Infinity/mydjango/demo/stock_Django/stock_model/stock_model_weights_' +
-                           str(stock_number) + '.h5')
-        return pre_data
-    
+        
+        if len(data_copy) < 5:
+            raise ValueError("Data length is less than 5, cannot predict.")
+            
+        # 取最後 5 天資料進行預測
+        last_5_days = data_copy.iloc[-5:].copy()
+        
+        # 載入 scaler
+        scaler_path = os.path.join(model_dir, f'stock_scaler_{stock_number}.pkl')
+        if os.path.exists(scaler_path):
+            with open(scaler_path, 'rb') as f:
+                scaler = pickle.load(f)
+            scaled_input = scaler.transform(last_5_days[data_copy.columns])
+        else:
+            # Fallback: 若無儲存的 scaler，則使用當前整個歷史資料區間 fit
+            scaler = MinMaxScaler(feature_range=(0, 1)).fit(data_copy[data_copy.columns])
+            scaled_input = scaler.transform(last_5_days[data_copy.columns])
+            
+        # Reshape 成 (1, 5, number_features)
+        X_input = np.reshape(scaled_input, (1, 5, len(data_copy.columns)))
+        
+        # 載入模型權重
+        model = stock_cost_AI.model_install(5, len(data_copy.columns))
+        weights_path = os.path.join(model_dir, f'stock_model_weights_{stock_number}.h5')
+        if os.path.exists(weights_path):
+            model.load_weights(weights_path)
+            
+        # 預測
+        prediction = model.predict(X_input, verbose=0)
+        
+        # 逆正規化
+        close_idx = data_copy.columns.get_loc('Close')
+        prediction_de = stock_cost_AI.de_normalize(data_index, prediction, close_idx)
+        return prediction_de[0][0]
+        
     def pred_cost(stock_number, pred_days):
-        cost_data,cost_Date = stock_cost_AI.load_data_c('stock_cost', stock_number)
-        start_date = cost_Date['Date'].iat[-1] + pd.Timedelta(+1,'D')
+        cost_data, cost_Date = stock_cost_AI.load_data_c('stock_cost', stock_number)
+        # 確保 Date 是 datetime 格式
+        cost_Date_parsed = pd.to_datetime(cost_Date['Date'])
+        start_date = cost_Date_parsed.iat[-1] + pd.Timedelta(+1, 'D')
+        
+        rolling_df = cost_data.copy()
+        rolling_df.index = cost_Date_parsed
+        
         new_data = []
-        for i in range(pred_days) :
-            pred_data= stock_cost_AI.pred_data(cost_data, stock_number)
-            new_data.extend(pred_data)
-        new_date = stock_cost_AI.date_create(start_date, pred_days)
-        new_data = pd.DataFrame(new_data,columns = ['Close'])
-        data_concat = pd.concat([new_date,new_data], axis = 1)
-        data_concat.set_index('Date', inplace = True)
+        current_date = start_date
+        predicted_dates = []
+        
+        for _ in range(pred_days):
+            # 滾動預測下一交易日收盤價
+            pred_val = stock_cost_AI.pred_data(rolling_df, stock_number)
+            new_data.append(pred_val)
+            
+            # 計算下一個工作日 (跳過週末)
+            while current_date.dayofweek >= 5:
+                current_date = current_date + pd.Timedelta(+1, 'D')
+            predicted_dates.append(current_date)
+            
+            # 將預測結果追加至 rolling_df
+            last_row = rolling_df.iloc[-1].copy()
+            last_row['Close'] = pred_val
+            last_row['Open'] = pred_val
+            last_row['High'] = pred_val
+            last_row['Low'] = pred_val
+            
+            new_row_df = pd.DataFrame([last_row], index=[current_date])
+            rolling_df = pd.concat([rolling_df, new_row_df])
+            
+            current_date = current_date + pd.Timedelta(+1, 'D')
+            
+        data_concat = pd.DataFrame(new_data, columns=['Close'], index=predicted_dates)
+        data_concat.index.name = 'Date'
+        # 轉成 DataFrame 時，把 index 轉回 Date 欄位以與原本介面相容
+        data_concat = data_concat.reset_index()
+        data_concat.set_index('Date', inplace=True)
         return data_concat
 
             
