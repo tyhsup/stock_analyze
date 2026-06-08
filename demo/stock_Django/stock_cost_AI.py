@@ -289,6 +289,26 @@ class IntegratedStockPredModel:
         target_df = dfs_dict[self.stock_number]
         if len(target_df) < self.time_steps: return None
         
+        # --- Fallback for missing TensorFlow (e.g. Python 3.14 environment) ---
+        if not HAS_TENSORFLOW or tf is None:
+            logger.warning(f"TensorFlow is not available. Falling back to Linear Regression for {self.stock_number}...")
+            from sklearn.linear_model import LinearRegression
+            closes = target_df['Close'].tail(self.time_steps).values
+            X = np.arange(len(closes)).reshape(-1, 1)
+            y = closes
+            model = LinearRegression().fit(X, y)
+            X_future = np.arange(len(closes), len(closes) + 5).reshape(-1, 1)
+            pred_real = model.predict(X_future)
+            last_close = closes[-1]
+            avg_pred = np.mean(pred_real)
+            trend_prob = 0.5 + ((avg_pred - last_close) / (last_close + 1e-9)) * 5.0
+            trend_prob = np.clip(trend_prob, 0.1, 0.9)
+            return {
+                'predictions': [float(p) for p in pred_real],
+                'trend_probability': float(trend_prob),
+                'latest_feature_date': target_df.index[-1].strftime('%Y-%m-%d')
+            }
+        
         weights_h5 = self.weights_path.replace('.weights.h5', '.h5')
         if not os.path.exists(self.weights_path) and not os.path.exists(weights_h5):
             self.train_incremental(epochs=self.config.get('full_train_epochs', 30))

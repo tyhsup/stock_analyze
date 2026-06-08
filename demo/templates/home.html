@@ -218,6 +218,36 @@
                     </div>
                 </div>
                 {% endif %}
+
+                {% if ai_prediction.latest %}
+                <!-- Feature: LSTM Technical Price Prediction -->
+                <div class="row g-3 mt-1 animate__animated animate__fadeIn">
+                    <div class="col-md-12">
+                        <div class="card border-0 shadow-sm bg-white overflow-hidden">
+                            <div class="card-header bg-white border-0 py-3 fw-bold d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-cpu-fill me-2 text-primary animate__animated animate__pulse animate__infinite"></i> LSTM 技術面未來 5 日價格預測</span>
+                                <span class="badge {% if ai_prediction.latest.trend_probability > 0.5 %}bg-success{% else %}bg-danger{% endif %} px-3 py-1">
+                                    預估看漲機率: {{ ai_prediction.latest.trend_probability|multiply:100|floatformat:1 }}%
+                                </span>
+                            </div>
+                            <div class="card-body p-4 pt-0">
+                                <div class="row g-2">
+                                    {% for pred in ai_prediction.latest.predictions %}
+                                    <div class="col">
+                                        <div class="p-3 bg-light rounded text-center border-top border-3 {% if ai_prediction.latest.trend_probability > 0.5 %}border-success{% else %}border-danger{% endif %}">
+                                            <div class="text-muted small mb-1">T + {{ forloop.counter }} 日</div>
+                                            <div class="h5 mb-0 fw-bold text-dark">
+                                                {% if currency == 'USD' %}${% endif %}{{ pred|floatformat:2 }}{% if currency == 'TWD' %} 元{% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
                 {% else %}
                 <div class="text-center py-4 text-muted">
                     <i class="bi bi-info-circle me-2"></i> No fundamental data available from yfinance for this ticker.
