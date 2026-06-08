@@ -318,6 +318,16 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
 
         if agent:
             for idx, item in enumerate(results):
+                # 1. 判斷是否為最近 7 天內的新聞
+                item_date_str = item.get('日期', '')
+                is_recent = True
+                try:
+                    item_dt = pd.to_datetime(item_date_str)
+                    if (datetime.now() - item_dt).days > 7:
+                        is_recent = False
+                except Exception as e_dt:
+                    logger.warning(f"Failed to parse news date '{item_date_str}': {e_dt}")
+
                 _set_status(news_key, 'running',
                             50 + int(40 * (idx / len(results))),
                             f'AI 強化分析中 ({idx+1}/{len(results)})...')
@@ -329,19 +339,19 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
                         "content": item.get('內容', ''),
                         "link": item.get('連結', ''),
                         "source": item.get('來源', '')
-                    })
-                    analysis = future.result(timeout=60)
+                    }, is_recent=is_recent)
+                    analysis = future.result(timeout=120)
                     item['正負分析'] = analysis['positive_negative_analysis']
                     item['市場'] = analysis['market']
                     item['信心度'] = f"{analysis['confidence']:.0%}"
                     item['影響範疇'] = analysis['impact_scope']
                     item['分析摘要'] = analysis['reasoning_summary']
                 except concurrent.futures.TimeoutError:
-                    logger.warning(f"AI analysis timed out (60s) for: {item.get('標題', '')[:40]}")
+                    logger.warning(f"AI analysis timed out (120s) for: {item.get('標題', '')[:40]}")
                     item['市場'] = '未知'
                     item['信心度'] = 'N/A'
                     item['影響範疇'] = '短期'
-                    item['分析摘要'] = 'AI 分析逾時 (60s)'
+                    item['分析摘要'] = 'AI 分析逾時 (120s)'
                 except Exception as e:
                     logger.warning(f"AI analysis failed for news: {e}")
                     item['市場'] = '未知'
