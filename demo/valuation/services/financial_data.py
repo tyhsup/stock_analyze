@@ -30,6 +30,15 @@ if not Path(_CLI_EXE).exists():
 _TWSE_CLI_CACHE: Dict[str, Dict[str, Any]] = {}
 _TWSE_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時
 
+# tpex-cli 執行檔路徑 (跨平台支援)
+_TPEX_CLI_BASE_DIR = Path(__file__).resolve().parents[3] / "tpex-cli" / "bin"
+_TPEX_CLI_EXE = str(_TPEX_CLI_BASE_DIR / ("tpex-pp-cli.exe" if platform.system() == "Windows" else "tpex-pp-cli"))
+if not Path(_TPEX_CLI_EXE).exists():
+    _TPEX_CLI_EXE = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+
+_TPEX_CLI_CACHE: Dict[str, Dict[str, Any]] = {}
+_TPEX_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時
+
 class FinancialDataLoader:
     def __init__(self, ticker_symbol):
         # 判斷市場 (邏輯：包含 .TW 或 純數字 為台灣，否則為美國)
@@ -37,7 +46,7 @@ class FinancialDataLoader:
         if ".TW" in temp_symbol or ".TWO" in temp_symbol or temp_symbol.isdigit():
             # 台灣市場
             self.market = 'tw'
-            self.symbol = temp_symbol.replace(".TW", "").replace(".TWO", "")
+            self.symbol = temp_symbol.replace(".TWO", "").replace(".TW", "")
             # 定義完整的 yfinance 搜尋代號 (優先使用 .TW 如果是純數字)
             if ".TWO" in temp_symbol:
                 self.full_symbol = f"{self.symbol}.TWO"
@@ -687,6 +696,90 @@ class FinancialDataLoader:
             "dividend_yield": safe_float(target.get("DividendYield"))
         }
 
+    def _get_tpex_cli_info(self) -> dict:
+        """
+        內部方法：透過 tpex-cli 取得上櫃股票當前市場指標 (PE, PB, Dividend Yield)。
+        僅適用於台灣市場上櫃股票。
+        """
+        if self.market != 'tw':
+            return {}
+
+        cache_key = "tpex_cli_peratio_all"
+        now = time.time()
+
+        all_stocks = None
+        try:
+            from django.core.cache import cache as django_cache
+            all_stocks = django_cache.get(cache_key)
+        except Exception:
+            pass
+
+        if not all_stocks:
+            cached = _TPEX_CLI_CACHE.get(cache_key)
+            if cached and (now - cached.get("ts", 0)) < _TPEX_CLI_CACHE_TTL_SECONDS:
+                all_stocks = cached["data"]
+
+        if not all_stocks:
+            if not Path(_TPEX_CLI_EXE).exists():
+                logger.warning(f"tpex-cli 不存在於路徑：{_TPEX_CLI_EXE}，PE/PB 降級使用歷史計算。")
+                return {}
+
+            cmd = [_TPEX_CLI_EXE, "tpex-mainboard-peratio-analysis", "list",
+                   "--json", "--no-color", "--no-input", "--yes"]
+            try:
+                process = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=30
+                )
+                raw_text = process.stdout.decode("utf-8", errors="replace")
+                import re as _re
+                cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw_text)
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict) and "results" in parsed:
+                    all_stocks = parsed["results"]
+                elif isinstance(parsed, list):
+                    all_stocks = parsed
+                else:
+                    all_stocks = []
+
+                if all_stocks:
+                    _TPEX_CLI_CACHE[cache_key] = {"data": all_stocks, "ts": now}
+                    try:
+                        from django.core.cache import cache as django_cache
+                        django_cache.set(cache_key, all_stocks, _TPEX_CLI_CACHE_TTL_SECONDS)
+                    except Exception:
+                        pass
+            except subprocess.TimeoutExpired:
+                logger.error("tpex-cli 呼叫逾時 (>30s)，PE/PB 降級使用歷史計算。")
+                return {}
+            except Exception as e:
+                logger.error(f"tpex-cli 呼叫或解析失敗：{e}，PE/PB 降級使用歷史計算。")
+                return {}
+
+        if not all_stocks:
+            return {}
+
+        target = next(
+            (item for item in all_stocks
+             if str(item.get("SecuritiesCompanyCode", "")).strip() == self.symbol),
+            None
+        )
+        if not target:
+            return {}
+
+        def safe_float(val) -> Optional[float]:
+            try:
+                return float(val) if val and str(val).strip() not in ["", "-", "N/A"] else None
+            except (ValueError, TypeError):
+                return None
+
+        return {
+            "pe": safe_float(target.get("PriceEarningRatio")),
+            "pb": safe_float(target.get("PriceBookRatio")),
+            "dividend_yield": safe_float(target.get("YieldRatio"))
+        }
+
     def get_historical_multiples(self):
         """估算歷史平均 P/E 與 EV/EBITDA。台股優先使用 twse-cli 官方數據。
 
@@ -710,11 +803,14 @@ class FinancialDataLoader:
         eps = start_data['net_income'] / max(start_data['shares_outstanding'], 1)
         current_pe = current_price / eps if eps > 0 else 15
 
-        # 4. 台股：優先使用 twse-cli 的官方 PE (Tier 1)
+        # 4. 台股：優先使用 twse-cli/tpex-cli 的官方 PE (Tier 1)
         avg_pe = max(min(current_pe, 30), 10)  # 本地計算預設值 (Tier 2)
         twse_info = {}
         if self.market == 'tw':
-            twse_info = self._get_twse_cli_info()
+            if self.full_symbol.endswith('.TWO'):
+                twse_info = self._get_tpex_cli_info()
+            else:
+                twse_info = self._get_twse_cli_info()
             twse_pe = twse_info.get('pe')
             if twse_pe and 3.0 < twse_pe < 200.0:  # 排除明顯異常值
                 avg_pe = max(min(float(twse_pe), 80), 5)  # 台股 PE 範圍放寬至 5~80

@@ -231,6 +231,59 @@ class StockService:
                 }
         return {}
 
+    def _get_tpex_cli_info(self, symbol: str) -> dict:
+        """內部方法：透過 tpex-cli 取得上櫃股票基本指標，並使用快取避免頻繁執行 subprocess"""
+        cache_key = "tpex_cli_peratio_all"
+        all_stocks = cache.get(cache_key)
+        print(f"DEBUG_TPEX: entering with symbol='{symbol}', cache_status={'hit' if all_stocks else 'miss'}")
+        
+        if not all_stocks:
+            import platform
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            cli_ext = ".exe" if platform.system() == "Windows" else ""
+            cli_path = os.path.join(base_dir, "tpex-cli", "bin", f"tpex-pp-cli{cli_ext}")
+            
+            if not os.path.exists(cli_path):
+                cli_path = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+                
+            cmd = [cli_path, "tpex-mainboard-peratio-analysis", "list", "--agent"]
+            
+            try:
+                process = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+                parsed = json.loads(process.stdout)
+                if isinstance(parsed, dict) and 'results' in parsed:
+                    all_stocks = parsed['results']
+                elif isinstance(parsed, list):
+                    all_stocks = parsed
+                else:
+                    all_stocks = []
+                
+                if all_stocks:
+                    cache.set(cache_key, all_stocks, 3600)  # 快取 1 小時
+            except Exception as e:
+                logger.error(f"Error fetching tpex-cli data: {e}")
+                return {}
+
+        print(f"DEBUG_TPEX: all_stocks count={len(all_stocks) if all_stocks else 0}")
+        if all_stocks:
+            target_stock = next((item for item in all_stocks if str(item.get('SecuritiesCompanyCode', '')) == str(symbol)), None)
+            if target_stock:
+                print(f"DEBUG_TPEX: found target_stock={target_stock}")
+                def safe_float(val):
+                    try:
+                        return float(val) if val and str(val).strip() not in ["", "-", "N/A"] else None
+                    except:
+                        return None
+                        
+                return {
+                    'pe': safe_float(target_stock.get('PriceEarningRatio')),
+                    'pb': safe_float(target_stock.get('PriceBookRatio')),
+                    'dividend_yield': safe_float(target_stock.get('YieldRatio'))
+                }
+            else:
+                print(f"DEBUG_TPEX: target_stock not found for symbol='{symbol}'")
+        return {}
+
     def get_stock_data(self, number: str, days: int) -> Dict[str, Any]:
         """
         全量獲取股票相關資料，包括股價、法人、技術指標等。使用了快取機制。
@@ -391,11 +444,14 @@ class StockService:
                 return None
 
             try:
-                # 取得 twse-cli 資料 (僅台股)
+                # 取得 twse-cli / tpex-cli 資料 (僅台股)
                 twse_info = {}
                 if is_tw:
-                    clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
-                    twse_info = self._get_twse_cli_info(clean_sym)
+                    clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
+                    if valuation_symbol.endswith('.TWO'):
+                        twse_info = self._get_tpex_cli_info(clean_sym)
+                    else:
+                        twse_info = self._get_twse_cli_info(clean_sym)
 
                 # Always provide a skeleton so the layout renders with "--" instead of an error message
                 fin_summary = {
@@ -471,7 +527,7 @@ class StockService:
                     curr_price = result['historical_data']['Close'].iloc[-1] if not result['historical_data'].empty else None
                     if curr_price:
                         if is_tw:
-                            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+                            clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
                             df_cap = pd.read_sql(f"SELECT amount FROM financial_raw_tw WHERE symbol='{clean_sym}' AND item_name IN ('普通股股本', '股本') ORDER BY year DESC, quarter DESC LIMIT 1", self.sql_op.engine)
                             
                             if not df_cap.empty:
@@ -517,7 +573,7 @@ class StockService:
                 try:
                     if is_tw:
                         # TW Stock calculation from financial_raw_tw
-                        clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+                        clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
                         df_fin = pd.read_sql(f"SELECT * FROM financial_raw_tw WHERE symbol='{clean_sym}' ORDER BY year DESC, quarter DESC LIMIT 3000", self.sql_op.engine)
                         if df_fin.empty:
                             fin_summary['data_status'] = "Initial (0 Quarters) - Auto-Refresh Triggered"
