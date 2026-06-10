@@ -465,56 +465,74 @@ class IntegratedStockPredModel:
         if gemini_api_key:
             env["GEMINI_API_KEY"] = gemini_api_key
             
-        try:
-            logger.info(f"[GeminiAdvisor] 正在呼叫雲端 Gemini.CLI 31b 分析股票 {self.stock_number}...")
-            args = [gemini_path, "-m", "gemma-4-31b-it", "--skip-trust", "-o", "json", "-p", full_prompt]
-            
-            result = subprocess.run(
-                args,
-                capture_output=True,
-                env=env,
-                shell=False
-            )
-            
-            if result.returncode != 0:
-                stderr_msg = result.stderr.decode("utf-8", errors="replace")
-                logger.warning(f"[GeminiAdvisor] Gemini CLI 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
-                return self._default_advice(f"模型呼叫失敗，錯誤碼: {result.returncode}")
+        # 決定要試的模型
+        custom_model = os.getenv("GEMINI_ADVISOR_MODEL")
+        if custom_model:
+            models_to_try = [custom_model]
+        else:
+            models_to_try = ["gemini-3.1-pro-preview", "gemma-4-31b-it"]
+
+        last_error = "所有模型呼叫皆失敗"
+        
+        for model in models_to_try:
+            try:
+                logger.info(f"[GeminiAdvisor] 正在呼叫雲端 Gemini.CLI {model} 分析股票 {self.stock_number}...")
+                args = [gemini_path, "-m", model, "--skip-trust", "-o", "json", "-p", full_prompt]
                 
-            stdout_decoded = result.stdout.decode("utf-8", errors="replace")
-            
-            if "{" in stdout_decoded:
-                json_start = stdout_decoded.index("{")
-                json_data = json.loads(stdout_decoded[json_start:])
-                response_text = json_data.get("response", "").strip()
+                result = subprocess.run(
+                    args,
+                    capture_output=True,
+                    env=env,
+                    shell=False
+                )
                 
-                # 移除可能存在的 markdown wrapper
-                clean_res = response_text
-                if clean_res.startswith("```"):
-                    lines = clean_res.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    clean_res = "\n".join(lines).strip()
+                if result.returncode != 0:
+                    stderr_msg = result.stderr.decode("utf-8", errors="replace")
+                    logger.warning(f"[GeminiAdvisor] Gemini CLI {model} 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
+                    last_error = f"{model} 執行失敗: {result.returncode}"
+                    continue
                     
-                try:
-                    parsed_response = json.loads(clean_res)
-                    # 驗證必要欄位與值範圍
-                    if 'recommendation' in parsed_response and 'score' in parsed_response:
-                        rec = parsed_response['recommendation']
-                        if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
-                            parsed_response['recommendation'] = '觀望'
-                        return parsed_response
-                except Exception as je:
-                    logger.warning(f"[GeminiAdvisor] 無法解析模型回覆的 JSON: {je}. 原始內容: {clean_res}")
-            
-            logger.warning(f"[GeminiAdvisor] 輸出不符合預期 JSON 格式。原始輸出: {stdout_decoded}")
-            return self._default_advice("無法解析模型輸出之 JSON 結構")
-            
-        except Exception as e:
-            logger.error(f"[GeminiAdvisor] 呼叫 Gemini CLI 異常: {e}")
-            return self._default_advice(f"系統異常: {str(e)}")
+                stdout_decoded = result.stdout.decode("utf-8", errors="replace")
+                
+                if "{" in stdout_decoded:
+                    json_start = stdout_decoded.index("{")
+                    json_data = json.loads(stdout_decoded[json_start:])
+                    response_text = json_data.get("response", "").strip()
+                    
+                    # 移除可能存在的 markdown wrapper
+                    clean_res = response_text
+                    if clean_res.startswith("```"):
+                        lines = clean_res.splitlines()
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        clean_res = "\n".join(lines).strip()
+                        
+                    try:
+                        parsed_response = json.loads(clean_res)
+                        # 驗證必要欄位與值範圍
+                        if 'recommendation' in parsed_response and 'score' in parsed_response:
+                            rec = parsed_response['recommendation']
+                            if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
+                                parsed_response['recommendation'] = '觀望'
+                            
+                            # 填入具可讀性的模型名稱
+                            friendly_model_name = "Gemini 3.1 Pro" if "gemini-3.1" in model else ("Gemma-4-31B" if "gemma-4" in model else model)
+                            parsed_response['model_name'] = friendly_model_name
+                            return parsed_response
+                    except Exception as je:
+                        logger.warning(f"[GeminiAdvisor] 無法解析模型 {model} 回覆的 JSON: {je}. 原始內容: {clean_res}")
+                        last_error = f"{model} JSON 解析錯誤"
+                else:
+                    logger.warning(f"[GeminiAdvisor] 模型 {model} 輸出不符合預期 JSON 格式。原始輸出: {stdout_decoded}")
+                    last_error = f"{model} 輸出格式錯誤"
+                    
+            except Exception as e:
+                logger.error(f"[GeminiAdvisor] 呼叫 Gemini CLI ({model}) 異常: {e}")
+                last_error = f"{model} 系統異常: {str(e)}"
+                
+        return self._default_advice(last_error)
             
     def _default_advice(self, error_msg: str) -> dict:
         return {
@@ -526,6 +544,7 @@ class IntegratedStockPredModel:
                 "chips": "暫無建議",
                 "sentiment": "暫無建議",
                 "valuation": "暫無建議"
-            }
+            },
+            "model_name": "N/A"
         }
 

@@ -450,15 +450,20 @@ class StockService:
                     clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
                     if valuation_symbol.endswith('.TWO'):
                         twse_info = self._get_tpex_cli_info(clean_sym)
+                        data_source = "TPEx"
                     else:
                         twse_info = self._get_twse_cli_info(clean_sym)
+                        data_source = "TWSE"
+                else:
+                    data_source = "yfinance"
 
                 # Always provide a skeleton so the layout renders with "--" instead of an error message
                 fin_summary = {
                     'short_name': info.get('longName') or info.get('shortName') or valuation_symbol,
                     'pe': twse_info.get('pe'), 'marketCap': None, 'eps': None, 'roe': None,
                     'dividend_yield': twse_info.get('dividend_yield'), 'book_value': None, 'pb': twse_info.get('pb'),
-                    'gross_margin': None, 'revenue_growth': None, 'fiftyTwoWeekHigh': None
+                    'gross_margin': None, 'revenue_growth': None, 'fiftyTwoWeekHigh': None,
+                    'data_source': data_source
                 }
                 
                 # Naming Fallback for TW stocks if yfinance info is empty
