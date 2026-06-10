@@ -219,61 +219,66 @@ class AgentNewsAnalyzer:
 
         max_retries = 3
         base_delay = 6.0
+        models_to_try = ["gemini-3.1-pro-preview", "gemma-4-31b-it"]
 
-        for attempt in range(max_retries + 1):
-            # 1. 確保雲端呼叫符合 10 RPM 速率限制 (最小間隔 6.0 秒)
-            self.rate_limiter.wait_if_needed()
+        for model in models_to_try:
+            logger.info(f"[AgentNewsAnalyzer] 開始使用模型 {model} 進行新聞情緒分析...")
+            for attempt in range(max_retries + 1):
+                # 確保雲端呼叫符合 10 RPM 速率限制 (最小間隔 6.0 秒)
+                self.rate_limiter.wait_if_needed()
 
-            try:
-                logger.info(f"[AgentNewsAnalyzer] 調用 Gemini CLI 雲端 Gemma 4 31B 模型 (嘗試 {attempt + 1}/{max_retries + 1})...")
-                args = [self.gemini_path, "-m", "gemma-4-31b-it", "--skip-trust", "-o", "json", "-p", full_prompt]
-                
-                result = subprocess.run(
-                    args,
-                    capture_output=True,
-                    env=env,
-                    shell=False
-                )
-                
-                if result.returncode != 0:
-                    stderr_msg = result.stderr.decode("utf-8", errors="replace")
-                    logger.warning(f"[AgentNewsAnalyzer] Gemini CLI 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
-                else:
-                    stdout_decoded = result.stdout.decode("utf-8", errors="replace")
-                    if "{" in stdout_decoded:
-                        json_start = stdout_decoded.index("{")
-                        json_data = json.loads(stdout_decoded[json_start:])
-                        response_text = json_data.get("response", "").strip()
-                        
-                        # 移除可能存在的 markdown wrapper
-                        clean_res = response_text
-                        if clean_res.startswith("```"):
-                            lines = clean_res.splitlines()
-                            if lines[0].startswith("```"):
-                                lines = lines[1:]
-                            if lines[-1].startswith("```"):
-                                lines = lines[:-1]
-                            clean_res = "\n".join(lines).strip()
-                        
-                        try:
-                            return json.loads(clean_res)
-                        except Exception as je:
-                            logger.warning(f"[AgentNewsAnalyzer] 無法解析模型回覆的 JSON: {je}. 原始內容: {clean_res}")
+                try:
+                    logger.info(f"[AgentNewsAnalyzer] 調用 Gemini CLI 雲端 {model} 模型 (嘗試 {attempt + 1}/{max_retries + 1})...")
+                    args = [self.gemini_path, "-m", model, "--skip-trust", "-o", "json", "-p", full_prompt]
+                    
+                    result = subprocess.run(
+                        args,
+                        capture_output=True,
+                        env=env,
+                        shell=False
+                    )
+                    
+                    if result.returncode != 0:
+                        stderr_msg = result.stderr.decode("utf-8", errors="replace")
+                        logger.warning(f"[AgentNewsAnalyzer] Gemini CLI 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
                     else:
-                        logger.warning(f"[AgentNewsAnalyzer] 輸出中找不到 JSON 物件。原始輸出: {stdout_decoded}")
-                        
-            except Exception as e:
-                logger.error(f"[AgentNewsAnalyzer] Gemini CLI 呼叫異常: {e}")
+                        stdout_decoded = result.stdout.decode("utf-8", errors="replace")
+                        if "{" in stdout_decoded:
+                            json_start = stdout_decoded.index("{")
+                            json_data = json.loads(stdout_decoded[json_start:])
+                            response_text = json_data.get("response", "").strip()
+                            
+                            # 移除可能存在的 markdown wrapper
+                            clean_res = response_text
+                            if clean_res.startswith("```"):
+                                lines = clean_res.splitlines()
+                                if lines[0].startswith("```"):
+                                    lines = lines[1:]
+                                if lines[-1].startswith("```"):
+                                    lines = lines[:-1]
+                                clean_res = "\n".join(lines).strip()
+                            
+                            try:
+                                return json.loads(clean_res)
+                            except Exception as je:
+                                logger.warning(f"[AgentNewsAnalyzer] 無法解析模型回覆的 JSON: {je}. 原始內容: {clean_res}")
+                        else:
+                            logger.warning(f"[AgentNewsAnalyzer] 輸出中找不到 JSON 物件。原始輸出: {stdout_decoded}")
+                            
+                except Exception as e:
+                    logger.error(f"[AgentNewsAnalyzer] Gemini CLI 呼叫異常: {e}")
 
-            if attempt == max_retries:
-                break
+                if attempt == max_retries:
+                    break
 
-            # 指數退避延遲並加入 Jitter 隨機抖動
-            delay = (base_delay * (2 ** attempt)) + random.uniform(0.5, 1.5)
-            logger.warning(f"[AgentNewsAnalyzer] 雲端分析失敗或解析錯誤，將在 {delay:.2f} 秒後進行第 {attempt + 1} 次重試...")
-            time.sleep(delay)
+                # 指數退避延遲並加入 Jitter 隨機抖動
+                delay = (base_delay * (2 ** attempt)) + random.uniform(0.5, 1.5)
+                logger.warning(f"[AgentNewsAnalyzer] 模型 {model} 呼叫失敗或解析錯誤，將在 {delay:.2f} 秒後進行第 {attempt + 2} 次重試...")
+                time.sleep(delay)
 
-        logger.error(f"[AgentNewsAnalyzer] 已達到最大重試次數 ({max_retries})，放棄雲端分析。")
+            logger.warning(f"[AgentNewsAnalyzer] 模型 {model} 已達到最大重試次數，將嘗試備用模型（若有）。")
+
+        logger.error(f"[AgentNewsAnalyzer] 所有模型呼叫皆失敗，放棄雲端分析。")
         return None
 
     def _infer_market(self, source: str, content: str) -> str:
