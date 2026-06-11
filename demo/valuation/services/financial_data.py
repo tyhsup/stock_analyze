@@ -41,25 +41,39 @@ _TPEX_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時
 
 class FinancialDataLoader:
     def __init__(self, ticker_symbol):
+        self.op = OP_Fun()
+        self.raw_data = None
+        
         # 判斷市場 (邏輯：包含 .TW 或 純數字 為台灣，否則為美國)
         temp_symbol = ticker_symbol.upper()
         if ".TW" in temp_symbol or ".TWO" in temp_symbol or temp_symbol.isdigit():
             # 台灣市場
             self.market = 'tw'
             self.symbol = temp_symbol.replace(".TWO", "").replace(".TW", "")
-            # 定義完整的 yfinance 搜尋代號 (優先使用 .TW 如果是純數字)
+            # 定義完整的 yfinance 搜尋代號
             if ".TWO" in temp_symbol:
                 self.full_symbol = f"{self.symbol}.TWO"
-            else:
+            elif ".TW" in temp_symbol:
                 self.full_symbol = f"{self.symbol}.TW"
+            else:
+                # 純數字台灣股票：查詢 stocks_tw 中的 market 欄位以判定上市或上櫃
+                try:
+                    query = "SELECT market FROM stocks_tw WHERE symbol = :symbol"
+                    with self.op.engine.connect() as conn:
+                        row = conn.execute(text(query), {"symbol": self.symbol}).fetchone()
+                        market_type = row[0].strip().lower() if row and row[0] else ""
+                    if market_type == "otc":
+                        self.full_symbol = f"{self.symbol}.TWO"
+                    else:
+                        self.full_symbol = f"{self.symbol}.TW"
+                except Exception as e:
+                    logger.error(f"Error querying stock market type for {self.symbol}: {e}")
+                    self.full_symbol = f"{self.symbol}.TW"
         else:
             # 美國市場
             self.market = 'us'
             self.symbol = temp_symbol
             self.full_symbol = temp_symbol
-            
-        self.op = OP_Fun()
-        self.raw_data = None
         
         # curl_cffi session for yfinance 1.2.0+ (requests.Session no longer supported)
         from curl_cffi.requests import Session as CurlSession

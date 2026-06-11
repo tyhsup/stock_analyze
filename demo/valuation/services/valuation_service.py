@@ -150,11 +150,13 @@ class ValuationService:
             twse_dy = hist_multiples.get('twse_dividend_yield')
             twse_valuation = None
             if any(v is not None for v in [twse_pe, twse_pb, twse_dy]):
+                is_otc = loader.full_symbol.endswith('.TWO')
+                source_name = "TPEx \u6ac3\u8cb7\u4e2d\u5fc3\u5b98\u65b9" if is_otc else "TWSE \u8b49\u4ea4\u6240\u5b98\u65b9"
                 twse_valuation = {
                     "pe": round(twse_pe, 2) if twse_pe else None,
                     "pb": round(twse_pb, 2) if twse_pb else None,
                     "dividend_yield": round(twse_dy, 2) if twse_dy else None,
-                    "source": "TWSE 證交所官方",
+                    "source": source_name,
                 }
 
             results = {
