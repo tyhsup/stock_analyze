@@ -58,15 +58,19 @@ class StockInvestorManager:
         """
         start_time = time.time()
         try:
-            query = "SELECT 日期 FROM stock_investor ORDER BY 日期 DESC LIMIT 1"
+            query = "SELECT date FROM stock_investor ORDER BY date DESC LIMIT 1"
             with self.sql.engine.connect() as conn:
                 result = conn.execute(text(query)).fetchone()
                 elapsed = time.time() - start_time
                 if elapsed > 0.5:
                     logger.warning(f"SQL execution took too long: {elapsed:.2f} s for query: {query}")
                 if result:
-                    d_str = result[0].replace('/', '-')
-                    return datetime.strptime(d_str, '%Y-%m-%d').date()
+                    d_val = result[0]
+                    if hasattr(d_val, 'strftime'):
+                        return d_val
+                    elif isinstance(d_val, str):
+                        d_str = d_val.replace('/', '-')
+                        return datetime.strptime(d_str, '%Y-%m-%d').date()
         except Exception as e:
             logger.error(f"查詢最後更新日期失敗: {e}")
         return (datetime.today() - timedelta(days=2920)).date()
@@ -168,7 +172,7 @@ class StockInvestorManager:
                     # --- 3. 高效解析與表頭對齊 ---
                     header_tr = table.find('thead').find_all('tr')[-1]
                     ths = [th.get_text().strip() for th in header_tr.find_all('th')]
-                    ths.insert(0, '日期')
+                    ths.insert(0, 'date')
                     
                     # 一次性提取所有資料列
                     rows = [[td.get_text().strip().replace(',', '') for td in tr.find_all('td')] 
@@ -177,7 +181,7 @@ class StockInvestorManager:
                     # --- 4. Pandas 向量化清洗 ---
                     df = pd.DataFrame(rows)
                     actual_date = self.get_twse_date(driver) or current_date.strftime('%Y/%m/%d')
-                    df.insert(0, '日期_temp', actual_date)
+                    df.insert(0, 'date_temp', actual_date)
                     df.columns = ths
                     df.rename(columns={'證券代號': 'number'}, inplace=True)
                     

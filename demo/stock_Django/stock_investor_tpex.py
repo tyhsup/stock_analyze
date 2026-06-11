@@ -42,12 +42,16 @@ class TPExInvestorManager:
     def get_last_date(self):
         """獲取資料庫中最後一筆上櫃資料的日期（註：目前 stock_investor 混用，我們抓取整體的最後日期）"""
         try:
-            query = "SELECT 日期 FROM stock_investor ORDER BY 日期 DESC LIMIT 1"
+            query = "SELECT date FROM stock_investor ORDER BY date DESC LIMIT 1"
             with self.sql.engine.connect() as conn:
                 result = conn.execute(text(query)).fetchone()
                 if result:
-                    d_str = result[0].replace('/', '-')
-                    return datetime.strptime(d_str, '%Y-%m-%d').date()
+                    d_val = result[0]
+                    if hasattr(d_val, 'strftime'):
+                        return d_val
+                    elif isinstance(d_val, str):
+                        d_str = d_val.replace('/', '-')
+                        return datetime.strptime(d_str, '%Y-%m-%d').date()
         except Exception as e:
             logger.error(f"獲取最後日期失敗: {e}")
         return (datetime.today() - timedelta(days=30)).date()
@@ -81,10 +85,10 @@ class TPExInvestorManager:
             df = pd.DataFrame(data, columns=fields)
             
             # --- 格式轉換以符合 stock_investor 表結構 ---
-            # stock_investor 預期欄位: 日期, number, 證券名稱, ...
+            # stock_investor 預期欄位: date, number, 證券名稱, ...
             
             # TPEx 回傳日期為民國，我們統一儲存為 YYYY/MM/DD
-            df.insert(0, '日期', date_str)
+            df.insert(0, 'date', date_str)
             df.rename(columns={'代號': 'number', '名稱': '證券名稱'}, inplace=True)
             
             # 清理數值欄位（移除逗號）

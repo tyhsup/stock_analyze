@@ -104,7 +104,7 @@ def check_investor_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, st
     """Check if investor/chip data is fresh."""
     if is_tw:
         table = 'stock_investor'
-        date_col = '日期'
+        date_col = 'date'
     else:
         table = 'stock_investor_us'
         date_col = 'date'

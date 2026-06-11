@@ -55,16 +55,17 @@ class OP_Fun:
         if date_col:
             dtype_dict[date_col] = types.DateTime() if 'Date' in data.columns else types.VARCHAR(20)
 
-        temp_table = f"{table_name}_temp"
+        import threading
+        temp_table = f"{table_name}_temp_{threading.get_ident()}"
         try:
             data.to_sql(name=temp_table, con=self.engine, if_exists='replace', index=False, dtype=dtype_dict, method='multi')
             with self.engine.begin() as conn:
                 check_table = conn.execute(text(f"SHOW TABLES LIKE '{table_name}'")).fetchone()
                 if not check_table:
-                    conn.execute(text(f"CREATE TABLE {table_name} LIKE {temp_table}"))
+                    conn.execute(text(f"CREATE TABLE `{table_name}` LIKE `{temp_table}`"))
                     if date_col and 'number' in data.columns:
                         index_name = f"idx_{table_name}_unique"
-                        conn.execute(text(f"ALTER TABLE {table_name} ADD UNIQUE INDEX {index_name} ({date_col}, number)"))
+                        conn.execute(text(f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` (`{date_col}`, `number`)"))
 
                 # 採用 ON DUPLICATE KEY UPDATE 以符合標準並確保數據一致性
                 cols_list = [f"`{c}`" for c in data.columns]
@@ -72,12 +73,12 @@ class OP_Fun:
                 update_list = [f"{c}=VALUES({c})" for c in cols_list if c.replace("`", "") not in [date_col, 'number', '日期']]
                 
                 if update_list:
-                    insert_sql = f"INSERT INTO {table_name} ({', '.join(cols_list)}) SELECT {', '.join(cols_list)} FROM {temp_table} ON DUPLICATE KEY UPDATE {', '.join(update_list)}"
+                    insert_sql = f"INSERT INTO `{table_name}` ({', '.join(cols_list)}) SELECT {', '.join(cols_list)} FROM `{temp_table}` ON DUPLICATE KEY UPDATE {', '.join(update_list)}"
                 else:
-                    insert_sql = f"INSERT IGNORE INTO {table_name} SELECT * FROM {temp_table}"
+                    insert_sql = f"INSERT IGNORE INTO `{table_name}` SELECT * FROM `{temp_table}`"
                 
                 conn.execute(text(insert_sql))
-                conn.execute(text(f"DROP TABLE {temp_table}"))
+                conn.execute(text(f"DROP TABLE `{temp_table}`"))
             logger.info(f"成功更新 {table_name}")
         except Exception as e:
             logger.error(f"上傳至 {table_name} 失敗: {e}")

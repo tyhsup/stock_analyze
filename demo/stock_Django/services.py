@@ -496,6 +496,17 @@ class StockService:
                         except Exception as e_name:
                             logger.warning(f"Naming fallback failed for {valuation_symbol}: {e_name}")
 
+                    # 新增防禦邏輯：若最後取得的名稱依然符合亂碼特徵，則嘗試回退至 yfinance 資訊
+                    if is_mangled(fin_summary['short_name']):
+                        yn = info.get('shortName') or info.get('longName')
+                        if yn and not is_mangled(yn):
+                            fin_summary['short_name'] = yn.strip()
+                        else:
+                            # 嘗試從 Yahoo Finance 網頁爬取英文名稱
+                            yn_web = scrape_name_fallback(valuation_symbol)
+                            if yn_web and not is_mangled(yn_web):
+                                fin_summary['short_name'] = yn_web.strip()
+
                 # 1. 52-Week High from local DB (limit to last 365 days for accuracy)
                 try:
                     table_cost = 'stock_cost' if is_tw else 'stock_cost_us'
