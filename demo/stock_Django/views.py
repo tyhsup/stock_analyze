@@ -256,41 +256,119 @@ def gemini_advisor_analysis(request, ticker):
     except Exception as e_db_pred:
         logger.warning(f"Failed to read quick AI predictions cache: {e_db_pred}")
     
-    # 3. 法人籌碼
+    # 3. 三大法人與信用交易籌碼資料
     chips_features = {}
     try:
         if is_tw:
-            # 取得台股法人近 5 日買賣超數據
             clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
-            # 使用 pandas read_sql 載入，避開直接在 SQL 語法中傳送中文字串產生的編碼亂碼問題
-            df_inv = pd.read_sql("SELECT * FROM stock_investor WHERE number = %s", service.sql_op.engine, params=(clean_sym,))
+            
+            # 優先讀取新表 stock_investor_tw
+            try:
+                df_inv = pd.read_sql(
+                    "SELECT * FROM stock_investor_tw WHERE number = %s ORDER BY date DESC LIMIT 30", 
+                    service.sql_op.engine, params=(clean_sym,)
+                )
+            except Exception as e_new_db:
+                logger.warning(f"Query stock_investor_tw failed: {e_new_db}")
+                df_inv = pd.DataFrame()
+            
+            # 若新表無資料，回退至舊表並套用欄位更名
+            if df_inv.empty:
+                try:
+                    df_old = pd.read_sql(
+                        "SELECT * FROM stock_investor WHERE number = %s", 
+                        service.sql_op.engine, params=(clean_sym,)
+                    )
+                    if not df_old.empty:
+                        df_inv = service.sql_op._fix_investor_columns(df_old)
+                        num_cols = len(df_inv.columns)
+                        def get_val_by_idx(idx):
+                            if idx < num_cols:
+                                return pd.to_numeric(df_inv.iloc[:, idx].astype(str).str.replace(',', ''), errors='coerce').fillna(0.0)
+                            return pd.Series(0.0, index=df_inv.index)
+                        
+                        df_inv['date'] = df_inv.iloc[:, 0]
+                        df_inv['number'] = df_inv.iloc[:, 1]
+                        df_inv['name'] = df_inv.iloc[:, 2] if num_cols > 2 else None
+                        df_inv['foreign_buy'] = get_val_by_idx(3)
+                        df_inv['foreign_sell'] = get_val_by_idx(4)
+                        df_inv['foreign_net'] = get_val_by_idx(5)
+                        df_inv['trust_buy'] = get_val_by_idx(9)
+                        df_inv['trust_sell'] = get_val_by_idx(10)
+                        df_inv['trust_net'] = get_val_by_idx(11)
+                        df_inv['dealer_buy'] = get_val_by_idx(13) + get_val_by_idx(16)
+                        df_inv['dealer_sell'] = get_val_by_idx(14) + get_val_by_idx(17)
+                        df_inv['dealer_net'] = get_val_by_idx(12)
+                        df_inv['total_net'] = get_val_by_idx(19)
+                        
+                        df_inv['date'] = pd.to_datetime(df_inv['date']).dt.date
+                        df_inv = df_inv.sort_values(by='date', ascending=False)
+                except Exception as e_old_db:
+                    logger.error(f"Fallback to stock_investor failed: {e_old_db}")
+                    df_inv = pd.DataFrame()
+            
+            # 計算法人近 5 日累計買賣超
             if not df_inv.empty:
-                # 尋找日期欄位
-                date_cols = [c for c in df_inv.columns if '日' in c or 'Date' in c]
-                if date_cols:
-                    df_inv = df_inv.sort_values(by=date_cols[0], ascending=False)
-                
                 recent_rows = df_inv.head(5)
+                total_net = int(recent_rows['total_net'].sum())
+                foreign_net = int(recent_rows['foreign_net'].sum())
+                investment_net = int(recent_rows['trust_net'].sum())
+                dealer_net = int(recent_rows['dealer_net'].sum())
                 
-                # 動態匹配中文列名
-                total_cols = [c for c in df_inv.columns if '三大' in c]
-                foreign_cols = [c for c in df_inv.columns if '外資' in c or '外陸' in c]
-                inv_cols = [c for c in df_inv.columns if '投信' in c]
-                dealer_cols = [c for c in df_inv.columns if '自營' in c]
-                
-                total_net = int(recent_rows[total_cols[0]].sum()) if total_cols else 0
-                foreign_net = int(recent_rows[foreign_cols[0]].sum()) if foreign_cols else 0
-                investment_net = int(recent_rows[inv_cols[0]].sum()) if inv_cols else 0
-                dealer_net = int(recent_rows[dealer_cols[0]].sum()) if dealer_cols else 0
-                
+                # 同時支援亂碼鍵名（相容舊前端）與乾淨英文鍵名
                 chips_features = {
                     "三大法人5日累計買賣超(股)": total_net,
                     "外資5日累計買賣超(股)": foreign_net,
                     "投信5日累計買賣超(股)": investment_net,
-                    "自營商5日累計買賣超(股)": dealer_net
+                    "自營商5日累計買賣超(股)": dealer_net,
+                    # 舊版亂碼欄位鍵名（極致向下相容）
+                    "TjkH5֭pRW()": total_net,
+                    "~5֭pRW()": foreign_net,
+                    "H5֭pRW()": investment_net,
+                    "5֭pRW()": dealer_net,
+                    # 新增標準英文欄位
+                    "total_net_5d": total_net,
+                    "foreign_net_5d": foreign_net,
+                    "trust_net_5d": investment_net,
+                    "dealer_net_5d": dealer_net
                 }
+            
+            # 查詢融資融券餘額數據 (stock_margin_balance) 最近 30 天
+            margin_data = []
+            try:
+                df_margin = pd.read_sql(
+                    "SELECT * FROM stock_margin_balance WHERE number = %s ORDER BY date DESC LIMIT 30",
+                    service.sql_op.engine, params=(clean_sym,)
+                )
+                if not df_margin.empty:
+                    df_margin['date'] = pd.to_datetime(df_margin['date']).dt.strftime('%Y-%m-%d')
+                    margin_data = df_margin.to_dict(orient='records')
+            except Exception as e_margin:
+                logger.warning(f"Failed to fetch margin data: {e_margin}")
+            
+            # 查詢最新股權分散數據 (stock_shareholder_distribution)
+            distribution_data = {}
+            try:
+                df_dist = pd.read_sql(
+                    "SELECT * FROM stock_shareholder_distribution WHERE number = %s ORDER BY date DESC LIMIT 1",
+                    service.sql_op.engine, params=(clean_sym,)
+                )
+                if not df_dist.empty:
+                    row_dist = df_dist.iloc[0]
+                    distribution_data = {
+                        'date': str(row_dist['date']),
+                        'retail_ratio': float(row_dist['class_1_to_5_ratio']),
+                        'large_holder_ratio': float(row_dist['class_15_ratio']),
+                        'total_shareholders': int(row_dist['total_shareholders'])
+                    }
+            except Exception as e_dist:
+                logger.warning(f"Failed to fetch shareholder distribution: {e_dist}")
+            
+            # 整合進 chips_features 供後續分析使用
+            chips_features['margin_history_30d'] = margin_data
+            chips_features['shareholder_distribution'] = distribution_data
         else:
-            # 美股機構持股
+            # 美股籌碼
             with service.sql_op.engine.connect() as conn:
                 rows = conn.execute(
                     text("SELECT holder_name, shares, pct_out FROM stock_investor_us WHERE ticker = :tk ORDER BY date DESC LIMIT 5"),

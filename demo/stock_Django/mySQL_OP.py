@@ -243,7 +243,7 @@ class OP_Fun:
                 UNIQUE KEY idx_unique_item (symbol, year, quarter, statement_type, item_name)
             )
             """,
-            # 股價資料表 (US) - 若尚未建立
+            # 股價表 (US) - 歷史收盤
             """
             CREATE TABLE IF NOT EXISTS stock_cost_us (
                 number VARCHAR(20),
@@ -256,7 +256,56 @@ class OP_Fun:
                 UNIQUE KEY idx_unique_date (Date, number)
             )
             """,
-            # 修正現有表格：若已存在則調整長度
+            # 新增：三大法人買賣表 (TW) - 標準英文欄位
+            """
+            CREATE TABLE IF NOT EXISTS stock_investor_tw (
+                date DATE NOT NULL,
+                number VARCHAR(20) NOT NULL,
+                name VARCHAR(100) DEFAULT NULL,
+                foreign_buy DECIMAL(18, 4) DEFAULT 0.0000,
+                foreign_sell DECIMAL(18, 4) DEFAULT 0.0000,
+                foreign_net DECIMAL(18, 4) DEFAULT 0.0000,
+                trust_buy DECIMAL(18, 4) DEFAULT 0.0000,
+                trust_sell DECIMAL(18, 4) DEFAULT 0.0000,
+                trust_net DECIMAL(18, 4) DEFAULT 0.0000,
+                dealer_buy DECIMAL(18, 4) DEFAULT 0.0000,
+                dealer_sell DECIMAL(18, 4) DEFAULT 0.0000,
+                dealer_net DECIMAL(18, 4) DEFAULT 0.0000,
+                total_net DECIMAL(18, 4) DEFAULT 0.0000,
+                PRIMARY KEY (date, number),
+                UNIQUE INDEX idx_investor_tw_unique (date, number)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """,
+            # 新增：融資融券信用交易餘額表 (TW)
+            """
+            CREATE TABLE IF NOT EXISTS stock_margin_balance (
+                date DATE NOT NULL,
+                number VARCHAR(20) NOT NULL,
+                margin_purchase DECIMAL(18, 4) DEFAULT 0.0000,
+                margin_sales DECIMAL(18, 4) DEFAULT 0.0000,
+                margin_balance DECIMAL(18, 4) DEFAULT 0.0000,
+                short_sale DECIMAL(18, 4) DEFAULT 0.0000,
+                short_covering DECIMAL(18, 4) DEFAULT 0.0000,
+                short_balance DECIMAL(18, 4) DEFAULT 0.0000,
+                margin_utilization_rate DECIMAL(8, 4) DEFAULT 0.0000,
+                short_utilization_rate DECIMAL(8, 4) DEFAULT 0.0000,
+                PRIMARY KEY (date, number),
+                UNIQUE INDEX idx_margin_unique (date, number)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """,
+            # 新增：集保所股權分散與大股東持股表 (TW)
+            """
+            CREATE TABLE IF NOT EXISTS stock_shareholder_distribution (
+                date DATE NOT NULL,
+                number VARCHAR(20) NOT NULL,
+                class_1_to_5_ratio DECIMAL(8, 4) DEFAULT 0.0000,
+                class_15_ratio DECIMAL(8, 4) DEFAULT 0.0000,
+                total_shareholders INT DEFAULT 0,
+                PRIMARY KEY (date, number),
+                UNIQUE INDEX idx_distribution_unique (date, number)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """,
+            # 修正欄位長度若已存在則變更
             "ALTER TABLE financial_raw_tw MODIFY COLUMN amount DECIMAL(32, 4)",
             "ALTER TABLE financial_raw_us MODIFY COLUMN amount DECIMAL(32, 4)"
         ]
