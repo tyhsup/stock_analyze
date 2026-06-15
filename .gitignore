@@ -86,4 +86,7 @@ demo/scratch/
 demo/test_db.py
 demo/newsapp/news_data/*.xlsx
 demo/stock_Django/scratch/
+macrotrends-cli/
+cnyes-cli/
+
 
