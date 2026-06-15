@@ -435,3 +435,41 @@ def gemini_advisor_analysis(request, ticker):
         logger.error(f"Failed to generate Gemini advice: {e_ai}")
         return JsonResponse({"status": "error", "message": f"Gemini 推理模組異常: {str(e_ai)}"})
 
+
+def macrotrends_financials_api(request):
+    """取得美股財務報表 API (IS, BS, CF)"""
+    symbol = request.GET.get("symbol")
+    stmt_type = request.GET.get("type")
+    frequency = request.GET.get("frequency", "annual")
+    
+    if not symbol or not stmt_type:
+        return JsonResponse({"error": "Missing symbol or type parameter"}, status=400)
+        
+    from .macrotrends_service import MacrotrendsService
+    service = MacrotrendsService()
+    try:
+        data = service.get_financials(symbol, stmt_type, frequency)
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        logger.error(f"Error in macrotrends_financials_api: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+def macrotrends_ratios_api(request):
+    """取得美股財務比率 API"""
+    symbol = request.GET.get("symbol")
+    ratio_type = request.GET.get("type")
+    
+    if not symbol or not ratio_type:
+        return JsonResponse({"error": "Missing symbol or type parameter"}, status=400)
+        
+    from .macrotrends_service import MacrotrendsService
+    service = MacrotrendsService()
+    try:
+        data = service.get_ratios(symbol, ratio_type)
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        logger.error(f"Error in macrotrends_ratios_api: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+

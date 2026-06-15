@@ -19,7 +19,11 @@ from django.urls import path, include
 #from member.views import show_member_info
 #from member.views import receive_Data
 #from ClassServices.views import studentMethod
-from stock_Django.views import home, News_display, refresh_status_api, news_refresh_api, smart_advisor_analysis, gemini_advisor_analysis
+from stock_Django.views import (
+    home, News_display, refresh_status_api, news_refresh_api, 
+    smart_advisor_analysis, gemini_advisor_analysis,
+    macrotrends_financials_api, macrotrends_ratios_api
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,4 +36,6 @@ urlpatterns = [
     path('api/news-refresh/<str:ticker>/', news_refresh_api, name='news_refresh'),
     path('api/smart-advisor/<str:ticker>/', smart_advisor_analysis, name='smart_advisor'),
     path('api/gemini-advisor/<str:ticker>/', gemini_advisor_analysis, name='gemini_advisor'),
+    path('api/macrotrends/financials', macrotrends_financials_api, name='macrotrends_financials'),
+    path('api/macrotrends/ratios', macrotrends_ratios_api, name='macrotrends_ratios'),
 ]
