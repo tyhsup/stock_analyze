@@ -21,14 +21,17 @@ prompt = """
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 payload = {
-    "model": "gemma4:26b",
+    "model": "gemma4-cpu",
     "prompt": prompt,
     "stream": False,
-    "options": {"temperature": 0.3}
+    "options": {
+        "temperature": 0.3,
+        "num_ctx": 4096
+    }
 }
 
 try:
-    response = requests.post(OLLAMA_URL, json=payload, timeout=600)
+    response = requests.post(OLLAMA_URL, json=payload, timeout=180)
     with open('gemma_v3_gnn_plan.md', 'w', encoding='utf-8') as f:
         f.write(response.json().get("response", "No response from Gemma"))
     print("Done")

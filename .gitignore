@@ -88,5 +88,8 @@ demo/newsapp/news_data/*.xlsx
 demo/stock_Django/scratch/
 macrotrends-cli/
 cnyes-cli/
+tpex-cli/
+twse-cli-v2/
+.ollama_models/
 
 
