@@ -330,7 +330,6 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": self.http_session, 
                 "threads": False,             
                 "repair": True,
                 "timeout": 20
@@ -430,6 +429,11 @@ class StockCostManager:
                     num = sym.split('.')[0]
                     target_date = start if start else datetime.datetime.now().strftime('%Y/%m/%d')
                     target_date = target_date.replace('-', '/')
+                    # 轉換西元日期為民國年格式 (e.g. 2026/06/12 -> 115/06/12)
+                    parts = target_date.split('/')
+                    if len(parts) == 3 and int(parts[0]) > 1911:
+                        roc_year = int(parts[0]) - 1911
+                        target_date = f"{roc_year}/{parts[1]}/{parts[2]}"
                     tpex_url = f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php?d={target_date}&stkno={num}"
                     
                     logger.info(f"Trying TPEx Direct Fallback for {sym}")
