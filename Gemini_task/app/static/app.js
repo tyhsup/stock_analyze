@@ -243,8 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 String(d.getMonth() + 1).padStart(2, '0') + '-' +
                 String(d.getDate()).padStart(2, '0') + ' ' +
                 String(d.getHours()).padStart(2, '0') + ':' +
-                String(d.getMinutes()).padStart(2, '0') + ':' +
-                String(d.getSeconds()).padStart(2, '0');
+                String(d.getMinutes()).padStart(2, '0');
         } catch {
             return "-";
         }
@@ -445,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <tr>
                     <td>${job.id}</td>
                     <td>
-                        <div style="font-weight: 500;">${job.name}</div>
+                        <div class="task-name-text" style="font-weight: 500;" title="${job.name.replace(/"/g, '&quot;')}">${job.name}</div>
                         ${remarksHtml !== "-" ? `<div style="margin-top: 4px;">${remarksHtml}</div>` : ""}
                     </td>
                     <td><span class="badge ${badgeClass}">${getTaskTypeName(job.task_type)}</span></td>
