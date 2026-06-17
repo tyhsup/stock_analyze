@@ -75,6 +75,14 @@ class StockCostManager:
         self.http_session.mount("https://", HTTPAdapter(max_retries=retries))
         self.http_session.mount("http://", HTTPAdapter(max_retries=retries))
         
+        # 專門為 yfinance 建立的 curl_cffi 模擬瀏覽器 Session
+        try:
+            from curl_cffi.requests import Session as CurlSession
+            self.curl_session = CurlSession(impersonate="chrome", verify=False)
+        except ImportError:
+            self.curl_session = None
+            logger.warning("curl_cffi 模組未安裝，無法為 yfinance 提供模擬瀏覽器 Session")
+        
         # 非同步執行執行緒池
         self._executor = ThreadPoolExecutor(max_workers=10)
         self._loop = None 
@@ -334,6 +342,9 @@ class StockCostManager:
                 "repair": True,
                 "timeout": 20
             }
+            if self.curl_session:
+                params["session"] = self.curl_session
+                
             if start: params["start"] = start
             if end: params["end"] = end
             if not start and period: params["period"] = period
