@@ -65,14 +65,10 @@ class StockCostManager:
             
         self.sql = mySQL_OP.OP_Fun()
         # 初始化持久化 Session
-        from curl_cffi.requests import Session as CurlSession
         from requests.adapters import HTTPAdapter
         from urllib3.util import Retry
         import requests
         
-        # yfinance (v1.2.0+) 專用 CurlSession 以避開 TLS 指紋檢測
-        # 使用 impersonate="chrome110" 提供真實瀏覽器指紋
-        self.curl_session = CurlSession(verify=False, impersonate="chrome110")
         self.http_session = requests.Session()
         # 設定備援 Session 的自動重試
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
@@ -102,8 +98,6 @@ class StockCostManager:
         """顯式釋放資源，防止連線與執行緒池洩漏。"""
         if hasattr(self, '_executor'):
             self._executor.shutdown(wait=False)
-        if hasattr(self, 'curl_session'):
-            self.curl_session.close()
         if hasattr(self, 'http_session'):
             self.http_session.close()
         logger.info("StockCostManager 資源已釋放")
@@ -136,7 +130,6 @@ class StockCostManager:
     def _rotate_user_agent(self) -> None:
         """輪替 Session 的 User-Agent 以規避單一指紋封鎖。"""
         ua = random.choice(self.user_agents)
-        self.curl_session.headers.update({"User-Agent": ua})
         self.http_session.headers.update({"User-Agent": ua})
         logger.info(f"已輪替 User-Agent: {ua[:30]}...")
 
@@ -275,26 +268,34 @@ class StockCostManager:
         listed_url = 'http://isin.twse.com.tw/isin/C_public.jsp?strMode=2'
         return self._scrape_stock_codes(listed_url)
 
-    def get_stock_stats(self, table_name: str) -> Dict[str, Dict[str, Any]]:
+    def get_stock_stats(self, table_name: str, ticker: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """獲取資料庫中各股票的統計資料 (最後日期、最早日期、筆數)。
 
         Args:
-            table_name (str): 要查詢的資料表名稱。
+            table_name (str): 要查詢的資料表名稱.
+            ticker (Optional[str]): 指定的股票代碼。
 
         Returns:
             Dict[str, Dict[str, Any]]: 以股票代碼為鍵，統計資料為值的字典。
         """
+        where_clause = ""
+        params = {}
+        if ticker:
+            where_clause = " WHERE number = :ticker "
+            params = {'ticker': ticker}
+            
         query = f"""
             SELECT number, 
                    MAX(Date) as last_date, 
                    MIN(Date) as first_date, 
                    COUNT(*) as row_count 
             FROM {table_name} 
+            {where_clause}
             GROUP BY number
         """
         try:
             with self.sql.engine.connect() as conn:
-                df = pd.read_sql(text(query), conn)
+                df = pd.read_sql(text(query), conn, params=params)
                 return df.set_index('number').to_dict('index')
         except Exception as e:
             logger.warning(f"獲取 {table_name} 統計失敗 (可能表格尚無資料): {e}")
@@ -329,7 +330,7 @@ class StockCostManager:
                 "auto_adjust": True,
                 "group_by": 'ticker',
                 "progress": False,
-                "session": self.curl_session, 
+                "session": self.http_session, 
                 "threads": False,             
                 "repair": True,
                 "timeout": 20
@@ -491,7 +492,7 @@ class StockCostManager:
                 ticker = f"{ticker}.TW"
 
         # 2. 獲取資料庫中的最後日期
-        stats = self.get_stock_stats(table_name)
+        stats = self.get_stock_stats(table_name, ticker)
         start_date = None
         period_param = "30d"
         
@@ -618,7 +619,10 @@ class StockCostManager:
         for i in range(0, len(new_stocks), 3):
             batch = new_stocks[i : i + 3]
             tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', period="max"))
-        if tasks: await asyncio.gather(*tasks)
+        # 分塊執行 (每 5 個任務一組) 以防同時啟動過多請求
+        for chunk_idx in range(0, len(tasks), 5):
+            chunk = tasks[chunk_idx : chunk_idx + 5]
+            await asyncio.gather(*chunk)
 
         # 2. 處理增量
         tasks = []
@@ -629,7 +633,10 @@ class StockCostManager:
             if pd.to_datetime(start_param).date() >= datetime.date.today():
                 continue
             tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', start=start_param))
-        if tasks: await asyncio.gather(*tasks)
+        # 分塊執行 (每 5 個任務一組) 以防同時啟動過多請求
+        for chunk_idx in range(0, len(tasks), 5):
+            chunk = tasks[chunk_idx : chunk_idx + 5]
+            await asyncio.gather(*chunk)
 
     async def _update_us_cost_async(self):
         """[Async] 批量更新美股股價"""
@@ -651,19 +658,24 @@ class StockCostManager:
             
             logger.info(f"美股分類: 全量 {len(new_stocks)} 支, 增量 {len(existing_stocks)} 支 (併發限制: 5)")
 
-            tasks = []
+            tasks_new = []
             for i in range(0, len(new_stocks), 5):
                 batch = new_stocks[i : i + 5]
-                tasks.append(self._fetch_and_upload_task(batch, 'stock_cost_us', period="max"))
+                tasks_new.append(self._fetch_and_upload_task(batch, 'stock_cost_us', period="max"))
+            for chunk_idx in range(0, len(tasks_new), 5):
+                chunk = tasks_new[chunk_idx : chunk_idx + 5]
+                await asyncio.gather(*chunk)
             
+            tasks_exist = []
             for i in range(0, len(existing_stocks), 20):
                 batch = existing_stocks[i : i + 20]
                 min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
                 start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
                 if pd.to_datetime(start_param).date() >= datetime.date.today(): continue
-                tasks.append(self._fetch_and_upload_task(batch, 'stock_cost_us', start=start_param))
-                
-            if tasks: await asyncio.gather(*tasks)
+                tasks_exist.append(self._fetch_and_upload_task(batch, 'stock_cost_us', start=start_param))
+            for chunk_idx in range(0, len(tasks_exist), 5):
+                chunk = tasks_exist[chunk_idx : chunk_idx + 5]
+                await asyncio.gather(*chunk)
             logger.info("美股價格更新完成")
         except Exception as e:
             logger.error(f"美股更新失敗: {e}")
@@ -681,19 +693,13 @@ class StockCostManager:
             await asyncio.sleep(wait_time)
 
     def _run_async_task(self, coro):
-        """同步環境運行非同步任務的輔助器"""
+        """同步環境運行非同步任務的輔助器 (確保使用獨立 EventLoop 避免衝突)"""
+        loop = asyncio.new_event_loop()
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 若已在運行 (如 Django 背景任務)，則建立任務
-                return asyncio.create_task(coro)
-            else:
-                return loop.run_until_complete(coro)
-        except RuntimeError:
-            # 建立新 loop
-            loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
     def update_all_cost(self):
         """批量更新台股股價 (同步包裝器)"""

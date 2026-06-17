@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Task - 智能股市數據排程器</title>
+    <meta name="description" content="基於 Gemini LLM 與本地 Gemma 備援的智能股市資料定期更新與任務排程管理系統。">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-size/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 背景光暈裝飾 -->
+    <div class="glow-bg">
+        <div class="blob blob-purple"></div>
+        <div class="blob blob-blue"></div>
+        <div class="blob blob-pink"></div>
+    </div>
+
+    <div class="container">
+        <!-- 頂部標頭與配額 -->
+        <header class="app-header">
+            <div class="header-logo">
+                <i class="fa-solid fa-square-poll-vertical logo-icon"></i>
+                <div class="logo-text">
+                    <h1 id="app-title">Gemini Task</h1>
+                    <p class="subtitle">智能股市數據排程器</p>
+                </div>
+            </div>
+            <!-- LLM 額度顯示卡 -->
+            <div class="quota-card" id="quota-container">
+                <div class="quota-info">
+                    <span class="quota-label"><i class="fa-solid fa-microchip-ai"></i> 今日 LLM 額度</span>
+                    <span class="quota-val" id="quota-value">0 / 50</span>
+                </div>
+                <div class="quota-progress-bar">
+                    <div class="quota-progress" id="quota-progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- LLM 自然語言對話框 -->
+        <section class="llm-section card-glass" aria-labelledby="llm-heading">
+            <div class="section-title-wrap">
+                <i class="fa-solid fa-wand-magic-sparkles title-icon-ai"></i>
+                <h2 id="llm-heading">AI 自然語言任務解析</h2>
+            </div>
+            <p class="section-desc">輸入自然語言描述，由 Gemini 自動分析並建立適當的資料更新排程任務。</p>
+            <div class="llm-input-group">
+                <textarea id="llm-prompt" placeholder="例如：幫我排程每 3 天更新台股籌碼，從今天晚上 11 點開始... 或：立刻幫我更新美股 AAPL 與 NVDA 的法人持股" rows="2"></textarea>
+                <button id="btn-parse-llm" class="btn btn-primary-gradient">
+                    <span id="btn-parse-text"><i class="fa-solid fa-brain"></i> 分析並加入</span>
+                    <span id="btn-parse-spinner" class="spinner hidden"></span>
+                </button>
+            </div>
+            <div id="llm-error-msg" class="error-banner hidden"></div>
+        </section>
+
+        <!-- 指標卡片統計區 -->
+        <section class="stats-grid" aria-label="系統統計指標">
+            <div class="stat-card card-glass glow-hover" id="stat-running-card">
+                <div class="stat-icon icon-running"><i class="fa-solid fa-arrows-spin fa-spin-slow"></i></div>
+                <div class="stat-data">
+                    <span class="stat-num" id="stat-running">0</span>
+                    <span class="stat-label">執行中任務</span>
+                </div>
+            </div>
+            <div class="stat-card card-glass glow-hover" id="stat-pending-card">
+                <div class="stat-icon icon-pending"><i class="fa-solid fa-clock"></i></div>
+                <div class="stat-data">
+                    <span class="stat-num" id="stat-pending">0</span>
+                    <span class="stat-label">排程中 (Pending)</span>
+                </div>
+            </div>
+            <div class="stat-card card-glass glow-hover" id="stat-completed-card">
+                <div class="stat-icon icon-completed"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="stat-data">
+                    <span class="stat-num" id="stat-completed">0</span>
+                    <span class="stat-label">已完成任務</span>
+                </div>
+            </div>
+            <div class="stat-card card-glass glow-hover" id="stat-failed-card">
+                <div class="stat-icon icon-failed"><i class="fa-solid fa-circle-xmark"></i></div>
+                <div class="stat-data">
+                    <span class="stat-num" id="stat-failed">0</span>
+                    <span class="stat-label">已失敗任務</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 主要排程控制與列表區 -->
+        <main class="main-content">
+            <!-- 左側：手動新增任務 -->
+            <section class="left-col card-glass" aria-labelledby="manual-heading">
+                <div class="section-title-wrap">
+                    <i class="fa-solid fa-circle-plus title-icon"></i>
+                    <h2 id="manual-heading">手動新增任務</h2>
+                </div>
+                <form id="manual-task-form" class="task-form">
+                    <div class="form-group">
+                        <label for="task-name">任務名稱</label>
+                        <input type="text" id="task-name" placeholder="例如：更新台股股價" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="task-type">任務類型</label>
+                        <select id="task-type" required>
+                            <option value="tw_stock_cost">台股股價更新</option>
+                            <option value="us_stock_cost">美股股價更新</option>
+                            <option value="tw_stock_price_only">僅更新台灣股價</option>
+                            <option value="us_stock_price_only">僅更新美國股價</option>
+                            <option value="twse_investor">台股三大法人買賣超 (上市)</option>
+                            <option value="tpex_investor">台股三大法人買賣超 (上櫃)</option>
+                            <option value="us_investor">美股三大法人持股</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="trigger-type">觸發類型</label>
+                            <select id="trigger-type">
+                                <option value="manual">手動單次</option>
+                                <option value="auto">自動週期</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="interval-days">更新週期 (天)</label>
+                            <input type="number" id="interval-days" placeholder="僅自動週期填寫" min="1" disabled>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="trigger-time">執行時間 (預設立即)</label>
+                        <input type="text" id="trigger-time" placeholder="格式: YYYY-MM-DD HH:MM:SS">
+                    </div>
+                    <div class="form-group">
+                        <label for="task-remarks">備註 / 股票代號 (選填)</label>
+                        <input type="text" id="task-remarks" placeholder="單一或多個代號以逗號分隔，例如: 2330 或 AAPL,NVDA">
+                    </div>
+                    <button type="submit" id="btn-create-task" class="btn btn-secondary-solid">
+                        <i class="fa-solid fa-paper-plane"></i> 建立並加入排程
+                    </button>
+                </form>
+            </section>
+
+            <!-- 右側：任務列表 Dashboard -->
+            <section class="right-col card-glass" aria-labelledby="list-heading">
+                <div class="list-header-wrap">
+                    <div class="section-title-wrap">
+                        <i class="fa-solid fa-list-check title-icon"></i>
+                        <h2 id="list-heading">任務監控面板</h2>
+                    </div>
+                    <!-- Tab 按鈕切換 -->
+                    <div class="tabs-control" id="table-tabs">
+                        <button class="tab-btn active" data-tab="active" id="tab-active-btn">進行中 / 排程中</button>
+                        <button class="tab-btn" data-tab="completed" id="tab-completed-btn">已完成</button>
+                        <button class="tab-btn" data-tab="failed" id="tab-failed-btn">已失敗 / 取消</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table id="jobs-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 6%">ID</th>
+                                <th style="width: 20%">任務名稱</th>
+                                <th style="width: 10%">類型</th>
+                                <th style="width: 10%">觸發者</th>
+                                <th style="width: 18%">預計觸發時間</th>
+                                <th style="width: 18%">完成時間</th>
+                                <th style="width: 8%">耗時</th>
+                                <th style="width: 10%">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobs-table-body">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted">正在載入任務列表...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- AI 解析二次確認 Modal -->
+    <div id="confirm-modal" class="modal-overlay hidden">
+        <div class="modal-card card-glass scale-up">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-brain-circuit modal-header-ai"></i> AI 任務解析確認</h3>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-tip">Gemini 已經將您的描述解析為以下任務。請確認參數是否正確，您可以在下方直接調整：</p>
+                <div class="confirm-form">
+                    <div class="form-group">
+                        <label for="modal-name">任務名稱</label>
+                        <input type="text" id="modal-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-task-type">任務類型</label>
+                        <select id="modal-task-type">
+                            <option value="tw_stock_cost">台股股價更新</option>
+                            <option value="us_stock_cost">美股股價更新</option>
+                            <option value="tw_stock_price_only">僅更新台灣股價</option>
+                            <option value="us_stock_price_only">僅更新美國股價</option>
+                            <option value="twse_investor">台股三大法人買賣超 (上市)</option>
+                            <option value="tpex_investor">台股三大法人買賣超 (上櫃)</option>
+                            <option value="us_investor">美股三大法人持股</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-6">
+                            <label for="modal-trigger-type">觸發類型</label>
+                            <select id="modal-trigger-type">
+                                <option value="manual">手動單次</option>
+                                <option value="auto">自動週期</option>
+                                <option value="llm">LLM 單次</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-6">
+                            <label for="modal-interval-days">更新週期 (天)</label>
+                            <input type="number" id="modal-interval-days" min="1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-trigger-time">執行時間 (預設立即)</label>
+                        <input type="text" id="modal-trigger-time" placeholder="格式: YYYY-MM-DD HH:MM:SS">
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-remarks">備註 / 股票代號</label>
+                        <input type="text" id="modal-remarks" placeholder="例如: 2330 或 AAPL,NVDA">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-text" id="modal-cancel-btn">取消</button>
+                <button class="btn btn-primary-gradient" id="modal-confirm-btn">確認並加入排程</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS 腳本 -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
