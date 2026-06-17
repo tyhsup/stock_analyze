@@ -255,8 +255,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const typesMap = {
             "tw_stock_cost": "台股股價更新",
             "us_stock_cost": "美股股價更新",
-            "tw_stock_price_only": "僅更新台灣股價",
-            "us_stock_price_only": "僅更新美國股價",
+            "tw_stock_price_only": "更新全台灣股價",
+            "us_stock_price_only": "更新全美國股價",
             "twse_investor": "台股上市三大法人",
             "tpex_investor": "台股上櫃三大法人",
             "us_investor": "美股三大法人持股"

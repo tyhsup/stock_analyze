@@ -18,7 +18,7 @@ logger = logging.getLogger("scheduler.llm")
 DAILY_LIMIT = 50
 
 class TaskParseResult(BaseModel):
-    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (僅更新台灣股價)、'us_stock_price_only' (僅更新美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)")
+    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (更新全台灣股價)、'us_stock_price_only' (更新全美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)")
     name: str = Field(description="此任務的中文名稱，描述要執行的操作，例如：'手動更新台股 2330 股價'")
     interval_days: Optional[int] = Field(None, description="週期天數（若是單次執行任務，請填 null 或 0；如果是定期任務如每 3 天更新一次，填 3）")
     remarks: Optional[str] = Field(None, description="解析出的股票代碼清單，多個以半形逗號分隔，例如 '2330' 或 'AAPL,NVDA'。若無特定股票代碼則填 null")
@@ -98,8 +98,8 @@ def parse_task_with_gemini(prompt: str, api_key: str) -> dict:
     - 任務類型 (task_type) 必須嚴格限定為:
       1. 'tw_stock_cost' (更新台股股價)
       2. 'us_stock_cost' (更新美股股價)
-      3. 'tw_stock_price_only' (僅更新台灣股價)
-      4. 'us_stock_price_only' (僅更新美國股價)
+      3. 'tw_stock_price_only' (更新全台灣股價)
+      4. 'us_stock_price_only' (更新全美國股價)
       5. 'twse_investor' (更新台股上市三大法人)
       6. 'tpex_investor' (更新台股上櫃三大法人)
       7. 'us_investor' (更新美股三大法人持股)
