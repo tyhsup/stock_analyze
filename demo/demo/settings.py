@@ -17,6 +17,12 @@ pymysql.install_as_MySQLdb()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+import sys
+# 取得 Gemini_task 專案目錄並加入 sys.path
+GEMINI_TASK_DIR = BASE_DIR.parent / "Gemini_task"
+if str(GEMINI_TASK_DIR) not in sys.path:
+    sys.path.insert(0, str(GEMINI_TASK_DIR))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -144,6 +150,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+STATICFILES_DIRS = [
+    ("scheduler", os.path.join(BASE_DIR.parent, "Gemini_task", "app", "static")),
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field

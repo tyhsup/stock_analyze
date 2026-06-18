@@ -4,7 +4,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     // API 基礎路徑
-    const API_BASE = "";
+    const API_BASE = "/scheduler";
 
     // DOM 元素引用
     const llmPrompt = document.getElementById("llm-prompt");

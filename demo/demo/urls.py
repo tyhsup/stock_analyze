@@ -24,6 +24,10 @@ from stock_Django.views import (
     smart_advisor_analysis, gemini_advisor_analysis,
     macrotrends_financials_api, macrotrends_ratios_api
 )
+from stock_Django.scheduler_views import (
+    scheduler_home, jobs_list_or_create, trigger_job_immediately,
+    delete_job, update_job_heartbeat, llm_parse_prompt, get_llm_usage
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -38,4 +42,13 @@ urlpatterns = [
     path('api/gemini-advisor/<str:ticker>/', gemini_advisor_analysis, name='gemini_advisor'),
     path('api/macrotrends/financials', macrotrends_financials_api, name='macrotrends_financials'),
     path('api/macrotrends/ratios', macrotrends_ratios_api, name='macrotrends_ratios'),
+    
+    # 整合排程器 Dashboard 路由
+    path('scheduler/', scheduler_home, name='scheduler_home'),
+    path('scheduler/api/jobs', jobs_list_or_create, name='scheduler_list_jobs'),
+    path('scheduler/api/jobs/<int:job_id>', delete_job, name='scheduler_delete_job'),
+    path('scheduler/api/jobs/execute/<int:job_id>', trigger_job_immediately, name='scheduler_execute_job'),
+    path('scheduler/api/jobs/heartbeat/<int:job_id>', update_job_heartbeat, name='scheduler_heartbeat_job'),
+    path('scheduler/api/llm/parse', llm_parse_prompt, name='scheduler_llm_parse'),
+    path('scheduler/api/llm/usage', get_llm_usage, name='scheduler_llm_usage'),
 ]
