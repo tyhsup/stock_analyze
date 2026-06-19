@@ -13,6 +13,16 @@ Base.metadata.create_all(bind=engine)
 
 logger = logging.getLogger("scheduler.core")
 
+# 互斥任務類型分組定義（同組任務同一時間僅允許一個處於 running 狀態）
+MUTEX_GROUPS = [
+    {
+        "tw_stock_cost", 
+        "tw_stock_price_only", 
+        "us_stock_cost", 
+        "us_stock_price_only"
+    }
+]
+
 def _recover_stale_running_jobs():
     """
     啟動時恢復機制：將所有 status='running' 的任務重設為 failed
@@ -235,17 +245,35 @@ def watcher_loop():
                 Job.trigger_time <= now
             ).order_by(Job.trigger_time.asc()).all()
             
+            # 3. 獲取目前所有正在執行的任務類型 (status='running')
+            running_jobs = db.query(Job).filter(Job.status == "running").all()
+            running_task_types = {j.task_type for j in running_jobs}
+            
             for job in due_jobs:
-                # 由於將 status 提早更新為 running，我們需要回改 worker 中的狀態檢查：
-                # worker 將會直接執行它，且保留狀態為 running，直到結束。
-                # 這也簡化了邏輯！
+                # 判定當前任務類型是否與任何正在執行的任務衝突
+                conflict = False
+                for group in MUTEX_GROUPS:
+                    if job.task_type in group:
+                        # 檢查該組中是否有其他同組的任務類型正在運行
+                        intersect = group.intersection(running_task_types)
+                        if intersect:
+                            conflict = True
+                            logger.info(f"任務 ID {job.id} ({job.name}, 類型: {job.task_type}) 由於同性質任務 {list(intersect)} 正在執行，暫緩本次調度")
+                            break
+                
+                if conflict:
+                    # 有衝突，跳過這個任務，保留其為 pending，等下一個調度週期再行判定
+                    continue
+                    
+                # 無衝突，將該任務標記為 running 並加入執行佇列
                 job.status = "running"
                 job.last_heartbeat = now
                 db.commit()
                 
-                # 由於將 status 提早更新為 running，我們需要回改 worker 中的狀態檢查：
-                # worker 將會直接執行它，且保留狀態為 running，直到結束。
-                # 這也簡化了邏輯！
+                # 為了避免在同一次 watcher_loop 掃描中，後續 due_jobs 與目前剛啟動的任務衝突，
+                # 必須將目前啟動的 job.task_type 立即加到 running_task_types 集合中
+                running_task_types.add(job.task_type)
+                
                 job_queue.put(job.id)
                 logger.info(f"Watcher 已將 Job ID {job.id} ({job.name}) 送入執行佇列")
                 
