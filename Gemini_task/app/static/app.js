@@ -258,7 +258,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "us_stock_price_only": "更新全美國股價",
             "twse_investor": "台股上市三大法人",
             "tpex_investor": "台股上櫃三大法人",
-            "us_investor": "美股三大法人持股"
+            "us_investor": "美股法人持股"
         };
         return typesMap[type] || type;
     }
