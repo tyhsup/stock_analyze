@@ -839,7 +839,32 @@ tbody tr:hover {
     box-shadow: 0 4px 12px rgba(127, 0, 255, 0.15);
 }
 
-[data-theme="light"] .btn-theme-toggle:hover {
+.btn-back-home {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    text-decoration: none;
+}
+
+.btn-back-home:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--glass-border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(127, 0, 255, 0.15);
+}
+
+[data-theme="light"] .btn-theme-toggle:hover,
+[data-theme="light"] .btn-back-home:hover {
     background: rgba(0, 0, 0, 0.04);
 }
 

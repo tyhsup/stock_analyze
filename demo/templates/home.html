@@ -50,6 +50,22 @@
             {% endif %}
         </form>
 
+        <!-- Quick Navigation / System Tools -->
+        <div class="d-flex justify-content-center gap-3 mt-4 flex-wrap">
+            <a href="{% url 'scheduler_home' %}" class="btn btn-outline-primary btn-md rounded-pill px-4 py-2 fw-semibold shadow-sm">
+                <i class="bi bi-calendar-event me-2"></i> 任務排程管理 (Scheduler)
+            </a>
+            <a href="{% url 'news' %}" class="btn btn-outline-secondary btn-md rounded-pill px-4 py-2 fw-semibold shadow-sm">
+                <i class="bi bi-newspaper me-2"></i> 財經新聞 (News)
+            </a>
+            <a href="{% url 'chips' %}" class="btn btn-outline-secondary btn-md rounded-pill px-4 py-2 fw-semibold shadow-sm">
+                <i class="bi bi-person-check me-2"></i> 法人籌碼 (Institutional)
+            </a>
+            <a href="{% url 'valuation_root' %}" class="btn btn-outline-secondary btn-md rounded-pill px-4 py-2 fw-semibold shadow-sm">
+                <i class="bi bi-calculator me-2"></i> 估值計算機 (Valuation)
+            </a>
+        </div>
+
         <!-- Feature 4: Automatic Data Refresh Progress UI -->
         <div id="refresh-progress-container" class="mt-4" style="display: none;">
             <div class="card border-0 shadow-sm p-3 bg-white">
