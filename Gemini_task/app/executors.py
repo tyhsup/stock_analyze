@@ -120,6 +120,98 @@ def execute_us_stock_price_only(remarks: str = None):
     """
     execute_us_stock_cost(remarks)
 
+def execute_tw_listed_list_update(remarks: str = None):
+    """
+    台灣上市公司清單更新任務執行器
+    """
+    logger.info("開始更新台灣上市公司清單...")
+    from stock_Django.mySQL_OP import OP_Fun
+    import requests
+    import pandas as pd
+    from io import StringIO
+    
+    op = OP_Fun()
+    url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
+    res = requests.get(url, timeout=15)
+    res.encoding = 'big5'
+    
+    dfs = pd.read_html(StringIO(res.text))
+    if not dfs:
+        raise Exception("無法讀取 HTML 表格")
+    df = dfs[0]
+    df.columns = df.iloc[0]
+    df = df.iloc[1:]
+    
+    all_stocks = []
+    current_type = ""
+    for _, row in df.iterrows():
+        val = str(row['有價證券代號及名稱'])
+        if "　" not in val and len(val) > 0:
+            current_type = val
+        elif current_type == "股票" and "　" in val:
+            symbol, name = val.split("　", 1)
+            all_stocks.append({"symbol": symbol, "name": name, "market": "sii"})
+            
+    if all_stocks:
+        op.upsert_stocks_info(pd.DataFrame(all_stocks), market='tw')
+        logger.info(f"更新台灣上市公司成功，共 {len(all_stocks)} 筆")
+    else:
+        raise Exception("未找到任何台灣上市公司資料")
+
+def execute_tw_otc_list_update(remarks: str = None):
+    """
+    台灣上櫃公司清單更新任務執行器
+    """
+    logger.info("開始更新台灣上櫃公司清單...")
+    from stock_Django.mySQL_OP import OP_Fun
+    import requests
+    import pandas as pd
+    from io import StringIO
+    
+    op = OP_Fun()
+    url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
+    res = requests.get(url, timeout=15)
+    res.encoding = 'big5'
+    
+    dfs = pd.read_html(StringIO(res.text))
+    if not dfs:
+        raise Exception("無法讀取 HTML 表格")
+    df = dfs[0]
+    df.columns = df.iloc[0]
+    df = df.iloc[1:]
+    
+    all_stocks = []
+    current_type = ""
+    for _, row in df.iterrows():
+        val = str(row['有價證券代號及名稱'])
+        if "　" not in val and len(val) > 0:
+            current_type = val
+        elif current_type == "股票" and "　" in val:
+            symbol, name = val.split("　", 1)
+            all_stocks.append({"symbol": symbol, "name": name, "market": "otc"})
+            
+    if all_stocks:
+        op.upsert_stocks_info(pd.DataFrame(all_stocks), market='tw')
+        logger.info(f"更新台灣上櫃公司成功，共 {len(all_stocks)} 筆")
+    else:
+        raise Exception("未找到任何台灣上櫃公司資料")
+
+def execute_us_stock_list_update(remarks: str = None):
+    """
+    美國上市公司清單更新任務執行器
+    """
+    logger.info("開始更新美國上市公司清單...")
+    from stock_Django.mySQL_OP import OP_Fun
+    from stock_Django.scraper_us import get_us_stock_list
+    
+    op = OP_Fun()
+    us_stocks = get_us_stock_list()
+    if not us_stocks.empty:
+        op.upsert_stocks_info(us_stocks, market='us')
+        logger.info(f"更新美國上市公司成功，共 {len(us_stocks)} 筆")
+    else:
+        raise Exception("未找到任何美國上市公司資料")
+
 # 任務執行器對照表
 EXECUTORS = {
     "tw_stock_cost": execute_tw_stock_cost,
@@ -128,5 +220,8 @@ EXECUTORS = {
     "us_stock_price_only": execute_us_stock_price_only,
     "twse_investor": execute_twse_investor,
     "tpex_investor": execute_tpex_investor,
-    "us_investor": execute_us_investor
+    "us_investor": execute_us_investor,
+    "tw_listed_list_update": execute_tw_listed_list_update,
+    "tw_otc_list_update": execute_tw_otc_list_update,
+    "us_stock_list_update": execute_us_stock_list_update
 }
