@@ -2,6 +2,11 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <script>
+        // 立即套用主題以防止畫面閃爍 (FOUC)
+        const currentTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', currentTheme);
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Task - 智能股市數據排程器</title>
     <meta name="description" content="基於 Gemini LLM 與本地 Gemma 備援的智能股市資料定期更新與任務排程管理系統。">
@@ -32,14 +37,20 @@
                     <p class="subtitle">智能股市數據排程器</p>
                 </div>
             </div>
-            <!-- LLM 額度顯示卡 -->
-            <div class="quota-card" id="quota-container">
-                <div class="quota-info">
-                    <span class="quota-label"><i class="fa-solid fa-microchip-ai"></i> 今日 LLM 額度</span>
-                    <span class="quota-val" id="quota-value">0 / 50</span>
-                </div>
-                <div class="quota-progress-bar">
-                    <div class="quota-progress" id="quota-progress-fill" style="width: 0%"></div>
+            <!-- 控制區：包含主題切換與配額顯示 -->
+            <div class="header-controls">
+                <button id="theme-toggle" class="btn-theme-toggle" title="切換主題">
+                    <i id="theme-icon" class="fa-solid fa-moon"></i>
+                </button>
+                <!-- LLM 額度顯示卡 -->
+                <div class="quota-card" id="quota-container">
+                    <div class="quota-info">
+                        <span class="quota-label"><i class="fa-solid fa-microchip-ai"></i> 今日 LLM 額度</span>
+                        <span class="quota-val" id="quota-value">0 / 50</span>
+                    </div>
+                    <div class="quota-progress-bar">
+                        <div class="quota-progress" id="quota-progress-fill" style="width: 0%"></div>
+                    </div>
                 </div>
             </div>
         </header>

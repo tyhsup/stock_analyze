@@ -30,6 +30,29 @@
     --glass-shadow: rgba(0, 0, 0, 0.3);
 }
 
+/* Light Mode 變數定義 */
+[data-theme="light"] {
+    --bg-base: #f4f6f9;
+    
+    --color-purple: 270, 85%, 50%;
+    --color-blue: 200, 85%, 45%;
+    --color-pink: 330, 85%, 50%;
+    
+    --color-success: #00aa88;
+    --color-pending: #d97706;
+    --color-running: #0284c7;
+    --color-failed: #dc2626;
+    --color-cancelled: #64748b;
+
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-border-hover: rgba(0, 0, 0, 0.16);
+    --glass-shadow: rgba(0, 0, 0, 0.05);
+}
+
 /* Reset */
 * {
     margin: 0;
@@ -782,3 +805,94 @@ tbody tr:hover {
         width: 100%;
     }
 }
+
+/* ==========================================================================
+   Theme Toggle Button & Light Theme Tweaks
+   ========================================================================== */
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+}
+
+.btn-theme-toggle {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.btn-theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--glass-border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(127, 0, 255, 0.15);
+}
+
+[data-theme="light"] .btn-theme-toggle:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* Light Mode 專屬微調 */
+[data-theme="light"] .logo-text h1 {
+    background: linear-gradient(to right, #1e293b, #475569);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+[data-theme="light"] .btn-secondary-solid {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+}
+
+[data-theme="light"] .btn-secondary-solid:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] textarea,
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select {
+    background: rgba(0, 0, 0, 0.03);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+}
+
+[data-theme="light"] textarea:focus,
+[data-theme="light"] input[type="text"]:focus,
+[data-theme="light"] input[type="number"]:focus,
+[data-theme="light"] select:focus {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: hsl(var(--color-blue));
+}
+
+[data-theme="light"] .modal-overlay {
+    background: rgba(240, 242, 245, 0.85);
+}
+
+[data-theme="light"] .tabs-control {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .tab-btn.active {
+    background: #ffffff;
+    color: var(--text-main);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] select option {
+    background-color: #ffffff;
+    color: var(--text-main);
+}
+

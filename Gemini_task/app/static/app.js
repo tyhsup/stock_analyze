@@ -7,6 +7,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const API_BASE = "/scheduler";
 
     // DOM 元素引用
+    const themeToggleBtn = document.getElementById("theme-toggle");
+    const themeIcon = document.getElementById("theme-icon");
     const llmPrompt = document.getElementById("llm-prompt");
     const btnParseLlm = document.getElementById("btn-parse-llm");
     const btnParseText = document.getElementById("btn-parse-text");
@@ -47,6 +49,32 @@ document.addEventListener("DOMContentLoaded", () => {
     // 當前全域狀態
     let currentTab = "active"; // active, completed, failed
     let allJobs = [];
+
+    // ----------------- 主題切換邏輯 -----------------
+    const getCurrentTheme = () => localStorage.getItem('theme') || 'dark';
+
+    const applyTheme = (theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+        if (themeIcon) {
+            if (theme === 'dark') {
+                themeIcon.className = 'fa-solid fa-moon';
+            } else {
+                themeIcon.className = 'fa-solid fa-sun';
+            }
+        }
+    };
+
+    // 初始化主題
+    applyTheme(getCurrentTheme());
+
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            const current = getCurrentTheme();
+            const nextTheme = current === 'dark' ? 'light' : 'dark';
+            applyTheme(nextTheme);
+        });
+    }
 
     // ----------------- 初始化與事件綁定 -----------------
 
