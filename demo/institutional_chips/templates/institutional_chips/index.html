@@ -37,6 +37,11 @@
         background-color: white !important;
         color: var(--bs-secondary);
     }
+    [data-bs-theme="dark"] .market-tab.nav-link:not(.active) {
+        background-color: var(--card-bg) !important;
+        color: var(--text-secondary) !important;
+        border-color: var(--card-border) !important;
+    }
 </style>
 <ul class="nav nav-pills mb-4" id="market-tabs" role="tablist">
     <li class="nav-item" role="presentation">
@@ -184,6 +189,11 @@
         margin-bottom: 1.5rem;
         background: #f8f9fa;
     }
+
+    [data-bs-theme="dark"] .stock-chip-card {
+        background-color: #242424 !important;
+        border-color: var(--card-border) !important;
+    }
 </style>
 
 <script>
@@ -191,6 +201,7 @@
         const buySellData = JSON.parse(document.getElementById('buysell-data').textContent);
         const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
         const usInvestorData = JSON.parse(document.getElementById('us-investor-data').textContent);
+        const chartThemeMode = localStorage.getItem('theme') || 'light';
 
         // --- Data Refresh Logic ---
         const btnTw = document.getElementById('btn-refresh-tw');
@@ -283,7 +294,8 @@
                 },
                 title: { text: 'Cumulative Buy (Shares)', align: 'left', style: { fontSize: '22px' } },
                 legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
-                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a']
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                theme: { mode: chartThemeMode }
             };
             new ApexCharts(document.querySelector("#top-buyers-chart"), leadersOptions).render();
 
@@ -300,7 +312,8 @@
                 },
                 title: { text: 'Cumulative Sell (Shares)', align: 'left', style: { fontSize: '22px' } },
                 legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
-                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a']
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                theme: { mode: chartThemeMode }
             };
             new ApexCharts(document.querySelector("#top-sellers-chart"), laggardsOptions).render();
         }
@@ -348,7 +361,8 @@
                     yaxis: { labels: { style: { fontSize: '14px' } } },
                     colors: data.bar_colors,
                     legend: { show: false },
-                    tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } }
+                    tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } },
+                    theme: { mode: chartThemeMode }
                 };
                 new ApexCharts(document.querySelector(`#us-chart-${idx}`), options).render();
             });
@@ -409,7 +423,8 @@
                     dataLabels: { enabled: false },
                     colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
                     title: { text: 'Inst. Buy/Sell (Last 5 Days)', style: { fontSize: '22px' } },
-                    legend: { fontSize: '18px' }
+                    legend: { fontSize: '18px' },
+                    theme: { mode: chartThemeMode }
                 };
                 new ApexCharts(document.querySelector(`#chart-top5-${i}`), options).render();
             });
