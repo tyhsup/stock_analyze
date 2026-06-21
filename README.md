@@ -1,97 +1,97 @@
-# 台美股智慧分析與 AI 估值平台 (Smart Stock Analysis & AI Valuation Platform)
+# Smart Stock Analysis & AI Valuation Platform
 
-## 專案概述
+## Project Overview
 
-本專案為個人專題研究作品，旨在建立一個整合台股與美股的智慧型投資分析平台。透過後端 Django 框架與 MySQL 資料庫，系統能自動化同步市場數據，並結合 TA-Lib 技術指標、三大法人籌碼流向、LSTM 股價預測模型以及大語言模型（LLM）的新聞情緒分析，為使用者提供一站式的個股研究、合理價估值與智慧投資決策輔助。
+This project is a comprehensive student portfolio website designed to provide end-to-end research, valuation, and AI-driven insights for the Taiwan and US stock markets. 
 
----
-
-## 系統核心功能
-
-1. **雙主題互動式儀表板 (Dual-Theme Dashboard)**
-   * 提供明亮（Light）與暗色（Dark）雙主題介面，且全網頁圖表與文字對比度皆經過最佳化。
-   * 首頁整合多達 12 個 ApexCharts 互動式圖表，包含 K 線圖、成交量、技術指標（RSI、MACD、HT_PHASOR 軌跡圖）、三大法人持股統計、法人集中度圖表以及 Gemini 智慧指針圖。
-
-2. **三大法人籌碼追蹤 (Institutional Chip Tracking)**
-   * 視覺化外資、投信、自營商的買進、賣出及買賣超股數。
-   * 繪製法人持股比率與集中度圓餅圖，幫助使用者掌握市場主力資金流向。
-
-3. **合理價估值計算機 (Fair Value Calculator)**
-   * 混合折現現金流模型（DCF）與市場乘數法（Relative Valuation）。
-   * 自動計算個股合理價（Fair Value）與潛在上漲空間（Upside），並動態呈現估值所採用的假設條件。
-
-4. **AI 財經新聞智能洞察 (AI Sentiment & Insights)**
-   * 串接鉅亨網（CNYES）新聞 API，由大語言模型（Gemini / Llama 3）對新聞進行結構化摘要與情緒分析。
-   * 自動生成「AI 智能洞察」卡片，提供短中長期的市場影響分析，並繪製新聞情緒分佈圖。
-
-5. **自動化數據更新排程器 (Automated Data Scheduler)**
-   * 獨立的任務排程管理系統，支援定時或手動執行資料同步任務。
-   * 串接 TWSE、TPEX 與美股數據同步工具，將取得的股價、籌碼與財報資料持久化儲存於本地 MySQL 資料庫，避免外部 API 的流量限制。
+Built with the Django backend framework and a local MySQL database, the platform automates stock data synchronization and integrates financial engineering tools (TA-Lib), institutional chip tracking, LSTM-based price forecasting, and Large Language Model (LLM) sentiment analysis. It aims to solve the problem of fragmented investment information by offering retail investors a unified, professional-grade research station.
 
 ---
 
-## 系統技術架構
+## Core Features
 
-本專案採用現代 Web 技術與數據科學工具鏈進行開發：
+1. **Dual-Theme Interactive Dashboard**
+   * Features Light and Dark modes with optimized CSS contrast for readability.
+   * Integrates up to 12 interactive ApexCharts on the homepage, including K-line charts, trading volume, technical indicators (RSI, MACD, HT_PHASOR trajectory), institutional holding trends, holding concentration, and a Gemini-powered gauge chart.
 
-* **前端技術 (Frontend)**
-  * **基礎結構**：HTML5、JavaScript、Bootstrap 5、Vanilla CSS。
-  * **資料視覺化**：ApexCharts.js (繪製高品質互動式金融圖表)。
-  * **圖示庫**：FontAwesome、Bootstrap Icons。
+2. **Institutional Chip Tracking**
+   * Visualizes buy, sell, and net position dynamics of Foreign Investors, Investment Trusts, and Dealers.
+   * Plots institutional holding ratios and concentration donut charts to help users identify major capital flows.
 
-* **後端技術 (Backend)**
-  * **核心框架**：Django 5.x (Python 3.11+)。
-  * **排程控制**：獨立任務排程管理器（結合前端控制介面與背景執行緒）。
+3. **Fair Value Calculator**
+   * Uses a blended valuation model combining the Discounted Cash Flow (DCF) model and the Market Approach (Relative Valuation / Multipliers).
+   * Automatically calculates fair value and potential upside percentages, displaying dynamic assumption tables.
 
-* **資料庫管理 (Database)**
-  * **主資料庫**：MySQL (用於儲存台美股歷史股價、法人籌碼與公司財報)。
-  * **資料庫連接**：Django ORM 與 mysql-connector-pooling 連接池最佳化。
+4. **AI News Insights & Sentiment Analysis**
+   * Connects to financial news APIs (e.g., CNYES) and leverages LLMs (Gemini / Llama 3) for text summarization and sentiment analysis.
+   * Generates structured "AI Insights" cards detailing short, medium, and long-term market impacts, paired with news sentiment distribution charts.
 
-* **數據抓取與爬蟲 (Data Scraping)**
-  * **外部 API**：yfinance (美股數據)、鉅亨網新聞 API。
-  * **爬蟲與同步工具**：aiohttp (非同步請求與防阻擋機制)、TWSE/TPEX 命令行同步工具 (CLI)。
-
-* **資料分析與 AI 模型 (Data Analysis & AI)**
-  * **技術指標**：TA-Lib (計算 RSI、MACD、HT_PHASOR 等金融指標)。
-  * **數據處理**：Pandas (向量化運算)、NumPy。
-  * **機器學習**：TensorFlow/Keras (LSTM 時間序列股價預測)、Scikit-learn。
-  * **自然語言處理**：透過 API 呼叫大語言模型進行新聞文本情緒標記與智能洞察生成。
+5. **Automated Data Scheduler**
+   * A dedicated management interface to schedule or manually trigger data synchronization tasks.
+   * Integrates TWSE, TPEX, and US stock collectors. All ingested price, chip, and financial report data are persisted locally in MySQL to prevent external API rate limits.
 
 ---
 
-## 資料庫設計簡述
+## Technology Stack
 
-系統主要資料表包含：
-* `stocks_tw` / `stocks_us`：台美股股票清單與基本資訊。
-* `stock_cost` / `stock_cost_us`：每日歷史交易數據（開盤價、最高價、最低價、收盤價、成交量）。
-* `stock_investor` / `stock_investor_us`：三大法人每日交易籌碼細節與持股集中度。
-* `financial_raw_tw` / `financial_raw_us`：台美股公司歷年季度財務報表原始數據。
-* `valuation_valuationresult`：個股合理價估值結果與模型假設參數。
+* **Frontend**
+  * **Core Structure**: HTML5, JavaScript, Bootstrap 5, Vanilla CSS.
+  * **Data Visualization**: ApexCharts.js (for high-performance, interactive financial charts).
+  * **Icon Libraries**: FontAwesome, Bootstrap Icons.
+
+* **Backend**
+  * **Web Framework**: Django 5.x (Python 3.11+).
+  * **Background Processing**: Custom task scheduler utilizing multi-threading and a web-based control panel.
+
+* **Database Management**
+  * **Database**: MySQL (for persistent storage of historical prices, institutional chips, and quarterly financial statements).
+  * **Optimization**: Django ORM with mysql-connector-pooling.
+
+* **Data Scraping & Automation**
+  * **APIs**: yfinance (US market data), CNYES News API.
+  * **Crawlers**: aiohttp (asynchronous HTTP requests with proxy and User-Agent rotation to handle rate limits) and custom TWSE/TPEX CLIs.
+
+* **Data Science & Machine Learning**
+  * **Financial Indicators**: TA-Lib (RSI, MACD, HT_PHASOR calculation).
+  * **Data Processing**: Pandas (vectorized operations), NumPy.
+  * **Predictive Modeling**: TensorFlow/Keras (LSTM for time-series stock price forecasting) and Scikit-learn.
+  * **Generative AI**: LLM APIs for automated sentiment analysis and structural text summary generation.
 
 ---
 
-## 安裝與運行指南
+## Database Schema Overview
 
-### 環境需求
+The database contains the following key tables:
+* `stocks_tw` / `stocks_us`: Metadata and listing status of TWSE/TPEX and US companies.
+* `stock_cost` / `stock_cost_us`: Daily historical market data (Open, High, Low, Close, Volume).
+* `stock_investor` / `stock_investor_us`: Daily institutional trading details and holding ratios.
+* `financial_raw_tw` / `financial_raw_us`: Raw quarterly and annual financial statements.
+* `valuation_valuationresult`: Stored intrinsic value results and model assumptions.
+
+---
+
+## Installation & Setup Guide
+
+### Prerequisites
 * Python 3.11+
-* MySQL Server (建立名為 `stock_tw_analyse` 的資料庫)
-* 安裝 TA-Lib C++ 函式庫 (Windows 環境下建議下載預編譯之 `.whl` 檔案進行安裝)
+* MySQL Server (Create a database named `stock_tw_analyse`)
+* TA-Lib C++ Library (Windows users are recommended to download and install pre-built `.whl` files)
 
-### 執行步驟
+### Setup Steps
 
-1. **複製專案倉庫**
+1. **Clone the Repository**
    ```bash
    git clone <repository-url>
    cd mydjango
    ```
 
-2. **安裝 Python 依賴套件**
+2. **Install Python Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **設定環境變數**
-   在 `demo/stock_Django/` 目錄下建立 `.env` 檔案，填入您的 MySQL 連線資訊與 API 金鑰：
+3. **Configure Environment Variables**
+   Create a `.env` file under `demo/stock_Django/` and fill in your MySQL credentials and API keys:
    ```env
    DB_HOST=localhost
    DB_USER=your_db_user
@@ -100,13 +100,13 @@
    GROQ_API_KEY=your_groq_api_key
    ```
 
-4. **執行資料庫遷移**
+4. **Run Database Migrations**
    ```bash
    python manage.py migrate
    ```
 
-5. **啟動 Django 開發伺服器**
+5. **Start Django Development Server**
    ```bash
    python manage.py runserver
    ```
-   啟動後，即可透過瀏覽器造訪 `http://127.0.0.1:8000/` 使用本平台。
+   Once started, visit `http://127.0.0.1:8000/` in your web browser.
