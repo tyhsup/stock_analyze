@@ -136,6 +136,16 @@
     .form-floating>.form-control {
         border-radius: 0.75rem;
     }
+
+    .ai-insight-card {
+        background: linear-gradient(135deg, rgba(230, 240, 255, 0.7) 0%, rgba(240, 245, 250, 0.4) 100%) !important;
+        border-left: 4px solid #0d6efd;
+    }
+
+    [data-bs-theme="dark"] .ai-insight-card {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.4) 100%) !important;
+        border-left: 4px solid #3b82f6;
+    }
 </style>
 
 <!-- Feature 4/6: News Refresh Progress UI -->
@@ -251,7 +261,7 @@
             if (item.分析摘要 && item.分析摘要.indexOf('分析未啟用') === -1 && item.分析摘要.indexOf('本地評分') === -1) {
                 const impactClass = item.影響範疇 === '短期' ? 'text-primary' : (item.影響範疇 === '中期' ? 'text-warning' : 'text-danger');
                 aiInsightHTML = `
-                    <div class="mt-3 p-3 rounded" style="background: linear-gradient(135deg, rgba(230,240,255,0.7) 0%, rgba(240,245,250,0.4) 100%); border-left: 4px solid #0d6efd;">
+                    <div class="mt-3 p-3 rounded ai-insight-card">
                         <div class="d-flex align-items-center mb-2">
                             <i class="bi bi-robot text-primary fs-5 me-2"></i>
                             <span class="fw-bold text-dark me-3">AI 智能洞察</span>
@@ -326,6 +336,7 @@
         const newsDataEl = document.getElementById('news-data');
         if (!newsDataEl) return;
 
+        const chartThemeMode = localStorage.getItem('theme') || 'light';
         const rawText = newsDataEl.textContent.replace(/nan/gi, 'null');
         allNews = JSON.parse(rawText);
         renderNewsPage(1); // Initialize pagination
@@ -358,6 +369,7 @@
             const options = {
                 series: validSeries,
                 chart: { type: 'donut', height: 400 },
+                theme: { mode: chartThemeMode },
                 labels: validLabels,
                 colors: validColors,
                 plotOptions: {

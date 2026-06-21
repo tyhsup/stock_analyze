@@ -331,6 +331,7 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
+        const chartThemeMode = localStorage.getItem('theme') || 'light';
         const ticker = "{{ number }}";
         if (ticker) {
             const container = document.getElementById('gemini-advisor-section');
@@ -389,6 +390,7 @@
                                 height: 220,
                                 sparkline: { enabled: true }
                             },
+                            theme: { mode: chartThemeMode },
                             plotOptions: {
                                 radialBar: {
                                     startAngle: -90,
@@ -636,6 +638,7 @@
     let _taConfig = null;
     // Currency from backend: 'TWD' for TW stocks, 'USD' for US stocks
     const _currency = "{{ currency|default:'TWD' }}";
+    const chartThemeMode = localStorage.getItem('theme') || 'light';
 
     // ============================================================
     // PERIOD RESAMPLE (JS-side)
@@ -1025,6 +1028,7 @@
                 animations: { enabled: false },
                 toolbar: { show: true },
             },
+            theme: { mode: chartThemeMode },
             xaxis: {
                 type: 'datetime',
                 labels: { 
@@ -1122,6 +1126,7 @@
                     }
                 }
             },
+            theme: { mode: chartThemeMode },
             colors: [function ({ dataPointIndex }) {
                 return volData[dataPointIndex] ? volData[dataPointIndex].fillColor : '#777';
             }],
@@ -1153,6 +1158,7 @@
                         toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         zoom: { enabled: true, type: 'x' }
                     },
+                    theme: { mode: chartThemeMode },
                     xaxis: {
                         type: 'datetime',
                         labels: { 
@@ -1206,6 +1212,7 @@
                         toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         zoom: { enabled: true, type: 'x' }
                     },
+                    theme: { mode: chartThemeMode },
                     xaxis: {
                         type: 'datetime',
                         labels: { 
@@ -1425,7 +1432,7 @@
                 _phasorChart = new ApexCharts(phasorEl, {
                     series: [{ name: 'Phase Trajectory', data: points }],
                     chart: { type: 'scatter', height: 450, animations: { enabled: false }, zoom: { type: 'xy' }, toolbar: { show: true } },
-                    theme: { mode: 'dark' },
+                    theme: { mode: chartThemeMode },
                     title: { text: 'HT_PHASOR Plot (InPhase vs Quadrature)', align: 'center', style: { color: '#fff', fontSize: '22px', fontWeight: 700 } },
                     subtitle: { text: subtitleText, align: 'center', style: { color: '#03a9f4', fontSize: '18px', fontWeight: 'bold' } },
                     xaxis: { 
@@ -1587,6 +1594,7 @@
                         _dynamicCharts[lowName] = new ApexCharts(document.getElementById(chartId), {
                             series: series,
                             chart: { height: 220, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
+                            theme: { mode: chartThemeMode },
                             xaxis: { type: 'datetime', labels: { style: { fontSize: '16px' } } },
                             yaxis: { labels: { style: { fontSize: '16px' }, formatter: v => v ? v.toFixed(2) : '' }, forceNiceScale: true },
                             annotations: { yaxis: yaxisAnnos },
@@ -1675,6 +1683,7 @@
                 toolbar: { show: true, tools: { download: true, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                 zoom: { enabled: true, type: 'x' }
             },
+            theme: { mode: chartThemeMode },
             plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
             xaxis: { categories: cfg.categories, labels: { rotate: -45, style: { fontSize: '10px' } } },
             yaxis: { labels: { formatter: v => (v / 1000).toFixed(0) + 'K' } },
@@ -1722,6 +1731,7 @@
                             zoom: { enabled: true, type: 'x' },
                             id: 'investor-trend'
                         },
+                        theme: { mode: chartThemeMode },
                         plotOptions: { bar: { horizontal: false, columnWidth: '60%' } },
                         dataLabels: { enabled: false },
                         xaxis: {
@@ -1777,6 +1787,7 @@
                             type: 'bar', height: 420, animations: { enabled: false },
                             toolbar: { show: true, tools: { download: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         },
+                        theme: { mode: chartThemeMode },
                         plotOptions: { bar: { horizontal: true, barHeight: '70%' } },
                         dataLabels: { enabled: false },
                         xaxis: { categories: usData.categories, labels: { formatter: v => (v / 1e6).toFixed(1) + 'M' } },
@@ -1811,6 +1822,7 @@
                         new ApexCharts(document.getElementById('us-investor-concentration'), {
                             series: usData.concentration.map(c => c.value || 0),
                             chart: { type: 'donut', height: 250 },
+                            theme: { mode: chartThemeMode },
                             labels: usData.concentration.map(c => c.label),
                             colors: ['#1e88e5', '#bbdefb'],
                             legend: { position: 'bottom', fontSize: '11px' },
@@ -1949,6 +1961,7 @@
                     new ApexCharts(document.getElementById('tw-investor-summary-chart'), {
                         series: [{ name: 'Net Position', data: twData.shares }],
                         chart: { type: 'bar', height: 400, animations: { enabled: false }, toolbar: { show: true } },
+                        theme: { mode: chartThemeMode },
                         plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
                         xaxis: { categories: twData.categories, labels: { formatter: v => (v / 1e3).toFixed(0) + 'K' } },
                         colors: [function ({ dataPointIndex }) { return twData.bar_colors[dataPointIndex]; }],
@@ -1959,6 +1972,7 @@
                         new ApexCharts(document.getElementById('tw-investor-concentration'), {
                             series: twData.concentration.map(c => c.value),
                             chart: { type: 'donut', height: 250 },
+                            theme: { mode: chartThemeMode },
                             labels: twData.concentration.map(c => c.label),
                             colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
                             legend: { position: 'bottom', fontSize: '11px' },
