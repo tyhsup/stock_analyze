@@ -110,6 +110,17 @@ class FinancialDataLoader:
 
         # 美股判斷邏輯
         else:
+            symbol_upper = self.symbol.upper()
+            
+            # 優先比對常用美股 ETF 清單
+            US_ETF_LIST = {
+                "SPY", "QQQ", "DIA", "IWM", "VOO", "IVV", "VTI", "SOXX", "SMH", 
+                "XLK", "XLF", "XLV", "XLE", "XLY", "XLP", "XLI", "XLB", "XLRE", "XLU"
+            }
+            if symbol_upper in US_ETF_LIST:
+                logger.info(f"[ETF Detection] Static list match: {self.symbol} is a US ETF.")
+                return True
+
             cache_file = self.cache_dir / "security_type_cache.json"
             cache_data = {}
             if cache_file.exists():
@@ -119,29 +130,42 @@ class FinancialDataLoader:
                 except Exception as e:
                     logger.error(f"Error reading security type cache: {e}")
             
-            symbol_upper = self.symbol.upper()
             if symbol_upper in cache_data:
                 return cache_data[symbol_upper] == "ETF"
             
-            # 快取 miss，呼叫 yfinance
+            # 快取 miss，優先使用免驗證的 Chart API 取得 instrumentType
             try:
-                import yfinance as yf
-                logger.info(f"[ETF Detection] Cache miss for US symbol {self.symbol}. Fetching quoteType from yfinance...")
-                # 加上 timeout 限制，避免網路掛起
-                ticker = yf.Ticker(self.full_symbol, session=self.yf_session)
-                info = ticker.info
-                quote_type = info.get("quoteType", "EQUITY")
-                is_etf = (quote_type == "ETF")
+                logger.info(f"[ETF Detection] Cache miss for US symbol {self.symbol}. Fetching from Chart API...")
+                chart_url = f"https://query1.finance.yahoo.com/v8/finance/chart/{self.full_symbol}"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                }
+                resp = requests.get(chart_url, headers=headers, timeout=5)
+                is_etf = False
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                    instrument_type = meta.get("instrumentType", "").upper()
+                    is_etf = (instrument_type == "ETF")
+                    logger.info(f"[ETF Detection] Chart API response: {self.symbol} is {instrument_type}.")
+                else:
+                    # Fallback to yfinance if Chart API fails
+                    import yfinance as yf
+                    ticker = yf.Ticker(self.full_symbol, session=self.yf_session)
+                    info = ticker.info
+                    quote_type = info.get("quoteType", "EQUITY")
+                    is_etf = (quote_type == "ETF")
+                    logger.info(f"[ETF Detection] Fallback yfinance response: {self.symbol} is {quote_type}.")
                 
                 # 寫入快取
                 cache_data[symbol_upper] = "ETF" if is_etf else "STOCK"
                 with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(cache_data, f, indent=4)
                 
-                logger.info(f"[ETF Detection] yfinance response: {self.symbol} is {quote_type}. Saved to cache.")
                 return is_etf
             except Exception as e:
-                logger.error(f"Error querying yfinance for US ETF status {self.symbol}: {e}")
+                logger.error(f"Error querying security type for US symbol {self.symbol}: {e}")
                 return False
 
     def ensure_data_freshness_sync(self):
