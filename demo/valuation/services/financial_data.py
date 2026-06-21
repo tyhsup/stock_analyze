@@ -85,9 +85,70 @@ class FinancialDataLoader:
         })
         self.cache_dir = Path(__file__).parent / ".cache"
         self.cache_dir.mkdir(exist_ok=True)
+        self.is_etf = self._check_if_etf(ticker_symbol)
+
+    def _check_if_etf(self, ticker_symbol) -> bool:
+        """判斷標的是否為 ETF，台股透過本地 stock_table_tw 判斷，美股透過本地快取與 yfinance info 判斷"""
+        # 台股判斷邏輯
+        if self.market == 'tw':
+            try:
+                # 查詢本地的 stock_table_tw，看 CFI Code 是否為 CE 開頭
+                query = "SELECT COUNT(*) FROM stock_table_tw WHERE `有價證卷代號` = :symbol AND `CFI Code` LIKE 'CE%%'"
+                with self.op.engine.connect() as conn:
+                    result = conn.execute(text(query), {"symbol": self.symbol}).fetchone()
+                    if result and result[0] > 0:
+                        logger.info(f"[ETF Detection] Local DB match: {self.symbol} is a TW ETF.")
+                        return True
+            except Exception as e:
+                logger.error(f"Error checking ETF status for TW stock {self.symbol}: {e}")
+            
+            # 台股保底邏輯：如果代號長度大於等於 4 且以 00 開頭（例如 0050, 00878 等）
+            if len(self.symbol) >= 4 and self.symbol.startswith("00"):
+                return True
+                
+            return False
+
+        # 美股判斷邏輯
+        else:
+            cache_file = self.cache_dir / "security_type_cache.json"
+            cache_data = {}
+            if cache_file.exists():
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        cache_data = json.load(f)
+                except Exception as e:
+                    logger.error(f"Error reading security type cache: {e}")
+            
+            symbol_upper = self.symbol.upper()
+            if symbol_upper in cache_data:
+                return cache_data[symbol_upper] == "ETF"
+            
+            # 快取 miss，呼叫 yfinance
+            try:
+                import yfinance as yf
+                logger.info(f"[ETF Detection] Cache miss for US symbol {self.symbol}. Fetching quoteType from yfinance...")
+                # 加上 timeout 限制，避免網路掛起
+                ticker = yf.Ticker(self.full_symbol, session=self.yf_session)
+                info = ticker.info
+                quote_type = info.get("quoteType", "EQUITY")
+                is_etf = (quote_type == "ETF")
+                
+                # 寫入快取
+                cache_data[symbol_upper] = "ETF" if is_etf else "STOCK"
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, indent=4)
+                
+                logger.info(f"[ETF Detection] yfinance response: {self.symbol} is {quote_type}. Saved to cache.")
+                return is_etf
+            except Exception as e:
+                logger.error(f"Error querying yfinance for US ETF status {self.symbol}: {e}")
+                return False
 
     def ensure_data_freshness_sync(self):
         """檢查資料是否為最新，若非最新則自動抓取更新（同步阻塞）"""
+        if self.is_etf:
+            logger.info(f"Skipping financial data update for ETF: {self.symbol}")
+            return
         table_name = f"financial_raw_{self.market}"
         # 取得資料庫中該股最晚的年份與季度，以及總季數
         query = f"SELECT MAX(year * 10 + quarter) as latest_val, COUNT(DISTINCT year * 10 + quarter) as q_count FROM {table_name} WHERE symbol = :symbol"
@@ -152,6 +213,9 @@ class FinancialDataLoader:
 
     def ensure_data_freshness(self):
         """檢查資料是否為最新，若非最新則在背景非同步啟動更新"""
+        if self.is_etf:
+            logger.info(f"Skipping financial data update for ETF: {self.symbol}")
+            return
         table_name = f"financial_raw_{self.market}"
         query = f"SELECT MAX(year * 10 + quarter) as latest_val, COUNT(DISTINCT year * 10 + quarter) as q_count FROM {table_name} WHERE symbol = :symbol"
         with self.op.engine.connect() as conn:
@@ -188,6 +252,11 @@ class FinancialDataLoader:
         """從 MySQL 讀取原始數據並轉換為 DataFrame 格式 (加入實例級快取)"""
         if hasattr(self, '_cached_financials'):
             return self._cached_financials
+
+        if self.is_etf:
+            empty_res = (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+            self._cached_financials = empty_res
+            return empty_res
 
         self.ensure_data_freshness()
         

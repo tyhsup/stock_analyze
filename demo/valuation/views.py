@@ -52,6 +52,11 @@ def valuation_view(request, symbol):
             
             results = ValuationService.calculate_valuation(symbol, dcf_weight=dcf_weight, market_weight=market_weight)
             
+            if results.get('is_etf'):
+                context['etf'] = results
+                request.session['last_ticker'] = symbol.upper()
+                return render(request, 'valuation/etf_detail.html', context)
+            
             # Feature 7: Trigger auto-refresh if data is stale
             from stock_Django.mySQL_OP import OP_Fun
             from stock_Django.data_freshness import trigger_refresh_if_stale
@@ -73,9 +78,10 @@ def valuation_view(request, symbol):
                 )
             else:
                 context['valuation'] = results
+                request.session['last_ticker'] = symbol.upper()
         except Exception as e:
             context['error'] = str(e)
-            
+        
     return render(request, 'valuation/detail.html', context)
 
 def valuation_api(request, symbol):

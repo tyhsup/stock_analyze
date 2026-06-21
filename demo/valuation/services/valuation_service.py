@@ -19,6 +19,10 @@ class ValuationService:
         try:
             # 1. Load Financial Data
             loader = FinancialDataLoader(ticker_symbol)
+            if loader.is_etf:
+                from .etf_valuation import ETFValuationService
+                return ETFValuationService.calculate_etf_valuation(ticker_symbol, loader)
+                
             is_df, bs_df, cf_df = loader.get_full_financials()
             
             if is_df is None or bs_df is None or is_df.empty or bs_df.empty:
