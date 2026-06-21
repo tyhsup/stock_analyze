@@ -32,7 +32,7 @@ class WACCCalculator:
         
         # 1. 獲取最新股價 (stock_cost 使用帶有 .TW 的完整代碼)
         price_table = "stock_cost" if self.market == 'tw' else "stock_cost_us"
-        query_price = text(f"SELECT Close FROM {price_table} WHERE TRIM(number) = :symbol ORDER BY Date DESC LIMIT 1")
+        query_price = text(f"SELECT Close FROM {price_table} WHERE number = :symbol ORDER BY Date DESC LIMIT 1")
         
         # 2. 獲取股本 (financial_raw_tw 使用純數字代碼)
         fin_table = f"financial_raw_{self.market}"

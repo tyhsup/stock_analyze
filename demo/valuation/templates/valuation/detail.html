@@ -77,7 +77,69 @@
 </script>
 
 <div class="container">
-    {% if error %}
+    {% if is_updating %}
+    <div class="card shadow-sm border-0 mb-4 p-4 text-center">
+        <div class="card-body py-5">
+            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h4 class="fw-bold mb-2">資料庫資料同步中 (Syncing Stock Data)</h4>
+            <p class="text-muted mb-4" id="sync-message">
+                {{ refresh_status.message|default:"系統正在從線上資源自動下載並更新該個股的歷史交易、法人籌碼與財務報表數據..." }}
+            </p>
+            
+            <div class="progress mb-3 mx-auto" style="max-width: 500px; height: 25px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                     id="sync-progress-bar"
+                     role="progressbar" 
+                     style="width: {{ refresh_status.progress|default:10 }}%;" 
+                     aria-valuenow="{{ refresh_status.progress|default:10 }}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                    <span id="sync-progress-text" class="fw-bold">{{ refresh_status.progress|default:10 }}%</span>
+                </div>
+            </div>
+            
+            <p class="text-muted small">
+                這通常需要數十秒的時間，更新完成後頁面將會自動重新載入。
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // 每 3 秒發送一次 AJAX 請求，確認更新狀態
+        const pollInterval = setInterval(function() {
+            fetch("{% url 'valuation_refresh_status_api' symbol=symbol %}")
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'running') {
+                        document.getElementById('sync-progress-bar').style.width = data.progress + '%';
+                        document.getElementById('sync-progress-bar').setAttribute('aria-valuenow', data.progress);
+                        document.getElementById('sync-progress-text').textContent = data.progress + '%';
+                        if (data.message) {
+                            document.getElementById('sync-message').textContent = data.message;
+                        }
+                    } else if (data.status === 'done' || data.progress === 100) {
+                        clearInterval(pollInterval);
+                        document.getElementById('sync-progress-bar').style.width = '100%';
+                        document.getElementById('sync-progress-text').textContent = '100%';
+                        document.getElementById('sync-message').textContent = '🎉 資料同步完成，即將自動重新整理...';
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1000);
+                    } else if (data.status === 'error') {
+                        clearInterval(pollInterval);
+                        document.getElementById('sync-message').innerHTML = '<span class="text-danger">❌ 資料同步失敗：' + data.message + '</span>';
+                    }
+                })
+                .catch(err => {
+                    console.error('AJAX Polling error:', err);
+                });
+        }, 3000);
+    </script>
+    {% endif %}
+
+    {% if error and not is_updating %}
     <div class="alert alert-danger shadow-sm">
         <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
     </div>

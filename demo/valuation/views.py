@@ -61,12 +61,15 @@ def valuation_view(request, symbol):
 
             # ValuationService returns an error dict when data is missing
             if 'error' in results:
+                from stock_Django.data_freshness import get_refresh_status
+                status_info = get_refresh_status(symbol)
+                context['is_updating'] = True
+                context['refresh_status'] = status_info
                 context['error'] = results['error']
                 context['error_detail'] = (
                     f"Financial data for '{symbol}' has not been loaded into the database yet. "
-                    f"The system attempted to auto-fetch it but may have failed. "
-                    f"Please ensure the ticker format is correct (e.g., '2330.TW' for TSMC) "
-                    f"and that financial data has been scraped and stored."
+                    f"The system is currently auto-fetching it from online sources. "
+                    f"Please wait a moment while we update the database."
                 )
             else:
                 context['valuation'] = results
@@ -84,3 +87,13 @@ def valuation_api(request, symbol):
         return JsonResponse(results)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+def valuation_refresh_status_api(request, symbol):
+    """
+    API endpoint to check background sync progress of a ticker.
+    """
+    from stock_Django.data_freshness import get_refresh_status
+    status_info = get_refresh_status(symbol)
+    return JsonResponse(status_info)
+

@@ -210,7 +210,7 @@ def refresh_data_background(ticker: str, is_tw: bool):
             loader = FinancialDataLoader(ticker)
             # Use executor with timeout to prevent hanging on slow scrapers (Playwright)
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(loader.ensure_data_freshness)
+                future = executor.submit(loader.ensure_data_freshness_sync)
                 try:
                     future.result(timeout=30) # 30s limit for scraping
                     _set_status(ticker, 'running', 90, '✅ 財報資料更新完成')
@@ -463,5 +463,184 @@ def refresh_us_investor_background(tickers: list = None):
             
         _set_status(label, 'done', 100, f'✅ 美股市場 {len(tickers)} 檔法人持股更新完成')
     except Exception as e:
-        logger.error(f"US Investor refresh failed: {e}")
         _set_status(label, 'error', 0, f'❌ 更新失敗: {e}')
+
+
+def sync_market_metrics_task(engine) -> dict:
+    """
+    定期（每日下午 5:00）同步台股（由 twse-cli / tpex-cli）與美股（由 yfinance）的最新指標，
+    並大量寫入 stock_metrics 資料表。
+    """
+    import os
+    import subprocess
+    import json
+    import re
+    import time
+    from pathlib import Path
+    import platform
+    from sqlalchemy import text
+    import yfinance as yf
+    from curl_cffi.requests import Session as CurlSession
+
+    logger.info("[Metrics] Starting sync_market_metrics_task...")
+    summary = {"tw_synced": 0, "us_synced": 0, "errors": []}
+
+    current_file_dir = Path(__file__).resolve().parent
+    _CLI_BASE_DIR = current_file_dir.parents[1] / "twse-cli-v2" / "bin"
+    _CLI_EXE = str(_CLI_BASE_DIR / ("twse-cli.exe" if platform.system() == "Windows" else "twse-cli"))
+    if not Path(_CLI_EXE).exists():
+        _CLI_EXE = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+
+    _TPEX_CLI_BASE_DIR = current_file_dir.parents[1] / "tpex-cli" / "bin"
+    _TPEX_CLI_EXE = str(_TPEX_CLI_BASE_DIR / ("tpex-pp-cli.exe" if platform.system() == "Windows" else "tpex-pp-cli"))
+    if not Path(_TPEX_CLI_EXE).exists():
+        _TPEX_CLI_EXE = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+
+    def safe_float(val):
+        try:
+            return float(val) if val and str(val).strip() not in ["", "-", "N/A"] else None
+        except:
+            return None
+
+    # --- 台股上市 ---
+    if Path(_CLI_EXE).exists():
+        try:
+            cmd = [_CLI_EXE, "exchange-report", "list-exchangereport-3",
+                   "--json", "--no-color", "--no-input", "--yes"]
+            process = subprocess.run(cmd, capture_output=True, timeout=60)
+            raw_text = process.stdout.decode("utf-8", errors="replace")
+            cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw_text)
+            parsed = json.loads(cleaned)
+            all_stocks = parsed.get("results", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+
+            tw_data = []
+            for item in all_stocks:
+                symbol = str(item.get("Code", item.get("證券代號", ""))).strip()
+                if not symbol:
+                    continue
+                pe = safe_float(item.get("PEratio"))
+                pb = safe_float(item.get("PBratio"))
+                dy = safe_float(item.get("DividendYield"))
+                tw_data.append({"market": "tw", "symbol": symbol, "pe": pe, "pb": pb, "dy": dy})
+
+            if tw_data:
+                query = text("""
+                    INSERT INTO stock_metrics (market, symbol, pe, pb, dividend_yield, updated_at)
+                    VALUES (:market, :symbol, :pe, :pb, :dy, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        pe = VALUES(pe), 
+                        pb = VALUES(pb), 
+                        dividend_yield = VALUES(dividend_yield),
+                        updated_at = NOW()
+                """)
+                with engine.connect() as conn:
+                    batch_size = 100
+                    for i in range(0, len(tw_data), batch_size):
+                        batch = tw_data[i:i+batch_size]
+                        conn.execute(query, batch)
+                    conn.commit()
+                summary["tw_synced"] += len(tw_data)
+                logger.info(f"[Metrics] Synced {len(tw_data)} TWSE stock metrics.")
+        except Exception as e:
+            logger.error(f"Failed to sync TWSE metrics: {e}")
+            summary["errors"].append(f"TWSE sync error: {str(e)}")
+    else:
+        logger.warning(f"twse-cli not found at {_CLI_EXE}")
+
+    # --- 台股上櫃 ---
+    if Path(_TPEX_CLI_EXE).exists():
+        try:
+            cmd = [_TPEX_CLI_EXE, "tpex-mainboard-peratio-analysis", "list",
+                   "--json", "--no-color", "--no-input", "--yes"]
+            process = subprocess.run(cmd, capture_output=True, timeout=60)
+            raw_text = process.stdout.decode("utf-8", errors="replace")
+            cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw_text)
+            parsed = json.loads(cleaned)
+            all_stocks = parsed.get("results", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+
+            tw_otc_data = []
+            for item in all_stocks:
+                symbol = str(item.get("SecuritiesCompanyCode", "")).strip()
+                if not symbol:
+                    continue
+                pe = safe_float(item.get("PriceEarningRatio"))
+                pb = safe_float(item.get("PriceBookRatio"))
+                dy = safe_float(item.get("YieldRatio"))
+                tw_otc_data.append({"market": "tw", "symbol": symbol, "pe": pe, "pb": pb, "dy": dy})
+
+            if tw_otc_data:
+                query = text("""
+                    INSERT INTO stock_metrics (market, symbol, pe, pb, dividend_yield, updated_at)
+                    VALUES (:market, :symbol, :pe, :pb, :dy, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        pe = VALUES(pe), 
+                        pb = VALUES(pb), 
+                        dividend_yield = VALUES(dividend_yield),
+                        updated_at = NOW()
+                """)
+                with engine.connect() as conn:
+                    batch_size = 100
+                    for i in range(0, len(tw_otc_data), batch_size):
+                        batch = tw_otc_data[i:i+batch_size]
+                        conn.execute(query, batch)
+                    conn.commit()
+                summary["tw_synced"] += len(tw_otc_data)
+                logger.info(f"[Metrics] Synced {len(tw_otc_data)} TPEx stock metrics.")
+        except Exception as e:
+            logger.error(f"Failed to sync TPEx metrics: {e}")
+            summary["errors"].append(f"TPEx sync error: {str(e)}")
+    else:
+        logger.warning(f"tpex-cli not found at {_TPEX_CLI_EXE}")
+
+    # --- 美股 ---
+    try:
+        with engine.connect() as conn:
+            # 僅獲取已載入歷史價格的活躍美股，防止大批量查詢觸發 yfinance 限流
+            rows = conn.execute(text("SELECT DISTINCT number FROM stock_cost_us")).fetchall()
+            us_symbols = [r[0].strip().upper() for r in rows if r[0]]
+
+        if us_symbols:
+            logger.info(f"[Metrics] Syncing metrics for {len(us_symbols)} US stocks using yfinance...")
+            yf_session = CurlSession(verify=False)
+            us_data = []
+            for ticker in us_symbols:
+                try:
+                    t_obj = yf.Ticker(ticker, session=yf_session)
+                    info = t_obj.info
+                    pe = info.get('trailingPE')
+                    pb = info.get('priceToBook')
+                    dy = info.get('dividendYield')
+                    if dy is not None:
+                        dy = float(dy) * 100
+                    pe = float(pe) if pe is not None else None
+                    pb = float(pb) if pb is not None else None
+
+                    us_data.append({"market": "us", "symbol": ticker, "pe": pe, "pb": pb, "dy": dy})
+                    time.sleep(0.5)
+                except Exception as e_t:
+                    logger.warning(f"Failed to fetch metrics for US ticker {ticker}: {e_t}")
+
+            if us_data:
+                query = text("""
+                    INSERT INTO stock_metrics (market, symbol, pe, pb, dividend_yield, updated_at)
+                    VALUES (:market, :symbol, :pe, :pb, :dy, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        pe = VALUES(pe), 
+                        pb = VALUES(pb), 
+                        dividend_yield = VALUES(dividend_yield),
+                        updated_at = NOW()
+                """)
+                with engine.connect() as conn:
+                    batch_size = 100
+                    for i in range(0, len(us_data), batch_size):
+                        batch = us_data[i:i+batch_size]
+                        conn.execute(query, batch)
+                    conn.commit()
+                summary["us_synced"] += len(us_data)
+                logger.info(f"[Metrics] Synced {len(us_data)} US stock metrics.")
+    except Exception as e:
+        logger.error(f"Failed to sync US metrics: {e}")
+        summary["errors"].append(f"US sync error: {str(e)}")
+
+    return summary
+

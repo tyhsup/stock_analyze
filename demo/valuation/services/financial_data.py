@@ -86,8 +86,8 @@ class FinancialDataLoader:
         self.cache_dir = Path(__file__).parent / ".cache"
         self.cache_dir.mkdir(exist_ok=True)
 
-    def ensure_data_freshness(self):
-        """檢查資料是否為最新，若非最新則自動抓取更新"""
+    def ensure_data_freshness_sync(self):
+        """檢查資料是否為最新，若非最新則自動抓取更新（同步阻塞）"""
         table_name = f"financial_raw_{self.market}"
         # 取得資料庫中該股最晚的年份與季度，以及總季數
         query = f"SELECT MAX(year * 10 + quarter) as latest_val, COUNT(DISTINCT year * 10 + quarter) as q_count FROM {table_name} WHERE symbol = :symbol"
@@ -150,8 +150,45 @@ class FinancialDataLoader:
             except Exception as e:
                 logger.error(f"Failed to auto-update {self.symbol}: {e}")
 
+    def ensure_data_freshness(self):
+        """檢查資料是否為最新，若非最新則在背景非同步啟動更新"""
+        table_name = f"financial_raw_{self.market}"
+        query = f"SELECT MAX(year * 10 + quarter) as latest_val, COUNT(DISTINCT year * 10 + quarter) as q_count FROM {table_name} WHERE symbol = :symbol"
+        with self.op.engine.connect() as conn:
+            row = conn.execute(text(query), {"symbol": self.symbol}).fetchone()
+            latest_db_val = row[0] if row and row[0] else 0
+            q_count = row[1] if row and row[1] else 0
+            
+        now = datetime.datetime.now()
+        cur_year = now.year
+        cur_month = now.month
+        
+        if self.market == 'tw':
+            if cur_month >= 4: target_year, target_q = cur_year - 1, 4
+            if cur_month >= 6: target_year, target_q = cur_year, 1
+            if cur_month >= 9: target_year, target_q = cur_year, 2
+            if cur_month >= 12: target_year, target_q = cur_year, 3
+            if cur_month < 4: target_year, target_q = cur_year - 1, 3
+        else:
+            if cur_month in [1, 2]: target_year, target_q = cur_year - 1, 3
+            elif cur_month in [3, 4, 5]: target_year, target_q = cur_year - 1, 4
+            elif cur_month in [6, 7, 8]: target_year, target_q = cur_year, 1
+            elif cur_month in [9, 10, 11]: target_year, target_q = cur_year, 2
+            else: target_year, target_q = cur_year, 3
+
+        target_val = target_year * 10 + target_q
+        
+        if latest_db_val < target_val or q_count < 4:
+            logger.info(f"[Freshness] Financial data for {self.symbol} is stale/incomplete. Triggering background refresh.")
+            from stock_Django.data_freshness import trigger_refresh_if_stale
+            is_tw = self.market == 'tw'
+            trigger_refresh_if_stale(self.full_symbol, is_tw, self.op.engine)
+
     def get_full_financials(self):
-        """從 MySQL 讀取原始數據並轉換為 DataFrame 格式"""
+        """從 MySQL 讀取原始數據並轉換為 DataFrame 格式 (加入實例級快取)"""
+        if hasattr(self, '_cached_financials'):
+            return self._cached_financials
+
         self.ensure_data_freshness()
         
         table_name = f"financial_raw_{self.market}"
@@ -162,7 +199,9 @@ class FinancialDataLoader:
         
         if df.empty:
             logger.error(f"No financial data found in local MySQL for {self.symbol}. Please run the scraper first.")
-            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            empty_res = (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+            self._cached_financials = empty_res
+            return empty_res
         
         logger.info(f"Successfully loaded {len(df)} financial items from local MySQL for {self.symbol}")
         
@@ -181,7 +220,9 @@ class FinancialDataLoader:
             pivoted_all = df.pivot_table(index='date', columns='item_name', values='amount', aggfunc='first')
             pivoted_all = pivoted_all.sort_index()
             # 為了相容性，讓 IS, BS, CF 都回傳整張表 (在 extract_projection_start 中 mapping 會處理)
-            return pivoted_all, pivoted_all, pivoted_all
+            res = (pivoted_all, pivoted_all, pivoted_all)
+            self._cached_financials = res
+            return res
             
         dfs = {}
         for st in ['IS', 'BS', 'CF']:
@@ -193,7 +234,9 @@ class FinancialDataLoader:
             else:
                 dfs[st] = pd.DataFrame()
                 
-        return dfs.get('IS'), dfs.get('BS'), dfs.get('CF')
+        res = (dfs.get('IS'), dfs.get('BS'), dfs.get('CF'))
+        self._cached_financials = res
+        return res
 
     def _get_financials_from_yfinance(self):
         """
@@ -586,7 +629,7 @@ class FinancialDataLoader:
         query = text(f"""
             SELECT Close 
             FROM {table_name} 
-            WHERE TRIM(number) = :symbol 
+            WHERE number = :symbol 
             ORDER BY Date DESC
             LIMIT 1
         """)
@@ -794,14 +837,32 @@ class FinancialDataLoader:
             "dividend_yield": safe_float(target.get("YieldRatio"))
         }
 
-    def get_historical_multiples(self):
-        """估算歷史平均 P/E 與 EV/EBITDA。台股優先使用 twse-cli 官方數據。
+    def _get_metrics_from_db(self) -> dict:
+        """從 MySQL stock_metrics 表格中取得本益比、股價淨值比與殖利率數據。"""
+        query = text("""
+            SELECT pe, pb, dividend_yield 
+            FROM stock_metrics 
+            WHERE market = :market AND symbol = :symbol
+        """)
+        try:
+            with self.op.engine.connect() as conn:
+                row = conn.execute(query, {"market": self.market, "symbol": self.symbol}).fetchone()
+                if row:
+                    return {
+                        "pe": float(row[0]) if row[0] is not None else None,
+                        "pb": float(row[1]) if row[1] is not None else None,
+                        "dividend_yield": float(row[2]) if row[2] is not None else None
+                    }
+        except Exception as e:
+            logger.error(f"Error fetching from stock_metrics: {e}")
+        return {}
 
-        資料優先順序 (台股)：
-            Tier 1: twse-cli (exchange-report) → 證交所官方即時 PE
+    def get_historical_multiples(self):
+        """估算歷史平均 P/E 與 EV/EBITDA。優先使用資料庫儲存的官方數據。
+
+        資料優先順序：
+            Tier 1: stock_metrics 資料表 (定時排程同步)
             Tier 2: 本地歷史計算 (TTM EPS + 當前收盤價)
-        美股：
-            Tier 1: 本地歷史計算 (TTM EPS + 當前收盤價)
         """
         # 1. 獲取財務數據
         start_data = self.extract_projection_start()
@@ -817,26 +878,21 @@ class FinancialDataLoader:
         eps = start_data['net_income'] / max(start_data['shares_outstanding'], 1)
         current_pe = current_price / eps if eps > 0 else 15
 
-        # 4. 台股：優先使用 twse-cli/tpex-cli 的官方 PE (Tier 1)
-        avg_pe = max(min(current_pe, 30), 10)  # 本地計算預設值 (Tier 2)
-        twse_info = {}
-        if self.market == 'tw':
-            if self.full_symbol.endswith('.TWO'):
-                twse_info = self._get_tpex_cli_info()
-            else:
-                twse_info = self._get_twse_cli_info()
-            twse_pe = twse_info.get('pe')
-            if twse_pe and 3.0 < twse_pe < 200.0:  # 排除明顯異常值
-                avg_pe = max(min(float(twse_pe), 80), 5)  # 台股 PE 範圍放寬至 5~80
-                logger.info(
-                    f"{self.symbol}: 使用 twse-cli 官方 PE = {avg_pe:.2f} "
-                    f"(本地估算 = {current_pe:.2f})"
-                )
-            else:
-                logger.debug(
-                    f"{self.symbol}: twse-cli PE 不可用或超出範圍 ({twse_pe})，"
-                    f"使用本地估算 PE = {avg_pe:.2f}"
-                )
+        # 4. 優先自資料庫取得最新指標數據，移除即時 CLI 的阻塞呼叫
+        db_metrics = self._get_metrics_from_db()
+        pe_val = db_metrics.get('pe')
+        
+        if pe_val and 3.0 < pe_val < 200.0:  # 排除明顯異常值
+            avg_pe = max(min(float(pe_val), 80), 5)  # PE 範圍限制在 5~80
+            logger.info(
+                f"{self.symbol}: 使用資料表最新 PE = {avg_pe:.2f} "
+                f"(本地估算 = {current_pe:.2f})"
+            )
+        else:
+            avg_pe = max(min(current_pe, 30), 10)  # 本地計算預設值 (Tier 2)
+            logger.info(
+                f"{self.symbol}: 使用本地估算 PE = {avg_pe:.2f}"
+            )
 
         # 5. 計算 EV/EBITDA
         ebitda = start_data['ebitda']
@@ -850,8 +906,9 @@ class FinancialDataLoader:
             'ev_ebitda': avg_ev_ebitda,
             'current_pe': current_pe,
             'current_ev_ebitda': current_ev_ebitda,
-            # twse-cli 數據（若有）附於回傳值供外部使用
-            'twse_pe': twse_info.get('pe'),
-            'twse_pb': twse_info.get('pb'),
-            'twse_dividend_yield': twse_info.get('dividend_yield'),
+            # 回傳儲存的數據以供外部前端使用
+            'twse_pe': db_metrics.get('pe'),
+            'twse_pb': db_metrics.get('pb'),
+            'twse_dividend_yield': db_metrics.get('dividend_yield'),
         }
+

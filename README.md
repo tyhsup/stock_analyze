@@ -32,6 +32,19 @@ Built with the Django backend framework and a local MySQL database, the platform
 
 ---
 
+## Recent Performance Optimizations
+
+To deliver a professional-grade user experience, the platform was optimized to solve significant data loading and query bottlenecks:
+1. **Asynchronous Non-blocking Operations**: Modified the financial data refresh process. Instead of blocking the Web thread during network scraping, the crawler tasks are delegated to background worker threads, instantly returning a transition page to the user.
+2. **Unified Metrics Pre-calculation**: Designed and migrated a unified `stock_metrics` table. A daily cron task runs at 5:00 PM to bulk synchronizes PE, PB, and Dividend Yield metrics for TW and US stocks, bypassing high-overhead real-time CLI subprocess calls.
+3. **Database Index & Query Tuning**: Replaced index-disabling `TRIM(number) = :symbol` queries in the WACC calculator and pricing modules with indexed `number = :symbol` lookups. This eliminated full table scans, reducing a single DB query from **7.02s** to **0.03s** (a **230x speedup**).
+4. **Multi-level Caching**: Integrated Django Cache to store sentiment premium Excel evaluations (TTL = 10m) to reduce redundant physical disk IO, combined with instance-level ORM query caching.
+5. **AJAX Polling & Smooth Transition UI**: Implemented a progress bar and a 3-second AJAX polling mechanism in `detail.html` that automatically reloads the page once background updates complete.
+
+*These optimizations reduced the mocked page valuation calculation load time from **37.6s** to **188ms** (a **200x overall performance boost**).*
+
+---
+
 ## Technology Stack
 
 * **Frontend**

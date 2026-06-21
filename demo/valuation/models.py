@@ -34,3 +34,23 @@ class ValuationResult(models.Model):
 
     def __str__(self):
         return f"{self.symbol} ({self.market}) - {self.method}: {self.fair_value}"
+
+
+class StockMetrics(models.Model):
+    market = models.CharField(max_length=10)  # 'tw' 或 'us'
+    symbol = models.CharField(max_length=20)
+    pe = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    pb = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    dividend_yield = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'stock_metrics'
+        unique_together = ('market', 'symbol')
+        indexes = [
+            models.Index(fields=['market', 'symbol']),
+        ]
+
+    def __str__(self):
+        return f"{self.market} - {self.symbol}: PE={self.pe}, PB={self.pb}"
+

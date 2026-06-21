@@ -112,18 +112,26 @@ class ValuationService:
             
             # --- 8. 優化：加入情緒溢價 (Sentiment Premium) ---
             # 根據新聞情緒強度，為估值提供 +/- 5% 的動態空間
+            # 使用 Django Cache 快取此情緒溢價數值以降低 Excel 磁碟 IO 負擔 (TTL = 10分鐘)
             sentiment_premium = 1.0
             try:
-                from stock_Django.news_excel import NewsExcelManager
-                news_mgr = NewsExcelManager()
-                recent_news = news_mgr.read_news(ticker_symbol, limit=20)
-                if recent_news:
-                    pos_count = sum(1 for n in recent_news if n.get('正負分析') == '正面')
-                    neg_count = sum(1 for n in recent_news if n.get('正負分析') == '負面')
-                    if pos_count > neg_count * 2:
-                         sentiment_premium = 1.05 # 利多溢價
-                    elif neg_count > pos_count * 2:
-                         sentiment_premium = 0.95 # 利空折價
+                from django.core.cache import cache
+                cache_key = f"sentiment_premium_{ticker_symbol}"
+                cached_premium = cache.get(cache_key)
+                if cached_premium is not None:
+                    sentiment_premium = cached_premium
+                else:
+                    from stock_Django.news_excel import NewsExcelManager
+                    news_mgr = NewsExcelManager()
+                    recent_news = news_mgr.read_news(ticker_symbol, limit=20)
+                    if recent_news:
+                        pos_count = sum(1 for n in recent_news if n.get('正負分析') == '正面')
+                        neg_count = sum(1 for n in recent_news if n.get('正負分析') == '負面')
+                        if pos_count > neg_count * 2:
+                             sentiment_premium = 1.05 # 利多溢價
+                        elif neg_count > pos_count * 2:
+                             sentiment_premium = 0.95 # 利空折價
+                    cache.set(cache_key, sentiment_premium, 600)
             except Exception as e_s:
                 logger.debug(f"Sentiment premium calculation skipped: {e_s}")
 

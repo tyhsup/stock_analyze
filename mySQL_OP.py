@@ -11,6 +11,9 @@ load_dotenv(dotenv_path='demo/stock_Django/.env')
 logger = logging.getLogger(__name__)
 
 class OP_Fun:
+    _engine = None
+    _db_config = None
+
     def __init__(self):
         self.db_config = {
             'host': os.getenv('DB_HOST', 'localhost'),
@@ -19,11 +22,13 @@ class OP_Fun:
             'password': os.getenv('DB_PASSWORD', ''),
             'database': os.getenv('DB_NAME', 'stock_tw_analyse')
         }
-        self.engine = create_engine(
-            f"mysql+pymysql://{self.db_config['user']}:{self.db_config['password']}@"
-            f"{self.db_config['host']}:{self.db_config['port']}/{self.db_config['database']}",
-            pool_size=5, max_overflow=10, pool_recycle=3600
-        )
+        if OP_Fun._engine is None:
+            OP_Fun._engine = create_engine(
+                f"mysql+pymysql://{self.db_config['user']}:{self.db_config['password']}@"
+                f"{self.db_config['host']}:{self.db_config['port']}/{self.db_config['database']}",
+                pool_size=10, max_overflow=20, pool_recycle=3600
+            )
+        self.engine = OP_Fun._engine
 
     def upload_all(self, data, table_name):
         """優化後的通用上傳函式，支援 ON DUPLICATE KEY UPDATE 與自動欄位遷移"""
