@@ -185,17 +185,23 @@ class StockCostManager:
             soup = BeautifulSoup(driver.page_source, "lxml")
             tr = soup.find_all('tr')
             
-            stock_numbers = []
+            target_types = ['股票', '特別股', '創新板', 'ETF', '臺灣存託憑證(TDR)']
+            current_type = ""
+            stock_list = []
             for row in tr:
                 tds = [td.get_text().strip() for td in row.find_all("td")]
-                if len(tds) == 7 and '　' in tds[0]:
+                if len(tds) == 1:
+                    current_type = "".join(tds[0].split())
+                elif len(tds) == 7 and '　' in tds[0]:
                     if '有價證券代號' in tds[0]: continue
-                    data_number = tds[0].split('　')[0].strip()
-                    # 只抓取 4 位數的股票 (排除權證等)
-                    if data_number.isdigit() and len(data_number) == 4:
-                        stock_numbers.append(data_number)
+                    if current_type in target_types:
+                        parts = tds[0].split('　')
+                        data_number = parts[0].strip()
+                        data_name = parts[1].strip() if len(parts) > 1 else ""
+                        if 4 <= len(data_number) <= 6:
+                            stock_list.append((data_number, data_name))
             driver.quit()
-            return stock_numbers
+            return stock_list
         except Exception as e:
             logger.error(f"抓取 {url} 股票清單失敗: {e}")
             return []
@@ -225,18 +231,26 @@ class StockCostManager:
             soup = BeautifulSoup(resp.text, "lxml")
             tr = soup.find_all('tr')
             
-            stock_numbers = []
+            target_types = ['股票', '特別股', '創新板', 'ETF', '臺灣存託憑證(TDR)']
+            current_type = ""
+            stock_list = []
             for row in tr:
                 tds = [td.get_text().strip() for td in row.find_all("td")]
-                if len(tds) >= 1 and '　' in tds[0]:
-                    data_number = tds[0].split('　')[0].strip()
-                    if data_number.isdigit() and len(data_number) == 4:
-                        stock_numbers.append(data_number)
+                if len(tds) == 1:
+                    current_type = "".join(tds[0].split())
+                elif len(tds) >= 7 and '　' in tds[0]:
+                    if '有價證券代號' in tds[0]: continue
+                    if current_type in target_types:
+                        parts = tds[0].split('　')
+                        data_number = parts[0].strip()
+                        data_name = parts[1].strip() if len(parts) > 1 else ""
+                        if 4 <= len(data_number) <= 6:
+                            stock_list.append((data_number, data_name))
             
-            if not stock_numbers:
+            if not stock_list:
                 raise ValueError("無法解析出有效的股票代碼")
                 
-            return stock_numbers
+            return stock_list
         except Exception as e:
             logger.warning(f"Fast Scraping 失敗 ({url}): {e}")
             return []
@@ -264,17 +278,17 @@ class StockCostManager:
         logger.info(f"成功取得清單: 上市 {len(listed_codes)} 支, 上櫃 {len(otc_codes)} 支")
         
         all_stocks = []
-        for code in listed_codes:
-            all_stocks.append({"code": code, "suffix": ".TW"})
-        for code in otc_codes:
-            all_stocks.append({"code": code, "suffix": ".TWO"})
+        for code, name in listed_codes:
+            all_stocks.append({"code": code, "name": name, "suffix": ".TW", "market": "sii"})
+        for code, name in otc_codes:
+            all_stocks.append({"code": code, "name": name, "suffix": ".TWO", "market": "otc"})
             
         return all_stocks
 
     def fetch_latest_stock_list(self):
         """保持向後相容性，原本只回傳上市代碼"""
         listed_url = 'http://isin.twse.com.tw/isin/C_public.jsp?strMode=2'
-        return self._scrape_stock_codes(listed_url)
+        return [item[0] for item in self._scrape_stock_codes(listed_url)]
 
     def get_stock_stats(self, table_name: str, ticker: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """獲取資料庫中各股票的統計資料 (最後日期、最早日期、筆數)。
