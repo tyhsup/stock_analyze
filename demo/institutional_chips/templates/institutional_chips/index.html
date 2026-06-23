@@ -74,63 +74,194 @@
 </div>
 {% endif %}
 
-<!-- Section 1: Market Leaders & Laggards (Top 10 Buyers/Sellers) -->
-<div class="row mb-4">
-    <div class="col-12 mb-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
-                <div class="bg-success bg-opacity-10 p-2 rounded me-3">
-                    <i class="bi bi-graph-up-arrow text-success fs-5"></i>
-                </div>
-                <h5 class="card-title fw-bold mb-0">Institutional Buy - Top 10 Buyers</h5>
-            </div>
-            <div class="card-body">
-                <div id="top-buyers-chart" style="min-height: 500px;"></div>
-                <div class="mt-3 small text-muted">Showing combined net buying volume from the 3 major institutions (TW Market).</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
-                <div class="bg-danger bg-opacity-10 p-2 rounded me-3">
-                    <i class="bi bi-graph-down-arrow text-danger fs-5"></i>
-                </div>
-                <h5 class="card-title fw-bold mb-0">Institutional Sell - Top 10 Sellers</h5>
-            </div>
-            <div class="card-body">
-                <div id="top-sellers-chart" style="min-height: 500px;"></div>
-                <div class="mt-3 small text-muted">Showing combined net selling volume from the 3 major institutions (TW Market).</div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Sub Tabs for Taiwan Market -->
+<ul class="nav nav-tabs mb-4" id="tw-sub-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active fw-bold" id="tw-chips-tab" data-bs-toggle="tab" data-bs-target="#tw-chips-panel" type="button" role="tab" aria-controls="tw-chips-panel" aria-selected="true">
+            <i class="bi bi-bar-chart-steps me-1"></i> 籌碼買賣超
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-industry-tab" data-bs-toggle="tab" data-bs-target="#tw-industry-panel" type="button" role="tab" aria-controls="tw-industry-panel" aria-selected="false">
+            <i class="bi bi-grid-3x3-gap me-1"></i> 產業資金流向
+        </button>
+    </li>
+</ul>
 
-<!-- Section 2: TOP 5 Institutional Chips - Last 5 Days (Individual Charts) -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
-                <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
-                    <i class="bi bi-layers-half text-primary fs-5"></i>
-                </div>
-                <h5 class="card-title fw-bold mb-0">TOP 5 Institutional Investor Activity - Last 5 Days</h5>
-            </div>
-            <div class="card-body">
-                <div class="row" id="top-5-container">
-                    <!-- JavaScript will inject charts here -->
-                    <div class="col-12 text-center py-5" id="top-5-loader">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading charts...</span>
+<div class="tab-content" id="tw-sub-tabs-content">
+    <!-- Tab Panel 1: 籌碼買賣超 -->
+    <div class="tab-pane fade show active" id="tw-chips-panel" role="tabpanel" aria-labelledby="tw-chips-tab">
+        <!-- Section 1: Market Leaders & Laggards (Top 10 Buyers/Sellers) -->
+        <div class="row mb-4">
+            <div class="col-12 mb-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-graph-up-arrow text-success fs-5"></i>
                         </div>
-                        <p class="mt-2 text-muted">Generating per-stock chip analysis...</p>
+                        <h5 class="card-title fw-bold mb-0">Institutional Buy - Top 10 Buyers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="top-buyers-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted">Showing combined net buying volume from the 3 major institutions (TW Market).</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-danger bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-graph-down-arrow text-danger fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">Institutional Sell - Top 10 Sellers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="top-sellers-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted">Showing combined net selling volume from the 3 major institutions (TW Market).</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: TOP 5 Institutional Chips - Last 5 Days (Individual Charts) -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-layers-half text-primary fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">TOP 5 Institutional Investor Activity - Last 5 Days</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="top-5-container">
+                            <!-- JavaScript will inject charts here -->
+                            <div class="col-12 text-center py-5" id="top-5-loader">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading charts...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Generating per-stock chip analysis...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Panel 2: 產業資金流向 -->
+    <div class="tab-pane fade" id="tw-industry-panel" role="tabpanel" aria-labelledby="tw-industry-tab">
+        <!-- Control Bar -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm p-4 bg-light">
+                    <div class="row align-items-center g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold mb-2"><i class="bi bi-calendar-range me-1 text-primary"></i> 分析天數</label>
+                            <div class="btn-group w-100" role="group" id="days-btn-group">
+                                <button type="button" class="btn btn-outline-primary" data-days="1">1 天</button>
+                                <button type="button" class="btn btn-outline-primary" data-days="5">5 天</button>
+                                <button type="button" class="btn btn-outline-primary active" data-days="10">10 天</button>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold mb-2"><i class="bi bi-sliders me-1 text-primary"></i> 籌碼評分模型權重調整</label>
+                            <div class="row g-2">
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>法人力道:</span> <span id="w1-val" class="fw-bold">50%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w1-slider" min="0" max="100" value="50">
+                                </div>
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>連續天數:</span> <span id="w2-val" class="fw-bold">30%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w2-slider" min="0" max="100" value="30">
+                                </div>
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>資券沉澱:</span> <span id="w3-val" class="fw-bold">20%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w3-slider" min="0" max="100" value="20">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="button" class="btn btn-primary px-4 shadow-sm hover-scale rounded-pill fw-bold" id="btn-recalculate-flow">
+                            <i class="bi bi-arrow-repeat me-1"></i> 重新計算
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Heatmap Treemap -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm position-relative">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-grid-3x3-gap text-success fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">產業資金流向熱力圖</h5>
+                    </div>
+                    <div class="card-body position-relative">
+                        <div id="industry-flow-loader" class="position-absolute top-50 start-50 translate-middle text-center py-5 d-none" style="z-index: 10; background: rgba(255,255,255,0.8); width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 1rem;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading data...</span>
+                            </div>
+                            <p class="mt-2 text-muted fw-bold">計算產業籌碼與評分中...</p>
+                        </div>
+                        <div id="industry-treemap-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted d-flex justify-content-between align-items-center flex-wrap">
+                            <span>提示：區塊面積代表「產業總成交值」，顏色深淺代表「三大法人淨流入金額」（紅買超/綠賣超/灰中性）</span>
+                            <span class="fw-bold"><i class="bi bi-info-circle text-primary"></i> 點擊產業區塊可展開下方個股排行</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top 10 Stocks Table Card -->
+        <div class="row d-none mb-4" id="top-stocks-row">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm border-top border-4 border-primary">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-trophy text-warning fs-5"></i>
+                            </div>
+                            <h5 class="card-title fw-bold mb-0" id="top-stocks-title">最受看好前 10 家公司</h5>
+                        </div>
+                        <span class="badge bg-primary rounded-pill px-3 py-2 fw-bold" id="top-stocks-badge">篩選出 10 檔個股</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4" style="width: 80px;">排名</th>
+                                        <th style="width: 120px;">代號</th>
+                                        <th>名稱</th>
+                                        <th style="width: 140px;">收盤價</th>
+                                        <th style="width: 220px;">三大法人買賣超 (千元)</th>
+                                        <th style="width: 160px;">連續買超天數</th>
+                                        <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-stocks-tbody">
+                                    <!-- Injected dynamically by Javascript -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
-
     </div>
 
     <!-- USA Content -->
@@ -427,6 +558,202 @@
                     theme: { mode: chartThemeMode }
                 };
                 new ApexCharts(document.querySelector(`#chart-top5-${i}`), options).render();
+            });
+        }
+
+        // --- Industry Money Flow & Score Heatmap (Treemap) JS Logic ---
+        const w1Slider = document.getElementById('w1-slider');
+        const w2Slider = document.getElementById('w2-slider');
+        const w3Slider = document.getElementById('w3-slider');
+        const w1Val = document.getElementById('w1-val');
+        const w2Val = document.getElementById('w2-val');
+        const w3Val = document.getElementById('w3-val');
+        
+        function updateSliderLabels() {
+            w1Val.innerText = w1Slider.value + '%';
+            w2Val.innerText = w2Slider.value + '%';
+            w3Val.innerText = w3Slider.value + '%';
+        }
+        
+        if (w1Slider && w2Slider && w3Slider) {
+            w1Slider.addEventListener('input', updateSliderLabels);
+            w2Slider.addEventListener('input', updateSliderLabels);
+            w3Slider.addEventListener('input', updateSliderLabels);
+        }
+        
+        let selectedDays = 10;
+        const daysBtnGroup = document.getElementById('days-btn-group');
+        if (daysBtnGroup) {
+            daysBtnGroup.addEventListener('click', function(e) {
+                if (e.target.dataset.days) {
+                    Array.from(daysBtnGroup.children).forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                    selectedDays = parseInt(e.target.dataset.days);
+                }
+            });
+        }
+        
+        let treemapChart = null;
+        let cachedTopStocks = {};
+        
+        async function fetchIndustryFlow(days, w1, w2, w3) {
+            const loader = document.getElementById('industry-flow-loader');
+            if (loader) loader.classList.remove('d-none');
+            
+            try {
+                const response = await fetch(`api/industry-flow/?days=${days}&w1=${w1}&w2=${w2}&w3=${w3}`);
+                const data = await response.json();
+                
+                if (loader) loader.classList.add('d-none');
+                
+                if (data.error) {
+                    alert('Error calculating flow: ' + data.error);
+                    return;
+                }
+                
+                cachedTopStocks = data.top_stocks;
+                renderTreemap(data.industries);
+                
+                // Select first industry by default if exists
+                if (data.industries && data.industries.length > 0) {
+                    const sorted = [...data.industries].sort((a, b) => b.y - a.y);
+                    displayTopStocks(sorted[0].x);
+                } else {
+                    const row = document.getElementById('top-stocks-row');
+                    if (row) row.classList.add('d-none');
+                }
+                
+            } catch (err) {
+                if (loader) loader.classList.add('d-none');
+                console.error('Fetch flow error:', err);
+            }
+        }
+        
+        function renderTreemap(industries) {
+            const sortedData = [...industries].sort((a, b) => b.y - a.y);
+            
+            // Taiwan Standard: Red = Net Buy, Green = Net Sell, Gray = Neutral
+            const colors = sortedData.map(d => {
+                const flow = d.net_flow;
+                if (flow > 200000) return '#d32f2f';      // Deep Red
+                else if (flow > 20000) return '#ef5350';   // Light Red
+                else if (flow < -200000) return '#2e7d32'; // Deep Green
+                else if (flow < -20000) return '#66bb6a';  // Light Green
+                else return '#9e9e9e';                     // Neutral Gray
+            });
+            
+            const options = {
+                series: [{
+                    data: sortedData
+                }],
+                chart: {
+                    type: 'treemap',
+                    height: 500,
+                    toolbar: { show: false },
+                    events: {
+                        click: function(event, chartContext, config) {
+                            const dataPointIndex = config.dataPointIndex;
+                            const seriesIndex = config.seriesIndex;
+                            if (dataPointIndex !== undefined && dataPointIndex !== -1 && config.config) {
+                                const item = config.config.series[seriesIndex].data[dataPointIndex];
+                                displayTopStocks(item.x);
+                            }
+                        }
+                    }
+                },
+                plotOptions: {
+                    treemap: {
+                        distributed: true,
+                        enableShades: false
+                    }
+                },
+                colors: colors,
+                legend: { show: false },
+                theme: { mode: chartThemeMode },
+                tooltip: {
+                    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                        const d = w.config.series[seriesIndex].data[dataPointIndex];
+                        const flow = d.net_flow;
+                        const flowText = flow >= 0 ? '+' + (flow / 1000).toFixed(1) + 'M' : (flow / 1000).toFixed(1) + 'M';
+                        const flowClass = flow >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                        return `
+                            <div class="p-3 bg-white text-dark shadow rounded border-0" style="font-family: inherit;">
+                                <h6 class="fw-bold mb-2">${d.x}</h6>
+                                <div class="small text-muted mb-1">成交總值: <span class="fw-bold text-dark">${(d.y).toFixed(1)}M NTD</span></div>
+                                <div class="small text-muted">三大法人買賣超: <span class="${flowClass}">${flowText} NTD</span></div>
+                            </div>
+                        `;
+                    }
+                }
+            };
+            
+            const chartDiv = document.querySelector("#industry-treemap-chart");
+            if (chartDiv) {
+                if (treemapChart) {
+                    treemapChart.destroy();
+                }
+                treemapChart = new ApexCharts(chartDiv, options);
+                treemapChart.render();
+            }
+        }
+        
+        function displayTopStocks(industryName) {
+            const row = document.getElementById('top-stocks-row');
+            const title = document.getElementById('top-stocks-title');
+            const badge = document.getElementById('top-stocks-badge');
+            const tbody = document.getElementById('top-stocks-tbody');
+            
+            if (!row || !title || !badge || !tbody) return;
+            
+            const stocks = cachedTopStocks[industryName] || [];
+            
+            title.innerText = `${industryName} 最受看好前 10 家公司`;
+            badge.innerText = `篩選出 ${stocks.length} 檔個股`;
+            tbody.innerHTML = '';
+            
+            if (stocks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">該產業目前無符合多頭評分之個股</td></tr>';
+            } else {
+                stocks.forEach(s => {
+                    const flow = s.net_flow;
+                    const flowText = flow >= 0 ? '+' + (flow / 1000).toFixed(1) + 'M' : (flow / 1000).toFixed(1) + 'M';
+                    const flowClass = flow >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="ps-4 fw-bold text-muted">${s.rank}</td>
+                        <td><a href="/valuation/${s.number}.TW" class="fw-bold text-primary text-decoration-none">${s.number}</a></td>
+                        <td class="fw-bold text-dark">${s.name}</td>
+                        <td>$${s.close.toFixed(2)}</td>
+                        <td class="${flowClass}">${flowText}</td>
+                        <td>${s.consec_buys} 天</td>
+                        <td class="pe-4 text-end fw-bold text-primary fs-6">${s.score} 分</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            row.classList.remove('d-none');
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        // Sub-tab shown event to load industry flow
+        let flowLoaded = false;
+        const industryTabBtn = document.getElementById('tw-industry-tab');
+        if (industryTabBtn) {
+            industryTabBtn.addEventListener('shown.bs.tab', function () {
+                if (!flowLoaded) {
+                    fetchIndustryFlow(selectedDays, w1Slider.value / 100.0, w2Slider.value / 100.0, w3Slider.value / 100.0);
+                    flowLoaded = true;
+                }
+            });
+        }
+        
+        const btnRecalculate = document.getElementById('btn-recalculate-flow');
+        if (btnRecalculate) {
+            btnRecalculate.addEventListener('click', function() {
+                fetchIndustryFlow(selectedDays, w1Slider.value / 100.0, w2Slider.value / 100.0, w3Slider.value / 100.0);
+                flowLoaded = true;
             });
         }
     });

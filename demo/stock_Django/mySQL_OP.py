@@ -453,3 +453,129 @@ class OP_Fun:
         except Exception as e:
             logger.error(f"讀取語義向量快取失敗 ({symbol}): {e}")
             return {}
+
+    def get_industry_investor_summary(self, days: int) -> pd.DataFrame:
+        """
+        獲取台灣股市個股近 days 天的籌碼與價格統計資訊，用於產業資金流向分析與多頭個股評分。
+        """
+        try:
+            # 1. 取得最近的交易日期
+            recent_dates_query = """
+                SELECT DISTINCT date
+                FROM stock_investor
+                ORDER BY date DESC
+                LIMIT :days
+            """
+            recent_dates_df = pd.read_sql(text(recent_dates_query), con=self.engine, params={'days': int(days)})
+            if recent_dates_df.empty:
+                return pd.DataFrame()
+            
+            recent_dates = recent_dates_df['date'].tolist()
+            recent_dates_str = [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d) for d in recent_dates]
+            
+            # 2. 讀取三大法人買賣超資料 (已限制日期範圍)
+            df_investor = pd.read_sql(
+                text("SELECT * FROM stock_investor WHERE date IN :dates"),
+                con=self.engine,
+                params={'dates': tuple(recent_dates_str)}
+            )
+            if df_investor.empty:
+                return pd.DataFrame()
+                
+            df_investor = self._fix_investor_columns(df_investor)
+            df_investor['date_str'] = df_investor['日期'].astype(str)
+            
+            # 3. 讀取產業別對照資料
+            df_table_tw = pd.read_sql(
+                text("SELECT 有價證卷代號 AS symbol, 產業別 AS industry FROM stock_table_tw"),
+                con=self.engine
+            )
+            
+            # 4. 讀取歷史股價資料 (已限制日期範圍)
+            df_cost = pd.read_sql(
+                text("SELECT number, Date, Close, Volume FROM stock_cost WHERE Date IN :dates"),
+                con=self.engine,
+                params={'dates': tuple(recent_dates_str)}
+            )
+            if df_cost.empty:
+                return pd.DataFrame()
+            df_cost['date_str'] = df_cost['Date'].astype(str).str.split(' ').str[0]
+            df_cost['symbol_clean'] = df_cost['number'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
+            df_cost = df_cost.drop(columns=['number'])
+            
+            # 5. 讀取融資融券資料 (已限制日期範圍)
+            df_margin = pd.read_sql(
+                text("SELECT date, number, margin_balance, short_balance FROM stock_margin_balance WHERE date IN :dates"),
+                con=self.engine,
+                params={'dates': tuple(recent_dates_str)}
+            )
+            df_margin['date_str'] = df_margin['date'].astype(str)
+            
+            # 6. 在 Pandas 中進行合併 (避免資料庫無索引導致 full table JOIN 效能瓶頸)
+            df_merged = pd.merge(df_investor, df_table_tw, left_on='number', right_on='symbol', how='inner')
+            df_merged = pd.merge(df_merged, df_cost, left_on=['number', 'date_str'], right_on=['symbol_clean', 'date_str'], how='inner')
+            df_merged = pd.merge(df_merged, df_margin, left_on=['number', 'date_str'], right_on=['number', 'date_str'], how='left')
+            
+            if df_merged.empty:
+                return pd.DataFrame()
+                
+            # 7. 資料轉型與清洗
+            from stock_Django.stock_utils import StockUtils
+            industry_col = df_merged['industry'].copy()
+            date_str_col = df_merged['date_str'].copy()
+            
+            df_merged = StockUtils.transfer_numeric(df_merged)
+            df_merged['industry'] = industry_col
+            df_merged['date_str'] = date_str_col
+            
+            # 8. 排序並計算時間序列指標
+            df_sorted = df_merged.sort_values(by=['number', 'date_str'], ascending=True)
+            
+            # 計算連續買超天數 (三大法人買賣超股數 > 0)
+            def calc_consecutive_buys(series):
+                count = 0
+                for val in reversed(series.tolist()):
+                    if val > 0:
+                        count += 1
+                    else:
+                        break
+                return count
+                
+            consec_buys = df_sorted.groupby('number')['三大法人買賣超股數'].apply(calc_consecutive_buys)
+            
+            # 計算資券變動 (最新 - 最舊)
+            margin_latest = df_sorted.groupby('number')['margin_balance'].last()
+            margin_earliest = df_sorted.groupby('number')['margin_balance'].first()
+            margin_change = margin_latest - margin_earliest
+            
+            short_latest = df_sorted.groupby('number')['short_balance'].last()
+            short_earliest = df_sorted.groupby('number')['short_balance'].first()
+            short_change = short_latest - short_earliest
+            
+            # 計算期間法人買賣超總金額 (三大法人買賣超股數 * Close / 1000)
+            df_sorted['net_flow'] = df_sorted['三大法人買賣超股數'] * df_sorted['Close'] / 1000
+            df_sorted['volume_value'] = df_sorted['Volume'] * df_sorted['Close']
+            
+            net_flow_sum = df_sorted.groupby('number')['net_flow'].sum()
+            volume_value_sum = df_sorted.groupby('number')['volume_value'].sum()
+            total_net_buy = df_sorted.groupby('number')['三大法人買賣超股數'].sum()
+            total_volume = df_sorted.groupby('number')['Volume'].sum()
+            
+            # 取最後一天的股價與基本資料
+            latest_rows = df_sorted.groupby('number').last().copy()
+            
+            # 替換為累計與衍生欄位
+            latest_rows['consec_buys'] = consec_buys
+            latest_rows['margin_change'] = margin_change
+            latest_rows['short_change'] = short_change
+            latest_rows['accum_net_flow'] = net_flow_sum
+            latest_rows['accum_volume_value'] = volume_value_sum
+            latest_rows['total_net_buy'] = total_net_buy
+            latest_rows['total_volume'] = total_volume
+            
+            # 重設索引以方便後續處理
+            return latest_rows.reset_index()
+            
+        except Exception as e:
+            logger.error(f"get_industry_investor_summary 執行失敗: {e}")
+            return pd.DataFrame()

@@ -109,3 +109,127 @@ def refresh_status_api(request, market):
     label = "TW_ALL" if market.lower() == 'tw' else "US_ALL"
     status = data_freshness.get_refresh_status(label)
     return JsonResponse(status)
+
+
+from django.core.cache import cache
+import pandas as pd
+import numpy as np
+
+def api_industry_flow(request):
+    """
+    API endpoint returning industry money flow (treemap data) and top 10 stocks per industry.
+    """
+    try:
+        # 1. Parse GET parameters with fallbacks
+        days = int(request.GET.get('days', 10))
+        w1 = float(request.GET.get('w1', 0.5))
+        w2 = float(request.GET.get('w2', 0.3))
+        w3 = float(request.GET.get('w3', 0.2))
+        
+        # Clamp days between 1 and 30 to prevent abuse
+        days = max(1, min(30, days))
+        
+        # 2. Normalize weights
+        total_w = w1 + w2 + w3
+        if total_w > 0:
+            w1 /= total_w
+            w2 /= total_w
+            w3 /= total_w
+        else:
+            w1, w2, w3 = 0.5, 0.3, 0.2
+            
+        # 3. Check Cache
+        cache_key = f"industry_flow_{days}_{w1:.2f}_{w2:.2f}_{w3:.2f}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return JsonResponse(cached_data)
+            
+        # 4. Fetch summary from SQL OP
+        from stock_Django.mySQL_OP import OP_Fun
+        sql = OP_Fun()
+        df = sql.get_industry_investor_summary(days)
+        
+        if df.empty:
+            return JsonResponse({'industries': [], 'top_stocks': {}})
+            
+        # 5. Calculate scores for each stock
+        def normalize_series(series, default=50.0):
+            s_min = series.min()
+            s_max = series.max()
+            if s_max > s_min:
+                return (series - s_min) / (s_max - s_min) * 100
+            return series * 0.0 + default
+
+        # net buy ratio = total_net_buy / total_volume
+        df['net_buy_ratio'] = df.apply(
+            lambda r: r['total_net_buy'] / r['total_volume'] if r['total_volume'] > 0 else 0,
+            axis=1
+        )
+        
+        # Normalize factors
+        net_buy_score = normalize_series(df['net_buy_ratio'])
+        consec_score = normalize_series(df['consec_buys'])
+        
+        # Margin settlement score: decrease in margin, increase in short
+        margin_dec_score = normalize_series(-df['margin_change'])
+        short_inc_score = normalize_series(df['short_change'])
+        settlement_score = 0.5 * margin_dec_score + 0.5 * short_inc_score
+        
+        # Calculate total score
+        df['score'] = w1 * net_buy_score + w2 * consec_score + w3 * settlement_score
+        
+        # 6. Aggregate at Industry level
+        # Explicitly convert to string and strip spaces for safety
+        df['industry'] = df['industry'].astype(str).str.strip()
+        industry_groups = df.groupby('industry')
+        
+        treemap_data = []
+        top_stocks_by_industry = {}
+        
+        for name, group in industry_groups:
+            # Skip invalid or empty industry names
+            if not name or name in ['0', '0.0', 'nan', 'None', '']:
+                continue
+                
+            # Aggregate volume value and net flow
+            ind_net_flow = float(group['accum_net_flow'].sum())
+            ind_volume_value = float(group['accum_volume_value'].sum())
+            
+            # Format and append industry-level data point
+            # We scale volume_value to Millions for cleaner numbers in Treemap
+            treemap_data.append({
+                'x': str(name),
+                'y': round(ind_volume_value / 1000000.0, 2), # Unit: Millions
+                'net_flow': round(ind_net_flow, 2)            # Unit: Thousands NTD
+            })
+            
+            # Top 10 stocks ranking
+            top_10 = group.sort_values(by='score', ascending=False).head(10)
+            stocks_list = []
+            for i, (_, row) in enumerate(top_10.iterrows(), 1):
+                stocks_list.append({
+                    'rank': i,
+                    'number': str(row['number']),
+                    'name': str(row['證券名稱']),
+                    'close': float(row['Close']),
+                    'net_flow': float(row['accum_net_flow']),
+                    'consec_buys': int(row['consec_buys']),
+                    'score': round(float(row['score']), 1)
+                })
+            top_stocks_by_industry[str(name)] = stocks_list
+            
+        result = {
+            'industries': treemap_data,
+            'top_stocks': top_stocks_by_industry
+        }
+        
+        # Cache results for 10 minutes (600 seconds)
+        cache.set(cache_key, result, 600)
+        
+        return JsonResponse(result)
+        
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"api_industry_flow error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
