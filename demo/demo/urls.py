@@ -51,4 +51,5 @@ urlpatterns = [
     path('scheduler/api/jobs/heartbeat/<int:job_id>', update_job_heartbeat, name='scheduler_heartbeat_job'),
     path('scheduler/api/llm/parse', llm_parse_prompt, name='scheduler_llm_parse'),
     path('scheduler/api/llm/usage', get_llm_usage, name='scheduler_llm_usage'),
+    path('sec-edgar/', include('sec_edgar.urls')),
 ]

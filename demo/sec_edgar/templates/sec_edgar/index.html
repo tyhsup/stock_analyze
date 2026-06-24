@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEC EDGAR 美股大數據整合儀表板 - {{ current_ticker }}</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-glow: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --color-up: #10b981;
+            --color-down: #ef4444;
+            --color-sold: #f97316;
+            --font-main: 'Inter', sans-serif;
+            --font-display: 'Outfit', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
+                              radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 40%);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        /* 頂部 Header 玻璃擬態 */
+        header {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #38bdf8, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        /* 選擇器樣式 */
+        select {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.6rem 2.5rem 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        select:focus {
+            border-color: #3b82f6;
+        }
+
+        /* 按鈕樣式 */
+        .btn {
+            background: var(--accent-glow);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+            color: var(--text-secondary);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        /* 網格佈局 */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 卡片面板 */
+        .panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: fit-content;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.8rem;
+        }
+
+        .panel-title {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .panel-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* 標籤頁 (Tabs) 樣式 */
+        .tabs-header {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 0.25rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            width: fit-content;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: var(--bg-color);
+            color: var(--text-primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 表格樣式 */
+        .table-container {
+            max-height: 450px;
+            overflow-y: auto;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        /* 自訂滾動條 */
+        .table-container::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .table-container::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.2);
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-primary);
+            font-weight: 600;
+            padding: 0.8rem 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: var(--text-secondary);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-primary);
+        }
+
+        /* 標籤徽章 */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-up {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--color-up);
+        }
+
+        .badge-down {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--color-down);
+        }
+
+        .badge-new {
+            background: rgba(59, 130, 246, 0.15);
+            color: #3b82f6;
+        }
+
+        .badge-sold {
+            background: rgba(249, 115, 22, 0.15);
+            color: var(--color-sold);
+        }
+
+        /* 數字列排版 */
+        .num-col {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .text-up {
+            color: var(--color-up) !important;
+        }
+
+        .text-down {
+            color: var(--color-down) !important;
+        }
+
+        /* Loading 動畫 */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .sync-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-secondary);
+        }
+        
+        .no-data-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>美股 SEC EDGAR 整合數據儀表板</h1>
+        
+        <div class="header-controls">
+            <!-- Ticker Dropdown -->
+            <select id="tickerSelector" onchange="changeTicker(this.value)">
+                <option value="AAPL" {% if current_ticker == "AAPL" %}selected{% endif %}>AAPL - Apple</option>
+                <option value="MSFT" {% if current_ticker == "MSFT" %}selected{% endif %}>MSFT - Microsoft</option>
+                <option value="NVDA" {% if current_ticker == "NVDA" %}selected{% endif %}>NVDA - Nvidia</option>
+                <option value="TSLA" {% if current_ticker == "TSLA" %}selected{% endif %}>TSLA - Tesla</option>
+                <option value="AMZN" {% if current_ticker == "AMZN" %}selected{% endif %}>AMZN - Amazon</option>
+                <option value="META" {% if current_ticker == "META" %}selected{% endif %}>META - Meta</option>
+                <option value="GOOGL" {% if current_ticker == "GOOGL" %}selected{% endif %}>GOOGL - Google</option>
+                {% for stock in us_stocks %}
+                    {% if stock.symbol != "AAPL" and stock.symbol != "MSFT" and stock.symbol != "NVDA" and stock.symbol != "TSLA" and stock.symbol != "AMZN" and stock.symbol != "META" and stock.symbol != "GOOGL" %}
+                    <option value="{{ stock.symbol }}" {% if current_ticker == stock.symbol %}selected{% endif %}>{{ stock.symbol }} - {{ stock.name }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+
+            <!-- 手動同步控制區 -->
+            <div class="sync-group">
+                <button id="btnSync13F" class="btn" onclick="triggerSync('13F')">
+                    <span class="spinner" id="spinner13F"></span>
+                    同步 13F 機構
+                </button>
+                <button id="btnSyncInsider" class="btn btn-secondary" onclick="triggerSync('insider')">
+                    <span class="spinner" id="spinnerInsider"></span>
+                    同步 內部人/財務
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="dashboard-grid">
+        
+        <!-- 左半部分：13F 機構持股（官方數據與爬蟲補充並存） -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2 class="panel-title">13F 機構持股分析</h2>
+                {% if latest_13f_period %}
+                <span class="panel-subtitle">最新報告期末日：{{ latest_13f_period|date:"Y-m-d" }}</span>
+                {% endif %}
+            </div>
+
+            <!-- Tab 控制器 -->
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('sec_13f')">SEC 官方官方數據 (推薦)</button>
+                <button class="tab-btn" onclick="switchTab('stockzoa_13f')">Stockzoa 爬蟲數據 (補充)</button>
+            </div>
+
+            <!-- Tab 1: SEC 官方持股數據 -->
+            <div id="sec_13f" class="tab-content active">
+                <div class="table-container">
+                    {% if sec_13f_data %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>持有機構 (CIK)</th>
+                                <th>持股類型</th>
+                                <th class="num-col">持股數量</th>
+                                <th class="num-col">持股總值 (USD)</th>
+                                <th class="num-col">季度變動</th>
+                                <th>異動類型</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in sec_13f_data %}
+                            <tr>
+                                <td style="font-weight: 500; color: var(--text-primary);">
+                                    {{ row.company_name }} <span style="font-size: 0.75rem; color: var(--text-secondary);">({{ row.cik }})</span>
+                                </td>
+                                <td>
+                                    {% if row.put_call %}
+                                        <span style="color: var(--color-sold);">{{ row.put_call }}</span>
+                                    {% else %}
+                                        <span>現股</span>
+                                    {% endif %}
+                                </td>
+                                <td class="num-col">{{ row.shares }}</td>
+                                <td class="num-col">${{ row.value_usd }}</td>
+                                <td class="num-col {% if row.change_pct > 0 %}text-up{% elif row.change_pct < 0 %}text-down{% endif %}">
+                                    {% if row.change_pct %}
+                                        {{ row.change_pct|floatformat:2 }}%
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if row.action_type == 'NEW' %}
+                                        <span class="badge badge-new">新進</span>
+                                    {% elif row.action_type == 'INCREASED' %}
+                                        <span class="badge badge-up">加碼</span>
+                                    {% elif row.action_type == 'DECREASED' %}
+                                        <span class="badge badge-down">減碼</span>
+                                    {% elif row.action_type == 'SOLD_ALL' %}
+                                        <span class="badge badge-sold">清倉</span>
+                                    {% else %}
+                                        <span style="font-size: 0.75rem; color: var(--text-secondary);">無變動</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-data">
+                        <div class="no-data-icon">📂</div>
+                        <p>資料庫中暫無該股票的官方 13F 數據</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊上方「同步 13F 機構」下載最新申報資料</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Tab 2: Stockzoa 爬蟲數據 -->
+            <div id="stockzoa_13f" class="tab-content">
+                <div class="table-container">
+                    {% if stockzoa_data %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>機構名稱</th>
+                                <th class="num-col">持股數量</th>
+                                <th class="num-col">持股佔比</th>
+                                <th>採集日期</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in stockzoa_data %}
+                            <tr>
+                                <td style="font-weight: 500; color: var(--text-primary);">{{ row.holder_name }}</td>
+                                <td class="num-col">{{ row.shares }}</td>
+                                <td class="num-col">{{ row.pct_out }}%</td>
+                                <td>{{ row.date|date:"Y-m-d" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-data">
+                        <div class="no-data-icon">📂</div>
+                        <p>暫無 Stockzoa 採集數據</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 右半部分：內部人交易與 XBRL 財務數據 -->
+        <div style="display: flex; flex-direction: column; gap: 2rem;">
+            
+            <!-- 內部人交易面板 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">內部人交易動態 (Form 4)</h2>
+                    <span class="panel-subtitle">最近 50 筆交易</span>
+                </div>
+
+                <div class="table-container" style="max-height: 250px;">
+                    {% if insider_trades %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>申報日期</th>
+                                <th>內部人 / 職稱</th>
+                                <th class="num-col">異動股數</th>
+                                <th class="num-col">均價</th>
+                                <th>代碼</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for trade in insider_trades %}
+                            <tr>
+                                <td>{{ trade.filing_date|date:"Y-m-d" }}</td>
+                                <td style="font-weight: 500; color: var(--text-primary);">
+                                    {{ trade.insider_name }}
+                                    {% if trade.is_senior_officer %}
+                                        <span style="color: #eab308; font-size: 0.75rem;">★</span>
+                                    {% endif %}
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 400;">
+                                        {{ trade.insider_title|default:"-" }}
+                                    </div>
+                                </td>
+                                <td class="num-col {% if trade.transaction_code == 'P' %}text-up{% elif trade.transaction_code == 'S' %}text-down{% endif %}">
+                                    {{ trade.shares }}
+                                </td>
+                                <td class="num-col">${{ trade.price_per_share }}</td>
+                                <td>
+                                    {% if trade.transaction_code == 'P' %}
+                                        <span class="badge badge-up">P (購入)</span>
+                                    {% elif trade.transaction_code == 'S' %}
+                                        <span class="badge badge-down">S (售出)</span>
+                                    {% else %}
+                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">
+                                            {{ trade.transaction_code }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-data" style="padding: 1.5rem 1rem;">
+                        <div class="no-data-icon">💼</div>
+                        <p>暫無內部人交易紀錄</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊右上角「同步 內部人/財務」抓取</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- XBRL 財務數據面板 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">XBRL 標準化財務指標 (10-K/10-Q)</h2>
+                </div>
+
+                <div class="table-container" style="max-height: 250px;">
+                    {% if financial_data %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>報告期末</th>
+                                <th>指標概念</th>
+                                <th class="num-col">數值 (USD)</th>
+                                <th>申報週期</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for f in financial_data %}
+                            <tr>
+                                <td>{{ f.period_end|date:"Y-m-d" }}</td>
+                                <td style="font-weight: 500; color: var(--text-primary);">{{ f.concept }}</td>
+                                <td class="num-col" style="font-variant-numeric: tabular-nums;">
+                                    ${{ f.value }}
+                                </td>
+                                <td>
+                                    {% if f.fiscal_quarter == 0 %}
+                                        <span class="badge badge-new">10-K (年報)</span>
+                                    {% else %}
+                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">
+                                            10-Q (Q{{ f.fiscal_quarter }})
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-data" style="padding: 1.5rem 1rem;">
+                        <div class="no-data-icon">📈</div>
+                        <p>暫無 XBRL 財務數據</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- JS 互動與 Ajax 同步 -->
+    <script>
+        // 更改股票
+        function changeTicker(ticker) {
+            window.location.href = '?ticker=' + ticker;
+        }
+
+        // 切換 Tab
+        function switchTab(tabId) {
+            // 切換按鈕樣式
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 切換內容區
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // Ajax 同步
+        function triggerSync(type) {
+            const ticker = document.getElementById('tickerSelector').value;
+            const btn = type === '13F' ? document.getElementById('btnSync13F') : document.getElementById('btnSyncInsider');
+            const spinner = type === '13F' ? document.getElementById('spinner13F') : document.getElementById('spinnerInsider');
+            const apiUrl = type === '13F' ? '/sec-edgar/api/sync/13f/' : '/sec-edgar/api/sync/insider/';
+
+            // 停用按鈕並顯示 Loading
+            btn.disabled = true;
+            spinner.style.display = 'inline-block';
+            
+            fetch(apiUrl + '?ticker=' + ticker)
+                .then(response => response.json())
+                .then(data => {
+                    spinner.style.display = 'none';
+                    btn.disabled = false;
+                    
+                    if (data.status === 'success') {
+                        alert('同步成功！' + data.message);
+                        window.location.reload(); // 重新整理頁面呈現最新數據
+                    } else {
+                        alert('同步失敗：' + data.message);
+                    }
+                })
+                .catch(error => {
+                    spinner.style.display = 'none';
+                    btn.disabled = false;
+                    alert('請求發生錯誤：' + error);
+                });
+        }
+    </script>
+</body>
+</html>

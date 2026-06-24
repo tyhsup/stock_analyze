@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'financials',
     'valuation',
     'web',
+    'sec_edgar',
 ]
 
 MIDDLEWARE = [
