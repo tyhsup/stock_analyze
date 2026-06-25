@@ -272,18 +272,212 @@
             <div>{{ error }}</div>
         </div>
         {% endif %}
-        <div class="row">
-            <div class="col-12 py-5 text-center bg-white rounded shadow-sm">
-                <div class="bg-light p-5 rounded-circle d-inline-block mb-3">
-                    <i class="bi bi-building-gear text-secondary display-1"></i>
-                </div>
-                <h3>USA Institutional Holders</h3>
-                <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
-                <div id="us-charts-container" class="mt-4 row text-start">
-                    <!-- US Charts will be injected here via JS -->
+
+        <!-- USA Market Header: Ticker Selector + Sync Controls -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="sec-ticker-select" class="fw-bold text-nowrap mb-0">
+                                <i class="bi bi-search text-primary me-1"></i>SEC Ticker:
+                            </label>
+                            <select id="sec-ticker-select" class="form-select form-select-sm" style="min-width: 200px;">
+                                <option value="AAPL" selected>AAPL - Apple</option>
+                                <option value="MSFT">MSFT - Microsoft</option>
+                                <option value="NVDA">NVDA - Nvidia</option>
+                                <option value="TSLA">TSLA - Tesla</option>
+                                <option value="AMZN">AMZN - Amazon</option>
+                                <option value="META">META - Meta</option>
+                                <option value="GOOGL">GOOGL - Google</option>
+                            </select>
+                        </div>
+                        <button id="btn-load-more-tickers" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+                            <i class="bi bi-list-ul me-1"></i> Load Full List
+                        </button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div id="sec-sync-status" class="me-2 small text-muted" style="display:none;">
+                            <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
+                            <span id="sec-sync-text">Syncing...</span>
+                        </div>
+                        <button id="btn-sync-13f" class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale">
+                            <i class="bi bi-cloud-download me-1"></i> Sync 13F
+                        </button>
+                        <button id="btn-sync-insider" class="btn btn-sm btn-outline-warning rounded-pill px-3 shadow-sm hover-scale">
+                            <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- USA Sub Tabs -->
+        <ul class="nav nav-tabs mb-4" id="us-sub-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold" id="us-holders-tab" data-bs-toggle="tab" data-bs-target="#us-holders-panel" type="button" role="tab" aria-selected="true">
+                    <i class="bi bi-bar-chart me-1"></i> Institutional Holders
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-13f-tab" data-bs-toggle="tab" data-bs-target="#us-13f-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-building me-1"></i> SEC 13F Holdings
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-insider-tab" data-bs-toggle="tab" data-bs-target="#us-insider-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-person-badge me-1"></i> Insider Trades
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-financial-tab" data-bs-toggle="tab" data-bs-target="#us-financial-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-file-earmark-spreadsheet me-1"></i> Financial Data
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="us-sub-tabs-content">
+
+            <!-- Sub Tab 1: Institutional Holders (existing content preserved) -->
+            <div class="tab-pane fade show active" id="us-holders-panel" role="tabpanel" aria-labelledby="us-holders-tab">
+                <div class="row">
+                    <div class="col-12 py-4 text-center bg-white rounded shadow-sm">
+                        <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
+                        <div id="us-charts-container" class="mt-4 row text-start">
+                            <!-- US Charts will be injected here via JS (existing logic) -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 2: SEC 13F Holdings -->
+            <div class="tab-pane fade" id="us-13f-panel" role="tabpanel" aria-labelledby="us-13f-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-building text-primary fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">13F Institutional Holdings</h5>
+                                <small class="text-muted" id="sec-13f-period">SEC official filings</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-primary rounded-pill px-3 py-2" id="sec-13f-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-13f-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">Select a ticker and switch to this tab to load data...</p>
+                        </div>
+                        <div id="sec-13f-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No 13F data found for this ticker.<br>Click "Sync 13F" to fetch from SEC EDGAR.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-13f-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Holding Institution (CIK)</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Value (USD)</th>
+                                        <th class="text-end">Quarterly Change</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-13f-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 3: Insider Trades -->
+            <div class="tab-pane fade" id="us-insider-panel" role="tabpanel" aria-labelledby="us-insider-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-person-badge text-warning fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">Insider Trades (Form 4)</h5>
+                                <small class="text-muted">Recent insider transactions</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-warning text-dark rounded-pill px-3 py-2" id="sec-insider-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-insider-loader" class="text-center py-5">
+                            <div class="spinner-border text-warning" role="status"></div>
+                            <p class="mt-2 text-muted">Select a ticker and switch to this tab to load data...</p>
+                        </div>
+                        <div id="sec-insider-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No insider trades found.<br>Click "Sync Insider/Fin" to fetch from SEC EDGAR.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-insider-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Filing Date</th>
+                                        <th>Insider / Title</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Price</th>
+                                        <th class="text-end">Total Value</th>
+                                        <th>Code</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-insider-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 4: Financial Data (XBRL) -->
+            <div class="tab-pane fade" id="us-financial-panel" role="tabpanel" aria-labelledby="us-financial-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">XBRL Financial Metrics (10-K/10-Q)</h5>
+                                <small class="text-muted">Standardized financial concepts from SEC filings</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-success rounded-pill px-3 py-2" id="sec-fin-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-fin-loader" class="text-center py-5">
+                            <div class="spinner-border text-success" role="status"></div>
+                            <p class="mt-2 text-muted">Financial data will load when you switch to this tab...</p>
+                        </div>
+                        <div id="sec-fin-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No financial data found.<br>Click "Sync Insider/Fin" to fetch XBRL data.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-fin-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Period End</th>
+                                        <th>Concept</th>
+                                        <th class="text-end">Value (USD)</th>
+                                        <th>Report Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-fin-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- end us-sub-tabs-content -->
     </div>
 </div>
 
@@ -756,6 +950,339 @@
                 flowLoaded = true;
             });
         }
+
+        // ========================================================
+        // SEC EDGAR Integration (AJAX-based, zero coupling)
+        // ========================================================
+        const secTickerSelect = document.getElementById('sec-ticker-select');
+        const secBaseUrl = '/sec-edgar/api';
+
+        // --- Utility: Format number with commas ---
+        function fmtNum(n) {
+            if (n === null || n === undefined) return '-';
+            return Number(n).toLocaleString('en-US');
+        }
+
+        // --- Utility: Format currency ---
+        function fmtCurrency(n) {
+            if (n === null || n === undefined || n === 0) return '-';
+            const abs = Math.abs(Number(n));
+            if (abs >= 1e9) return '$' + (Number(n) / 1e9).toFixed(2) + 'B';
+            if (abs >= 1e6) return '$' + (Number(n) / 1e6).toFixed(2) + 'M';
+            if (abs >= 1e3) return '$' + (Number(n) / 1e3).toFixed(1) + 'K';
+            return '$' + Number(n).toFixed(2);
+        }
+
+        // --- Utility: Action badge ---
+        function actionBadge(action) {
+            const map = {
+                'NEW': '<span class="badge bg-primary bg-opacity-75">NEW</span>',
+                'INCREASED': '<span class="badge bg-success bg-opacity-75">INCREASED</span>',
+                'DECREASED': '<span class="badge bg-danger bg-opacity-75">DECREASED</span>',
+                'SOLD_ALL': '<span class="badge bg-warning text-dark">SOLD ALL</span>',
+                'UNCHANGED': '<span class="text-muted small">No Change</span>'
+            };
+            return map[action] || '<span class="text-muted small">-</span>';
+        }
+
+        // --- Utility: Transaction code badge ---
+        function txnCodeBadge(code) {
+            if (code === 'P') return '<span class="badge bg-success bg-opacity-75">P (Buy)</span>';
+            if (code === 'S') return '<span class="badge bg-danger bg-opacity-75">S (Sell)</span>';
+            if (code === 'F') return '<span class="badge bg-secondary bg-opacity-50">F (Tax)</span>';
+            return '<span class="badge bg-light text-dark border">' + code + '</span>';
+        }
+
+        // --- Utility: Show/hide panel states ---
+        function showPanelState(prefix, state) {
+            document.getElementById(prefix + '-loader').style.display = state === 'loading' ? '' : 'none';
+            document.getElementById(prefix + '-empty').style.display = state === 'empty' ? '' : 'none';
+            document.getElementById(prefix + '-table-wrap').style.display = state === 'data' ? '' : 'none';
+        }
+
+        // --- Load Full Ticker List ---
+        let tickerListLoaded = false;
+        const btnLoadTickers = document.getElementById('btn-load-more-tickers');
+        if (btnLoadTickers) {
+            btnLoadTickers.addEventListener('click', async function() {
+                if (tickerListLoaded) return;
+                btnLoadTickers.disabled = true;
+                btnLoadTickers.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Loading...';
+                try {
+                    const res = await fetch('/chips/api/us-stocks/');
+                    const data = await res.json();
+                    if (data.stocks && data.stocks.length > 0) {
+                        const currentVal = secTickerSelect.value;
+                        const existingVals = new Set();
+                        Array.from(secTickerSelect.options).forEach(o => existingVals.add(o.value));
+                        data.stocks.forEach(s => {
+                            if (!existingVals.has(s.symbol)) {
+                                const opt = document.createElement('option');
+                                opt.value = s.symbol;
+                                opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                secTickerSelect.appendChild(opt);
+                            }
+                        });
+                        secTickerSelect.value = currentVal;
+                        tickerListLoaded = true;
+                        btnLoadTickers.innerHTML = '<i class="bi bi-check-lg me-1"></i> Loaded (' + data.stocks.length + ')';
+                        btnLoadTickers.classList.replace('btn-outline-secondary', 'btn-outline-success');
+                    }
+                } catch (e) {
+                    btnLoadTickers.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Error';
+                    btnLoadTickers.disabled = false;
+                    console.error('Load tickers error:', e);
+                }
+            });
+        }
+
+        // --- Fetch SEC 13F Holdings ---
+        let cached13f = {};
+        async function fetchSec13F(ticker) {
+            if (cached13f[ticker]) { render13F(cached13f[ticker]); return; }
+            showPanelState('sec-13f', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/13f/' + ticker + '/');
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cached13f[ticker] = json.data;
+                    render13F(json.data);
+                } else {
+                    showPanelState('sec-13f', 'empty');
+                    document.getElementById('sec-13f-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch 13F error:', e);
+                showPanelState('sec-13f', 'empty');
+            }
+        }
+
+        function render13F(data) {
+            const tbody = document.getElementById('sec-13f-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-13f-count').textContent = data.length + ' records';
+            if (data.length > 0 && data[0].period_of_report) {
+                document.getElementById('sec-13f-period').textContent = 'Report period: ' + data[0].period_of_report;
+            }
+            data.forEach(row => {
+                const changePct = row.change_pct;
+                let changeClass = '';
+                let changeText = '-';
+                if (changePct !== null && changePct !== undefined) {
+                    changeClass = changePct > 0 ? 'text-success fw-bold' : (changePct < 0 ? 'text-danger fw-bold' : '');
+                    changeText = (changePct > 0 ? '+' : '') + Number(changePct).toFixed(2) + '%';
+                }
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">
+                        <span class="fw-semibold">${row.company_name || 'N/A'}</span>
+                        <span class="text-muted small ms-1">(${row.cik})</span>
+                    </td>
+                    <td>${row.put_call ? '<span class="text-warning fw-bold">' + row.put_call + '</span>' : 'Common'}</td>
+                    <td class="text-end font-monospace">${fmtNum(row.shares)}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.value_usd)}</td>
+                    <td class="text-end ${changeClass}">${changeText}</td>
+                    <td>${actionBadge(row.action_type)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-13f', 'data');
+        }
+
+        // --- Fetch Insider Trades ---
+        let cachedInsider = {};
+        async function fetchInsiderTrades(ticker) {
+            if (cachedInsider[ticker]) { renderInsider(cachedInsider[ticker]); return; }
+            showPanelState('sec-insider', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/insider/' + ticker + '/');
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cachedInsider[ticker] = json.data;
+                    renderInsider(json.data);
+                } else {
+                    showPanelState('sec-insider', 'empty');
+                    document.getElementById('sec-insider-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch insider error:', e);
+                showPanelState('sec-insider', 'empty');
+            }
+        }
+
+        function renderInsider(data) {
+            const tbody = document.getElementById('sec-insider-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-insider-count').textContent = data.length + ' records';
+            data.forEach(row => {
+                const sharesClass = row.transaction_code === 'P' ? 'text-success fw-bold' : (row.transaction_code === 'S' ? 'text-danger fw-bold' : '');
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${row.filing_date || '-'}</td>
+                    <td>
+                        <span class="fw-semibold">${row.insider_name}</span>
+                        ${row.is_senior_officer ? '<span class="text-warning ms-1" title="Senior Officer">&#9733;</span>' : ''}
+                        <div class="text-muted small">${row.insider_title || '-'}</div>
+                    </td>
+                    <td class="text-end font-monospace ${sharesClass}">${fmtNum(row.shares)}</td>
+                    <td class="text-end font-monospace">${row.price_per_share ? '$' + Number(row.price_per_share).toFixed(2) : '-'}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.total_value)}</td>
+                    <td>${txnCodeBadge(row.transaction_code)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-insider', 'data');
+        }
+
+        // --- Fetch Financial Data ---
+        let cachedFinancial = {};
+        async function fetchFinancialData(ticker) {
+            if (cachedFinancial[ticker]) { renderFinancial(cachedFinancial[ticker]); return; }
+            showPanelState('sec-fin', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/financial/' + ticker + '/');
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cachedFinancial[ticker] = json.data;
+                    renderFinancial(json.data);
+                } else {
+                    showPanelState('sec-fin', 'empty');
+                    document.getElementById('sec-fin-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch financial error:', e);
+                showPanelState('sec-fin', 'empty');
+            }
+        }
+
+        function renderFinancial(data) {
+            const tbody = document.getElementById('sec-fin-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-fin-count').textContent = data.length + ' records';
+            data.forEach(row => {
+                const reportBadge = row.fiscal_quarter === 0
+                    ? '<span class="badge bg-primary bg-opacity-75">10-K (Annual)</span>'
+                    : '<span class="badge bg-light text-dark border">10-Q (Q' + row.fiscal_quarter + ')</span>';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${row.period_end}</td>
+                    <td class="fw-semibold">${row.concept}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.value)}</td>
+                    <td>${reportBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-fin', 'data');
+        }
+
+        // --- Sync Buttons ---
+        const btnSync13F = document.getElementById('btn-sync-13f');
+        const btnSyncInsider = document.getElementById('btn-sync-insider');
+        const syncStatus = document.getElementById('sec-sync-status');
+        const syncText = document.getElementById('sec-sync-text');
+
+        async function triggerSecSync(type) {
+            const ticker = secTickerSelect.value;
+            if (!ticker) { alert('Please select a ticker first.'); return; }
+            
+            const apiUrl = type === '13f' 
+                ? secBaseUrl + '/sync/13f/?ticker=' + ticker 
+                : secBaseUrl + '/sync/insider/?ticker=' + ticker;
+            
+            syncStatus.style.display = '';
+            syncText.textContent = 'Syncing ' + type.toUpperCase() + ' for ' + ticker + '...';
+            
+            if (type === '13f') { btnSync13F.disabled = true; }
+            else { btnSyncInsider.disabled = true; }
+            
+            try {
+                const res = await fetch(apiUrl);
+                const data = await res.json();
+                syncStatus.style.display = 'none';
+                
+                if (data.status === 'success') {
+                    alert('Sync successful: ' + (data.message || ''));
+                    // Clear cache and reload current tab
+                    if (type === '13f') {
+                        delete cached13f[ticker];
+                        fetchSec13F(ticker);
+                    } else {
+                        delete cachedInsider[ticker];
+                        delete cachedFinancial[ticker];
+                        fetchInsiderTrades(ticker);
+                    }
+                } else {
+                    alert('Sync failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (e) {
+                syncStatus.style.display = 'none';
+                alert('Sync request error: ' + e);
+            }
+            
+            btnSync13F.disabled = false;
+            btnSyncInsider.disabled = false;
+        }
+
+        if (btnSync13F) btnSync13F.addEventListener('click', () => triggerSecSync('13f'));
+        if (btnSyncInsider) btnSyncInsider.addEventListener('click', () => triggerSecSync('insider'));
+
+        // --- Lazy Load on Tab Switch ---
+        let sec13fLoaded = false;
+        let secInsiderLoaded = false;
+        let secFinLoaded = false;
+
+        const us13fTab = document.getElementById('us-13f-tab');
+        const usInsiderTab = document.getElementById('us-insider-tab');
+        const usFinancialTab = document.getElementById('us-financial-tab');
+
+        if (us13fTab) {
+            us13fTab.addEventListener('shown.bs.tab', function() {
+                const ticker = secTickerSelect.value;
+                if (!sec13fLoaded || !cached13f[ticker]) {
+                    fetchSec13F(ticker);
+                    sec13fLoaded = true;
+                }
+            });
+        }
+
+        if (usInsiderTab) {
+            usInsiderTab.addEventListener('shown.bs.tab', function() {
+                const ticker = secTickerSelect.value;
+                if (!secInsiderLoaded || !cachedInsider[ticker]) {
+                    fetchInsiderTrades(ticker);
+                    secInsiderLoaded = true;
+                }
+            });
+        }
+
+        if (usFinancialTab) {
+            usFinancialTab.addEventListener('shown.bs.tab', function() {
+                const ticker = secTickerSelect.value;
+                if (!secFinLoaded || !cachedFinancial[ticker]) {
+                    fetchFinancialData(ticker);
+                    secFinLoaded = true;
+                }
+            });
+        }
+
+        // --- Ticker Change: Reset caches and reload active SEC tab ---
+        if (secTickerSelect) {
+            secTickerSelect.addEventListener('change', function() {
+                sec13fLoaded = false;
+                secInsiderLoaded = false;
+                secFinLoaded = false;
+
+                // Reload data for the currently active SEC sub-tab
+                const active13f = document.getElementById('us-13f-panel').classList.contains('show');
+                const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
+                const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
+
+                if (active13f) fetchSec13F(this.value);
+                else if (activeInsider) fetchInsiderTrades(this.value);
+                else if (activeFin) fetchFinancialData(this.value);
+            });
+        }
+
     });
 </script>
 {% endblock %}

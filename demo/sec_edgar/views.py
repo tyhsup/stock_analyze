@@ -170,3 +170,34 @@ def api_sync_insider(request):
     except Exception as e:
         logger.error(f"Manual insider sync failed for {ticker}: {e}")
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def api_financial_data(request, ticker):
+    """
+    獲取指定股票的 XBRL 標準化財務數據 API
+    """
+    ticker = ticker.upper()
+    try:
+        target_concepts = [
+            'Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax',
+            'NetIncomeLoss', 'OperatingIncomeLoss', 'Assets', 'Liabilities',
+            'EarningsPerShareBasic', 'EarningsPerShareDiluted',
+        ]
+        qs = SecFinancialXbrl.objects.filter(
+            ticker=ticker,
+            concept__in=target_concepts
+        ).order_by('-period_end', 'concept')[:100]
+
+        data = []
+        for f in qs:
+            data.append({
+                'period_end': f.period_end.strftime('%Y-%m-%d'),
+                'concept': f.concept,
+                'value': float(f.value),
+                'fiscal_year': f.fiscal_year,
+                'fiscal_quarter': f.fiscal_quarter,
+                'form_type': f.form_type,
+            })
+        return JsonResponse({"status": "success", "data": data})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)

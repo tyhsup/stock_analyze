@@ -115,6 +115,22 @@ from django.core.cache import cache
 import pandas as pd
 import numpy as np
 
+def api_us_stocks_list(request):
+    """
+    回傳美股股票清單供 SEC EDGAR Ticker 選擇器使用。
+    僅回傳 symbol 與 name，供前端下拉選單渲染。
+    """
+    try:
+        from market_data.models import StockUS
+        stocks = StockUS.objects.all().order_by('symbol')[:500]
+        data = [{'symbol': s.symbol, 'name': s.name} for s in stocks]
+        return JsonResponse({'stocks': data})
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"api_us_stocks_list error: {e}")
+        return JsonResponse({'stocks': [], 'error': str(e)})
+
+
 def api_industry_flow(request):
     """
     API endpoint returning industry money flow (treemap data) and top 10 stocks per industry.
