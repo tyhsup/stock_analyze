@@ -1374,6 +1374,9 @@
             
             const chartContainer = document.getElementById('us-moneyflow-chart');
             if (chartContainer) {
+                if (moneyFlowChart) {
+                    moneyFlowChart.destroy();
+                }
                 chartContainer.innerHTML = '';
                 moneyFlowChart = new ApexCharts(chartContainer, options);
                 moneyFlowChart.render();
