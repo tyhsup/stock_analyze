@@ -1326,6 +1326,16 @@
                 y: item.volume_value,
                 net_flow: item.net_flow_ratio
             }));
+
+            const colors = data.map(item => {
+                const ratio = item.net_flow_ratio;
+                if (ratio >= 15) return '#1e7b34';       // Strong Inflow (Deep Green)
+                else if (ratio >= 3) return '#34c759';     // Inflow (Green)
+                else if (ratio >= 0) return '#4f5055';     // Neutral/Pos (Dark Gray)
+                else if (ratio >= -3) return '#8e8e93';    // Neutral/Neg (Gray)
+                else if (ratio >= -15) return '#ff3b30';   // Outflow (Red)
+                else return '#b31b1b';                    // Strong Outflow (Deep Red)
+            });
             
             const options = {
                 series: [{
@@ -1345,23 +1355,11 @@
                     text: 'US Market Volume Value & Money Flow Heatmap',
                     align: 'center'
                 },
-                colors: [
-                    '#3bca24',
-                    '#ff3b30'
-                ],
+                colors: colors,
                 plotOptions: {
                     treemap: {
-                        enableShades: false,
-                        colorScale: {
-                            ranges: [
-                                { from: -100, to: -40, color: '#b31b1b', name: 'Strong Outflow' },
-                                { from: -40, to: -10, color: '#ff3b30', name: 'Outflow' },
-                                { from: -10, to: 0, color: '#8e8e93', name: 'Neutral/Neg' },
-                                { from: 0, to: 10, color: '#4f5055', name: 'Neutral/Pos' },
-                                { from: 10, to: 40, color: '#34c759', name: 'Inflow' },
-                                { from: 40, to: 100, color: '#1e7b34', name: 'Strong Inflow' }
-                            ]
-                        }
+                        distributed: true,
+                        enableShades: false
                     }
                 },
                 tooltip: {
