@@ -334,6 +334,11 @@
                     <i class="bi bi-file-earmark-spreadsheet me-1"></i> Financial Data
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-moneyflow-tab" data-bs-toggle="tab" data-bs-target="#us-moneyflow-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-grid-3x3-gap-fill me-1"></i> US Money Flow Heatmap
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content" id="us-sub-tabs-content">
@@ -473,6 +478,50 @@
                                 <tbody id="sec-fin-tbody"></tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 5: US Money Flow Heatmap -->
+            <div class="tab-pane fade" id="us-moneyflow-panel" role="tabpanel" aria-labelledby="us-moneyflow-tab">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-info bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-grid-3x3-gap-fill text-info fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">US Stock Money Flow Heatmap</h5>
+                                <small class="text-muted">Node size = Daily volume value (M USD), color = Net Flow Ratio % (CLV weighted)</small>
+                            </div>
+                        </div>
+                        <!-- 天數與數量控制項 -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="us-mf-days" class="form-label mb-0 small fw-bold text-muted">Days:</label>
+                            <select id="us-mf-days" class="form-select form-select-sm rounded-pill px-3" style="width: 90px;">
+                                <option value="1">1 Day</option>
+                                <option value="5" selected>5 Days</option>
+                                <option value="10">10 Days</option>
+                                <option value="20">20 Days</option>
+                            </select>
+                            <label for="us-mf-limit" class="form-label mb-0 small fw-bold text-muted ms-2">Limit:</label>
+                            <select id="us-mf-limit" class="form-select form-select-sm rounded-pill px-3" style="width: 100px;">
+                                <option value="100">Top 100</option>
+                                <option value="200" selected>Top 200</option>
+                                <option value="300">Top 300</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="us-moneyflow-loader" class="text-center py-5" style="display:none;">
+                            <div class="spinner-border text-info" role="status"></div>
+                            <p class="mt-2 text-muted">Calculating US stock money flow...</p>
+                        </div>
+                        <div id="us-moneyflow-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No money flow data calculated.</p>
+                        </div>
+                        <div id="us-moneyflow-chart" style="min-height: 500px;"></div>
                     </div>
                 </div>
             </div>
@@ -1211,8 +1260,6 @@
                         delete cachedFinancial[ticker];
                         fetchInsiderTrades(ticker);
                     }
-                } else {
-                    alert('Sync failed: ' + (data.message || 'Unknown error'));
                 }
             } catch (e) {
                 syncStatus.style.display = 'none';
@@ -1226,10 +1273,118 @@
         if (btnSync13F) btnSync13F.addEventListener('click', () => triggerSecSync('13f'));
         if (btnSyncInsider) btnSyncInsider.addEventListener('click', () => triggerSecSync('insider'));
 
+        // --- Fetch & Render US Money Flow Heatmap ---
+        let moneyFlowChart = null;
+        const usMoneyFlowTab = document.getElementById('us-moneyflow-tab');
+        const selectMfDays = document.getElementById('us-mf-days');
+        const selectMfLimit = document.getElementById('us-mf-limit');
+        
+        async function fetchUSMoneyFlow() {
+            const days = selectMfDays ? selectMfDays.value : 5;
+            const limit = selectMfLimit ? selectMfLimit.value : 200;
+            
+            const loader = document.getElementById('us-moneyflow-loader');
+            const empty = document.getElementById('us-moneyflow-empty');
+            const chartDiv = document.getElementById('us-moneyflow-chart');
+            
+            if (loader) loader.style.display = '';
+            if (empty) empty.style.display = 'none';
+            if (chartDiv) chartDiv.style.opacity = '0.3';
+            
+            try {
+                const res = await fetch(`/chips/api/us-money-flow/?days=${days}&limit=${limit}`);
+                const json = await res.json();
+                
+                if (loader) loader.style.display = 'none';
+                if (chartDiv) chartDiv.style.opacity = '1';
+                
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    renderMoneyFlowTreeMap(json.data);
+                } else {
+                    if (empty) empty.style.display = '';
+                    if (chartDiv) chartDiv.innerHTML = '';
+                }
+            } catch (e) {
+                console.error('Fetch US Money Flow error:', e);
+                if (loader) loader.style.display = 'none';
+                if (empty) empty.style.display = '';
+                if (chartDiv) {
+                    chartDiv.style.opacity = '1';
+                    chartDiv.innerHTML = '';
+                }
+            }
+        }
+        
+        function renderMoneyFlowTreeMap(data) {
+            const chartData = data.map(item => ({
+                x: `${item.symbol}\n$${item.close.toFixed(1)}\n${item.net_flow_ratio > 0 ? '+' : ''}${item.net_flow_ratio.toFixed(1)}%`,
+                y: item.volume_value,
+                net_flow: item.net_flow_ratio
+            }));
+            
+            const options = {
+                series: [{
+                    data: chartData
+                }],
+                legend: {
+                    show: false
+                },
+                chart: {
+                    height: 600,
+                    type: 'treemap',
+                    toolbar: {
+                        show: true
+                    }
+                },
+                title: {
+                    text: 'US Market Volume Value & Money Flow Heatmap',
+                    align: 'center'
+                },
+                colors: [
+                    '#3bca24',
+                    '#ff3b30'
+                ],
+                plotOptions: {
+                    treemap: {
+                        enableShades: false,
+                        colorScale: {
+                            ranges: [
+                                { from: -100, to: -40, color: '#b31b1b', name: 'Strong Outflow' },
+                                { from: -40, to: -10, color: '#ff3b30', name: 'Outflow' },
+                                { from: -10, to: 0, color: '#8e8e93', name: 'Neutral/Neg' },
+                                { from: 0, to: 10, color: '#4f5055', name: 'Neutral/Pos' },
+                                { from: 10, to: 40, color: '#34c759', name: 'Inflow' },
+                                { from: 40, to: 100, color: '#1e7b34', name: 'Strong Inflow' }
+                            ]
+                        }
+                    }
+                },
+                tooltip: {
+                    y: {
+                        formatter: function (val, { series, seriesIndex, dataPointIndex, w }) {
+                            const rawItem = data[dataPointIndex];
+                            return `Vol Value: $${val.toFixed(1)}M | Net Flow Ratio: ${rawItem.net_flow_ratio.toFixed(2)}%`;
+                        }
+                    }
+                }
+            };
+            
+            const chartContainer = document.getElementById('us-moneyflow-chart');
+            if (chartContainer) {
+                chartContainer.innerHTML = '';
+                moneyFlowChart = new ApexCharts(chartContainer, options);
+                moneyFlowChart.render();
+            }
+        }
+        
+        if (selectMfDays) selectMfDays.addEventListener('change', fetchUSMoneyFlow);
+        if (selectMfLimit) selectMfLimit.addEventListener('change', fetchUSMoneyFlow);
+
         // --- Lazy Load on Tab Switch ---
         let sec13fLoaded = false;
         let secInsiderLoaded = false;
         let secFinLoaded = false;
+        let moneyflowLoaded = false;
 
         const us13fTab = document.getElementById('us-13f-tab');
         const usInsiderTab = document.getElementById('us-insider-tab');
@@ -1261,6 +1416,15 @@
                 if (!secFinLoaded || !cachedFinancial[ticker]) {
                     fetchFinancialData(ticker);
                     secFinLoaded = true;
+                }
+            });
+        }
+        
+        if (usMoneyFlowTab) {
+            usMoneyFlowTab.addEventListener('shown.bs.tab', function() {
+                if (!moneyflowLoaded) {
+                    fetchUSMoneyFlow();
+                    moneyflowLoaded = true;
                 }
             });
         }
