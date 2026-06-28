@@ -914,6 +914,8 @@
             { id: 'ind-ma5', period: 5, color: '#29b6f6', name: 'MA5' },
             { id: 'ind-ma20', period: 20, color: '#ffa726', name: 'MA20' },
             { id: 'ind-ma60', period: 60, color: '#ab47bc', name: 'MA60' },
+            { id: 'ind-ma120', period: 120, color: '#e91e63', name: 'MA120' },
+            { id: 'ind-ma240', period: 240, color: '#00e676', name: 'MA240' },
         ];
         const maWidths = [1];
         const maColors = ['#000'];
@@ -1884,6 +1886,8 @@
                 { id: 'ind-ma5', name: 'SMA 5', checked: true, color: '#29b6f6' },
                 { id: 'ind-ma20', name: 'SMA 20', checked: true, color: '#ffa726' },
                 { id: 'ind-ma60', name: 'SMA 60', checked: false, color: '#ab47bc' },
+                { id: 'ind-ma120', name: 'SMA 120', checked: false, color: '#e91e63' },
+                { id: 'ind-ma240', name: 'SMA 240', checked: false, color: '#00e676' },
                 { id: 'ind-bb', name: 'Bollinger Bands', checked: true, color: '' },
                 { id: 'ind-rsi', name: 'RSI (14)', checked: true, color: '' },
                 { id: 'ind-macd', name: 'MACD', checked: true, color: '' }
@@ -1915,7 +1919,7 @@
 
                     const id = `ind-${f.toLowerCase()}`;
                     // Avoid duplicating hardcoded ma/ema
-                    if (['ma5', 'ma20', 'ma60', 'ema5', 'ema20', 'ema60', 'sar', 'wma20', 'vwap'].includes(f.toLowerCase())) return;
+                    if (['ma5', 'ma20', 'ma60', 'ma120', 'ma240', 'ema5', 'ema20', 'ema60', 'sar', 'wma20', 'vwap'].includes(f.toLowerCase())) return;
 
                     dropdown.appendChild(createItem(id, f, false, ''));
                 });
