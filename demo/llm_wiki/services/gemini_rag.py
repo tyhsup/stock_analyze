@@ -53,19 +53,38 @@ class GeminiRAG:
         self.load_index()
 
     def get_embedding(self, text):
-        if not USE_OLD_SDK:
-            response = self.client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=text
-            )
-            return response.embeddings[0].values
-        else:
-            result = genai.embed_content(
-                model=EMBEDDING_MODEL,
-                content=text,
-                task_type="retrieval_document"
-            )
-            return result['embedding']
+        import time
+        max_retries = 8
+        base_delay = 3
+        for attempt in range(max_retries):
+            try:
+                if not USE_OLD_SDK:
+                    response = self.client.models.embed_content(
+                        model=EMBEDDING_MODEL,
+                        contents=text
+                    )
+                    emb = response.embeddings[0].values
+                else:
+                    result = genai.embed_content(
+                        model=EMBEDDING_MODEL,
+                        content=text,
+                        task_type="retrieval_document"
+                    )
+                    emb = result['embedding']
+                
+                # 每次成功呼叫後強制冷卻 0.5 秒，平滑發送流量，防止突發超限
+                time.sleep(0.5)
+                return emb
+            except Exception as e:
+                # 判斷是否為 429/配額超限錯誤
+                err_msg = str(e).lower()
+                if "429" in err_msg or "quota" in err_msg or "limit" in err_msg or "exhausted" in err_msg:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"遇到 API 配額超限 (429)，等待 {delay} 秒後進行重試 ({attempt + 1}/{max_retries})...")
+                    time.sleep(delay)
+                else:
+                    raise e
+        raise Exception("取得嵌入向量失敗：已達最大重試次數，配額依然超限。")
 
     def generate_answer(self, prompt):
         if not USE_OLD_SDK:
