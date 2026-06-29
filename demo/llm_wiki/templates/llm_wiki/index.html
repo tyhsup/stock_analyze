@@ -3,6 +3,61 @@
 
 {% block title %}LLM Wiki - 專案知識庫{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* 樹狀結構的 CSS */
+    .vault-tree ul {
+        list-style-type: none;
+        padding-left: 1.25rem;
+        margin-bottom: 0.15rem;
+    }
+    .vault-tree > ul {
+        padding-left: 0;
+    }
+    .vault-tree li {
+        list-style-type: none;
+        margin: 0.1rem 0;
+        position: relative;
+    }
+    details.vault-folder summary::-webkit-details-marker {
+        display: none;
+    }
+    details.vault-folder summary {
+        list-style: none;
+        outline: none;
+        cursor: pointer;
+        user-select: none;
+        border-radius: 4px;
+        padding: 0.2rem 0.4rem;
+        transition: background-color 0.15s;
+    }
+    details.vault-folder summary:hover {
+        background-color: rgba(13, 110, 253, 0.06);
+    }
+    details.vault-folder summary .chevron {
+        transition: transform 0.2s ease-in-out;
+        display: inline-block;
+    }
+    details.vault-folder[open] > summary .chevron {
+        transform: rotate(90deg);
+    }
+    .vault-file {
+        display: flex;
+        align-items: center;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        color: var(--text-color);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: background-color 0.15s;
+    }
+    .vault-file:hover {
+        background-color: rgba(13, 110, 253, 0.06);
+        color: var(--primary-color) !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid mt-4">
     <div class="row">
@@ -23,13 +78,19 @@
                     <h5 class="mb-0">Vault 檔案清單</h5>
                 </div>
                 <div class="card-body p-0">
-                    <ul class="list-group list-group-flush" style="max-height: 500px; overflow-y: auto;">
+                    <!-- 隱藏的原始清單，供 JS 讀取 -->
+                    <ul id="vault-raw-list" class="d-none">
                         {% for f in files %}
-                        <li class="list-group-item text-truncate" title="{{ f }}">{{ f }}</li>
-                        {% empty %}
-                        <li class="list-group-item text-muted">目前尚無檔案</li>
+                        <li data-path="{{ f }}">{{ f }}</li>
                         {% endfor %}
                     </ul>
+                    <!-- 樹狀折疊結構的容器 -->
+                    <div id="vault-tree-container" class="p-2" style="max-height: 500px; overflow-y: auto;">
+                        <div class="text-center py-3 text-muted">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            載入中...
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -63,6 +124,140 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnSend = document.getElementById('btn-send');
     const chatHistory = document.getElementById('chat-history');
     const btnReindex = document.getElementById('btn-reindex');
+
+    // 生成並渲染樹狀摺疊結構
+    function initVaultTree() {
+        const rawList = document.querySelectorAll('#vault-raw-list li');
+        const paths = Array.from(rawList).map(li => li.getAttribute('data-path'));
+        const container = document.getElementById('vault-tree-container');
+        
+        if (!container) return;
+        if (paths.length === 0) {
+            container.innerHTML = '<div class="text-muted p-3">目前尚無檔案</div>';
+            return;
+        }
+        
+        // 智慧尋找最長共同前綴 (通常是 C:\...\knowledge\)
+        let commonPrefix = '';
+        if (paths.length > 0) {
+            const splitPaths = paths.map(p => p.replace(/\\/g, '/').split('/'));
+            let i = 0;
+            while (true) {
+                const segment = splitPaths[0][i];
+                if (!segment) break;
+                const allMatch = splitPaths.every(sp => sp[i] === segment);
+                if (allMatch) {
+                    commonPrefix += segment + '/';
+                    i++;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // 建立樹狀結構
+        const tree = {};
+        paths.forEach(p => {
+            let relPath = p.replace(/\\/g, '/');
+            if (commonPrefix && relPath.startsWith(commonPrefix)) {
+                relPath = relPath.substring(commonPrefix.length);
+            } else {
+                const idx = relPath.indexOf('/knowledge/');
+                if (idx !== -1) {
+                    relPath = relPath.substring(idx + 11);
+                }
+            }
+            
+            const parts = relPath.split('/').filter(part => part.trim() !== '');
+            let current = tree;
+            parts.forEach((part, index) => {
+                if (!current[part]) {
+                    current[part] = {
+                        _is_file: index === parts.length - 1,
+                        _full_path: p,
+                        _children: {}
+                    };
+                }
+                current = current[part]._children;
+            });
+        });
+
+        // 遞迴渲染樹
+        function renderTree(node, name) {
+            // 如果是檔案
+            if (node._is_file) {
+                return `
+                    <li class="mb-1">
+                        <span class="vault-file text-truncate d-flex align-items-center" title="${node._full_path}" style="cursor: pointer;" data-full-path="${node._full_path}">
+                            <i class="bi bi-file-earmark-text text-secondary me-2"></i>
+                            <span class="text-truncate">${name}</span>
+                        </span>
+                    </li>
+                `;
+            }
+            
+            // 如果是資料夾
+            let childrenHtml = '';
+            const sortedKeys = Object.keys(node._children).sort((a, b) => {
+                const nodeA = node._children[a];
+                const nodeB = node._children[b];
+                if (nodeA._is_file !== nodeB._is_file) {
+                    return nodeA._is_file ? 1 : -1;
+                }
+                return a.localeCompare(b);
+            });
+            
+            sortedKeys.forEach(key => {
+                childrenHtml += renderTree(node._children[key], key);
+            });
+            
+            // 預設將最頂層資料夾展開 (open)，子資料夾收合
+            return `
+                <li class="mb-1">
+                    <details class="vault-folder" open>
+                        <summary class="d-flex align-items-center py-1">
+                            <i class="chevron bi bi-chevron-right text-muted me-1 small"></i>
+                            <i class="bi bi-folder-fill text-warning me-2"></i>
+                            <span class="fw-semibold text-truncate" style="font-size: 0.9rem;">${name}</span>
+                        </summary>
+                        <ul class="ps-3 border-start ms-2">
+                            ${childrenHtml}
+                        </ul>
+                    </details>
+                </li>
+            `;
+        }
+        
+        // 渲染頂層節點
+        let finalHtml = '<ul class="vault-tree p-0 m-0">';
+        const sortedTopKeys = Object.keys(tree).sort((a, b) => {
+            const nodeA = tree[a];
+            const nodeB = tree[b];
+            if (nodeA._is_file !== nodeB._is_file) {
+                return nodeA._is_file ? 1 : -1;
+            }
+            return a.localeCompare(b);
+        });
+        
+        sortedTopKeys.forEach(key => {
+            finalHtml += renderTree(tree[key], key);
+        });
+        finalHtml += '</ul>';
+        
+        container.innerHTML = finalHtml;
+
+        // 綁定檔案點擊事件：將檔名或完整路徑填入輸入框，點擊後會貼心提示
+        document.querySelectorAll('.vault-file').forEach(item => {
+            item.addEventListener('click', function() {
+                const fullPath = this.getAttribute('data-full-path');
+                const fileName = this.querySelector('span').textContent;
+                chatInput.value = `請說明 ${fileName} 檔案的主要內容與架構。`;
+                chatInput.focus();
+            });
+        });
+    }
+
+    initVaultTree();
 
     function appendMessage(role, content, citations = []) {
         const msgDiv = document.createElement('div');
