@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'valuation',
     'web',
     'sec_edgar',
+    'llm_wiki',
 ]
 
 MIDDLEWARE = [

@@ -52,4 +52,5 @@ urlpatterns = [
     path('scheduler/api/llm/parse', llm_parse_prompt, name='scheduler_llm_parse'),
     path('scheduler/api/llm/usage', get_llm_usage, name='scheduler_llm_usage'),
     path('sec-edgar/', include('sec_edgar.urls')),
+    path('wiki/', include('llm_wiki.urls')),
 ]

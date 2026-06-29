@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}LLM Wiki - 專案知識庫{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">知識庫狀態</h5>
+                    <button id="btn-reindex" class="btn btn-sm btn-outline-light">重建索引</button>
+                </div>
+                <div class="card-body">
+                    <p><strong>狀態:</strong> <span id="index-status">{{ index_status }}</span></p>
+                    <p><strong>區塊數量:</strong> <span id="chunk-count">{{ document_count }}</span></p>
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Vault 檔案清單</h5>
+                </div>
+                <div class="card-body p-0">
+                    <ul class="list-group list-group-flush" style="max-height: 500px; overflow-y: auto;">
+                        {% for f in files %}
+                        <li class="list-group-item text-truncate" title="{{ f }}">{{ f }}</li>
+                        {% empty %}
+                        <li class="list-group-item text-muted">目前尚無檔案</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">LLM 問答助理 (Gemini 3.5 Flash)</h4>
+                </div>
+                <div class="card-body d-flex flex-column" style="height: 70vh;">
+                    <div id="chat-history" class="flex-grow-1 mb-3 p-3 border rounded bg-light" style="overflow-y: auto;">
+                        <div class="text-center text-muted mt-5">
+                            <i class="fas fa-robot fa-3x mb-3"></i>
+                            <p>歡迎使用 LLM Wiki，請輸入您的問題，我將根據知識庫內容為您解答。</p>
+                        </div>
+                    </div>
+                    
+                    <div class="input-group">
+                        <textarea id="chat-input" class="form-control" rows="2" placeholder="請輸入您的問題..."></textarea>
+                        <button id="btn-send" class="btn btn-primary px-4">送出 <i class="fas fa-paper-plane ms-1"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chatInput = document.getElementById('chat-input');
+    const btnSend = document.getElementById('btn-send');
+    const chatHistory = document.getElementById('chat-history');
+    const btnReindex = document.getElementById('btn-reindex');
+
+    function appendMessage(role, content, citations = []) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `mb-3 ${role === 'user' ? 'text-end' : 'text-start'}`;
+        
+        let citationHtml = '';
+        if (citations && citations.length > 0) {
+            citationHtml = `<div class="mt-2 small text-muted"><strong>來源:</strong><br>${citations.join('<br>')}</div>`;
+        }
+
+        const innerHtml = `
+            <div class="d-inline-block p-3 rounded shadow-sm ${role === 'user' ? 'bg-primary text-white' : 'bg-white border'}" style="max-width: 80%; text-align: left;">
+                <div>${content.replace(/\n/g, '<br>')}</div>
+                ${citationHtml}
+            </div>
+        `;
+        msgDiv.innerHTML = innerHtml;
+        chatHistory.appendChild(msgDiv);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        
+        // Remove empty state message if exists
+        const emptyState = chatHistory.querySelector('.text-center.text-muted');
+        if (emptyState) {
+            emptyState.remove();
+        }
+    }
+
+    btnSend.addEventListener('click', async function() {
+        const query = chatInput.value.trim();
+        if (!query) return;
+
+        appendMessage('user', query);
+        chatInput.value = '';
+        chatInput.disabled = true;
+        btnSend.disabled = true;
+
+        try {
+            const response = await fetch('{% url "wiki_chat" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            });
+            const data = await response.json();
+            
+            if (data.error) {
+                appendMessage('bot', `Error: ${data.error}`);
+            } else if (typeof data === 'string') {
+                appendMessage('bot', data);
+            } else {
+                appendMessage('bot', data.answer, data.citations);
+            }
+        } catch (e) {
+            appendMessage('bot', `系統錯誤: ${e.message}`);
+        } finally {
+            chatInput.disabled = false;
+            btnSend.disabled = false;
+            chatInput.focus();
+        }
+    });
+
+    btnReindex.addEventListener('click', async function() {
+        btnReindex.disabled = true;
+        btnReindex.textContent = '重建中...';
+        try {
+            const response = await fetch('{% url "wiki_index" %}', { method: 'POST' });
+            const data = await response.json();
+            if (data.status === 'success') {
+                document.getElementById('index-status').textContent = '已載入';
+                document.getElementById('chunk-count').textContent = data.chunks_indexed;
+                alert(`索引建立成功，共處理 ${data.chunks_indexed} 個段落！`);
+            } else {
+                alert(`錯誤: ${data.error}`);
+            }
+        } catch (e) {
+            alert(`系統錯誤: ${e.message}`);
+        } finally {
+            btnReindex.disabled = false;
+            btnReindex.textContent = '重建索引';
+        }
+    });
+});
+</script>
+{% endblock %}
