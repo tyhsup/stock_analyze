@@ -152,22 +152,56 @@ class GeminiRAG:
         if self.index is None or len(self.documents) == 0:
             return "知識庫尚未建立索引，請先點擊建立索引。"
             
-        # Get query embedding
-        query_emb = np.array([self.get_embedding(query)]).astype('float32')
+        # 1. 偵測查詢中是否提及知識庫中的特定檔名 (不分大小寫)
+        query_lower = query.lower()
+        mentioned_files = set()
+        matched_docs = []
         
-        # Search Top K
-        k = 3
+        # 收集所有不重複的檔名
+        unique_files = {}
+        for doc in self.documents:
+            unique_files[doc['file'].lower()] = doc['file']
+            
+        # 檢查是否有任何檔名被提及
+        for fname_lower, fname_orig in unique_files.items():
+            if fname_lower in query_lower:
+                mentioned_files.add(fname_orig)
+                
+        # 若提及特定檔名，將該檔案的 chunks 優先加載 (限制單一檔案最多 8 個 chunks 以防 Context 爆炸)
+        if mentioned_files:
+            print(f"[RAG] 偵測到查詢提及特定檔案: {mentioned_files}")
+            for doc in self.documents:
+                if doc['file'] in mentioned_files:
+                    if len([d for d in matched_docs if d['file'] == doc['file']]) < 8:
+                        matched_docs.append(doc)
+                        
+        # 2. 進行標準向量檢索 (K 提高為 5 以豐富關聯內容)
+        query_emb = np.array([self.get_embedding(query)]).astype('float32')
+        k = 5
         distances, indices = self.index.search(query_emb, k)
         
         contexts = []
         citations = []
+        seen_chunks = set()
         
+        # 優先排入檔名匹配的內容
+        for doc in matched_docs:
+            chunk_key = f"{doc['file']}_{doc['chunk_index']}"
+            if chunk_key not in seen_chunks:
+                contexts.append(f"來源: {doc['file']}\n內容:\n{doc['text']}")
+                citations.append(doc['file'])
+                seen_chunks.add(chunk_key)
+                
+        # 補上向量相似的內容
         for idx in indices[0]:
             if idx < len(self.documents) and idx >= 0:
                 doc = self.documents[idx]
-                contexts.append(f"來源: {doc['file']}\n內容:\n{doc['text']}")
-                citations.append(doc['file'])
-                
+                chunk_key = f"{doc['file']}_{doc['chunk_index']}"
+                if chunk_key not in seen_chunks:
+                    contexts.append(f"來源: {doc['file']}\n內容:\n{doc['text']}")
+                    citations.append(doc['file'])
+                    seen_chunks.add(chunk_key)
+                    
         context_str = "\n\n---\n\n".join(contexts)
         
         prompt = f"""
