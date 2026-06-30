@@ -227,6 +227,7 @@ def execute_sync_notebooklm(remarks: str = None):
     try:
         from notebooklm_tools.core.auth import load_cached_tokens
         from notebooklm_tools.core.client import NotebookLMClient
+        from notebooklm_tools.services.sources import get_source_content
     except ImportError as e:
         logger.error(f"無法載入 NotebookLM CLI 元件: {e}")
         raise e
@@ -302,9 +303,7 @@ def execute_sync_notebooklm(remarks: str = None):
         logger.info(f"開始同步筆記本: {nb_title} ({nb_id})...")
         
         try:
-            nb_detail = client.get_notebook(nb_id)
-            # nb_detail 本身可能是 dict 也可能是 object
-            sources = get_val(nb_detail, "sources", [])
+            sources = client.get_notebook_sources_with_types(nb_id)
             logger.info(f"筆記本包含 {len(sources)} 個 sources")
             
             for src in sources:
@@ -316,7 +315,7 @@ def execute_sync_notebooklm(remarks: str = None):
                     
                 logger.info(f" - 讀取 source: {src_title}...")
                 try:
-                    src_content_res = client.source_get_content(src_id)
+                    src_content_res = get_source_content(client, src_id)
                     raw_text = src_content_res.get("content", "")
                     
                     if not raw_text.strip():
@@ -340,7 +339,7 @@ def execute_sync_notebooklm(remarks: str = None):
                     logger.error(f"   下載 source '{src_title}' 失敗: {e}")
                     
             # 同步成功，更新本地修改時間狀態
-            state[nb_id] = nb.get("modified_at", "")
+            state[nb_id] = get_val(nb, "modified_at")
             with open(state_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2)
                 
