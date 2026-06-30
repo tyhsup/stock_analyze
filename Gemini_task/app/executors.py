@@ -212,6 +212,171 @@ def execute_us_stock_list_update(remarks: str = None):
     else:
         raise Exception("未找到任何美國上市公司資料")
 
+def execute_sync_notebooklm(remarks: str = None):
+    """
+    自動化確認 NotebookLM 有無新筆記或新內容，並下載同步至 Wiki 知識庫中，接著自動標記關聯與重建索引。
+    """
+    logger.info("開始檢查 NotebookLM 筆記本更新狀態...")
+    import sys
+    import json
+    import re
+    from datetime import datetime
+    
+    # 加入 notebooklm-mcp-cli 模組路徑
+    sys.path.append(os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "notebooklm-mcp-cli", "src")))
+    try:
+        from notebooklm_tools.core.auth import load_cached_tokens
+        from notebooklm_tools.core.client import NotebookLMClient
+    except ImportError as e:
+        logger.error(f"無法載入 NotebookLM CLI 元件: {e}")
+        raise e
+        
+    tokens = load_cached_tokens()
+    if not tokens:
+        raise Exception("未找到 NotebookLM 認證資訊，請先執行 'nlm login' 進行登入。")
+        
+    client = NotebookLMClient(
+        cookies=tokens.cookies,
+        csrf_token=tokens.csrf_token,
+        session_id=tokens.session_id,
+        build_label=getattr(tokens, "build_label", "")
+    )
+    
+    # 讀取雲端筆記本清單
+    try:
+        list_res = client.list_notebooks()
+        if isinstance(list_res, list):
+            notebooks = list_res
+        else:
+            notebooks = list_res.get("notebooks", [])
+    except Exception as e:
+        raise Exception(f"獲取 Notebook 列表失敗: {e}")
+        
+    logger.info(f"成功取得雲端筆記本清單，共 {len(notebooks)} 個筆記本")
+    
+    # 本地狀態檔案，紀錄上次同步的修改時間
+    state_file = r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm\sync_state.json"
+    os.makedirs(os.path.dirname(state_file), exist_ok=True)
+    
+    state = {}
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            state = {}
+            
+    def get_val(obj, key, default=""):
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    # 決定要同步的筆記本
+    target_notebooks = []
+    filter_keyword = (remarks or "").strip().lower()
+    
+    for nb in notebooks:
+        nb_id = get_val(nb, "id")
+        nb_title = get_val(nb, "title")
+        nb_modified = get_val(nb, "modified_at")
+        
+        # 如果 remarks 指定了關鍵字，進行過濾
+        if filter_keyword and filter_keyword not in nb_title.lower() and filter_keyword not in nb_id:
+            continue
+            
+        last_sync_modified = state.get(nb_id, "")
+        # 如果最後修改時間不同，則判定有更新
+        if nb_modified != last_sync_modified:
+            target_notebooks.append(nb)
+            
+    if not target_notebooks:
+        logger.info("所有筆記本皆在最新狀態，無須同步。")
+        return "所有筆記本皆在最新狀態，無須同步。"
+        
+    logger.info(f"偵測到有 {len(target_notebooks)} 個筆記本需要同步更新。")
+    
+    synced_files = []
+    for nb in target_notebooks:
+        nb_id = get_val(nb, "id")
+        nb_title = get_val(nb, "title")
+        logger.info(f"開始同步筆記本: {nb_title} ({nb_id})...")
+        
+        try:
+            nb_detail = client.get_notebook(nb_id)
+            # nb_detail 本身可能是 dict 也可能是 object
+            sources = get_val(nb_detail, "sources", [])
+            logger.info(f"筆記本包含 {len(sources)} 個 sources")
+            
+            for src in sources:
+                src_id = get_val(src, "id")
+                src_title = get_val(src, "title")
+                
+                if not src_title or src_title.strip() == "":
+                    continue
+                    
+                logger.info(f" - 讀取 source: {src_title}...")
+                try:
+                    src_content_res = client.source_get_content(src_id)
+                    raw_text = src_content_res.get("content", "")
+                    
+                    if not raw_text.strip():
+                        continue
+                        
+                    # 檔名清理，移除特殊字元
+                    clean_title = re.sub(r'[\\/*?:"<>|]', "", src_title).strip()
+                    clean_title = clean_title.replace(" ", "_")
+                    
+                    dest_filename = f"{clean_title}.md"
+                    dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
+                    
+                    # 加上 Frontmatter
+                    frontmatter = f"---\ntitle: {src_title}\ntype: references\ndate: {datetime.now().strftime('%Y-%m-%d')}\nsource: NotebookLM ({nb_title})\n---\n\n"
+                    
+                    with open(dest_path, "w", encoding="utf-8") as f:
+                        f.write(frontmatter + raw_text)
+                    synced_files.append(dest_path)
+                    
+                except Exception as e:
+                    logger.error(f"   下載 source '{src_title}' 失敗: {e}")
+                    
+            # 同步成功，更新本地修改時間狀態
+            state[nb_id] = nb.get("modified_at", "")
+            with open(state_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            logger.error(f"同步筆記本 '{nb_title}' 失敗: {e}")
+            
+    if synced_files:
+        logger.info(f"成功同步了 {len(synced_files)} 個文件。開始自動後處理優化...")
+        
+        # 1. 執行 README 重命名防同名衝突
+        try:
+            sys.path.append(r"C:\Users\許廷宇\.gemini\antigravity-ide\brain\2a9fb533-0a6c-40c1-b9fd-bf171a8555cd\scratch")
+            from rename_readme_files import rename_readmes
+            rename_readmes()
+        except Exception as e:
+            logger.error(f"更名後處理失敗: {e}")
+            
+        # 2. 執行關聯性標籤標記
+        try:
+            from annotate_wiki_relations import annotate_files
+            annotate_files()
+        except Exception as e:
+            logger.error(f"關聯性標記失敗: {e}")
+            
+        # 3. 重建 RAG 向量索引庫
+        try:
+            from llm_wiki.services.gemini_rag import rag_service
+            rag_service.build_index()
+            logger.info("RAG 向量索引庫重建成功！")
+        except Exception as e:
+            logger.error(f"RAG 索引重建失敗: {e}")
+            
+        return f"成功同步了 {len(synced_files)} 個文件並重建索引。"
+        
+    return "無須同步。"
+
 # 任務執行器對照表
 EXECUTORS = {
     "tw_stock_cost": execute_tw_stock_cost,
@@ -223,5 +388,6 @@ EXECUTORS = {
     "us_investor": execute_us_investor,
     "tw_listed_list_update": execute_tw_listed_list_update,
     "tw_otc_list_update": execute_tw_otc_list_update,
-    "us_stock_list_update": execute_us_stock_list_update
+    "us_stock_list_update": execute_us_stock_list_update,
+    "sync_notebooklm": execute_sync_notebooklm
 }
