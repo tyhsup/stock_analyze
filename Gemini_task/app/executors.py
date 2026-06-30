@@ -328,8 +328,10 @@ def execute_sync_notebooklm(remarks: str = None):
                     dest_filename = f"{clean_title}.md"
                     dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
                     
-                    # 加上 Frontmatter
-                    frontmatter = f"---\ntitle: {src_title}\ntype: references\ndate: {datetime.now().strftime('%Y-%m-%d')}\nsource: NotebookLM ({nb_title})\n---\n\n"
+                    # 加上 Frontmatter，用雙引號包裹 title 與 source 以免冒號等特殊字元導致 YAML 解析失敗
+                    safe_title = src_title.replace('"', '\\"')
+                    safe_source = f"NotebookLM ({nb_title})".replace('"', '\\"')
+                    frontmatter = f"---\ntitle: \"{safe_title}\"\ntype: references\ndate: {datetime.now().strftime('%Y-%m-%d')}\nsource: \"{safe_source}\"\n---\n\n"
                     
                     with open(dest_path, "w", encoding="utf-8") as f:
                         f.write(frontmatter + raw_text)
