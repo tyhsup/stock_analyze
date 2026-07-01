@@ -88,6 +88,10 @@ def annotate_files(changed_files=None):
     notebook_groups = {} # 結構: { "LLM wiki建構要點": [ { filename, title, filepath } ] }
     
     for filepath in all_files:
+        # 跳過大小為 0 的空檔案
+        if os.path.exists(filepath) and os.path.getsize(filepath) == 0:
+            continue
+            
         # 跳過我們稍後要自動產生的筆記本首頁檔本身，避免自己循環群組
         if "_notebook_index.md" in filepath.lower():
             continue
@@ -166,6 +170,10 @@ source: "NotebookLM ({nb_name})"
     print(f"待處理檔案數: {len(target_files)}")
     
     for filepath in target_files:
+        # 跳過大小為 0 的空檔案
+        if os.path.exists(filepath) and os.path.getsize(filepath) == 0:
+            continue
+            
         filename = os.path.basename(filepath)
         # 跳過索引首頁本身的關聯標註，因為它自己就是目錄
         if "_notebook_index.md" in filename:
