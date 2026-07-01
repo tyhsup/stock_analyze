@@ -59,6 +59,23 @@ RELATION_RULES = {
     }
 }
 
+def parse_frontmatter(content):
+    """從 Markdown 內容中抽取 Frontmatter 的 title 與 source"""
+    if not content.strip().startswith("---"):
+        return {}
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    fm_text = parts[1]
+    fields = {}
+    for line in fm_text.split("\n"):
+        if ":" in line:
+            k, v = line.split(":", 1)
+            # 移除外層雙引號、單引號與前後空格
+            v_clean = v.strip().strip('"').strip("'")
+            fields[k.strip()] = v_clean
+    return fields
+
 def annotate_files(changed_files=None):
     """
     對知識庫中的 Markdown 檔案進行增量或全量關聯性標註。
@@ -66,8 +83,79 @@ def annotate_files(changed_files=None):
     """
     print("開始進行知識庫檔案關聯性標註...")
     
+    # 1. 第一步：全量掃描所有檔案，建立 NotebookLM 筆記本分群
+    all_files = glob.glob(os.path.join(VAULT_DIR, "**", "*.md"), recursive=True)
+    notebook_groups = {} # 結構: { "LLM wiki建構要點": [ { filename, title, filepath } ] }
+    
+    for filepath in all_files:
+        # 跳過我們稍後要自動產生的筆記本首頁檔本身，避免自己循環群組
+        if "_notebook_index.md" in filepath.lower():
+            continue
+            
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            fields = parse_frontmatter(content)
+            source_val = fields.get("source", "")
+            
+            # 匹配 "NotebookLM (筆記本名稱)"
+            match = re.match(r'^NotebookLM\s*\((.*)\)$', source_val)
+            if match:
+                nb_name = match.group(1).strip()
+                title_val = fields.get("title", os.path.basename(filepath))
+                notebook_groups.setdefault(nb_name, []).append({
+                    "filename": os.path.basename(filepath),
+                    "title": title_val,
+                    "filepath": filepath
+                })
+        except Exception as e:
+            pass
+
+    # 2. 第二步：為每個筆記本自動建立或更新一個 Wiki 索引首頁檔案
+    # 這樣在 Obsidian 中點選筆記本 Wikilink (例如 [[LLM_wiki建構要點_notebook_index]]) 就不會是空連結
+    generated_indices = []
+    for nb_name, sources in notebook_groups.items():
+        clean_nb_name = re.sub(r'[\\/*?:"<>| ]', "_", nb_name)
+        index_filename = f"{clean_nb_name}_notebook_index.md".lower()
+        index_filepath = os.path.join(VAULT_DIR, "references", "notebooklm", index_filename)
+        
+        # 組裝筆記本索引頁內容
+        from datetime import datetime
+        links_list = []
+        for src in sorted(sources, key=lambda x: x["title"]):
+            link_name = os.path.splitext(src["filename"])[0]
+            links_list.append(f"* [[{link_name}]] - {src['title']}")
+            
+        index_content = f"""---
+title: "NotebookLM 筆記本：{nb_name}"
+type: references
+date: "{datetime.now().strftime('%Y-%m-%d')}"
+source: "NotebookLM ({nb_name})"
+---
+
+# NotebookLM 筆記本：{nb_name}
+
+本筆記本在雲端同步的相關來源資料已自動歸類如下：
+
+### 筆記本來源文件目錄
+{chr(10).join(links_list)}
+"""
+        try:
+            # 寫入或更新首頁
+            with open(index_filepath, 'w', encoding='utf-8') as f:
+                f.write(index_content)
+            generated_indices.append(index_filepath)
+            # 使用 ascii/safe 印出以防 cp950 編碼崩潰
+            safe_index_filename = index_filename.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
+            safe_print_index = re.sub(r'[^\x00-\x7F\u4e00-\u9fa5]', '?', safe_index_filename)
+            print(f" [首頁產生/更新] {safe_print_index} (共 {len(sources)} 個 Sources)")
+        except Exception as e:
+            print(f"產生筆記本首頁失敗: {e}")
+
+    # 3. 第三步：過濾出本次需要處理的目標檔案
     if changed_files is not None:
-        target_files = [f for f in changed_files if os.path.exists(f)]
+        # 本次變更檔案 + 自動產生的首頁檔案都需要做關聯
+        target_files = [f for f in (list(changed_files) + generated_indices) if os.path.exists(f)]
     else:
         target_files = glob.glob(os.path.join(VAULT_DIR, "**", "*.md"), recursive=True)
         
@@ -79,7 +167,18 @@ def annotate_files(changed_files=None):
     
     for filepath in target_files:
         filename = os.path.basename(filepath)
-        print(f"\n處理檔案: {filename}")
+        # 跳過索引首頁本身的關聯標註，因為它自己就是目錄
+        if "_notebook_index.md" in filename:
+            continue
+            
+        try:
+            # 使用 ascii/safe 印出以防 cp950 編碼崩潰
+            safe_filename = filename.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
+            # 過濾掉可能引起 cp950 崩潰的特定字元
+            safe_print_name = re.sub(r'[^\x00-\x7F\u4e00-\u9fa5]', '?', safe_filename)
+            print(f"\n處理檔案: {safe_print_name}")
+        except Exception:
+            print("\n處理檔案: [Unicode Name File]")
         
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
@@ -90,10 +189,10 @@ def annotate_files(changed_files=None):
             
             relations = []
             
-            # 根據規則進行關聯比對
+            # (A) 靜態規則關聯比對
             for ref_file, rules in RELATION_RULES.items():
                 if ref_file == filename:
-                    continue # 不要自己關聯自己
+                    continue
                     
                 is_matched = False
                 for kw in rules["keywords"]:
@@ -117,6 +216,30 @@ def annotate_files(changed_files=None):
                 if is_matched:
                     link_name = os.path.splitext(ref_file)[0]
                     relations.append(f"* [[{link_name}]] - {rules['desc']}")
+            
+            # (B) NotebookLM 同筆記本分群關聯
+            fields = parse_frontmatter(content)
+            source_val = fields.get("source", "")
+            match = re.match(r'^NotebookLM\s*\((.*)\)$', source_val)
+            
+            if match:
+                nb_name = match.group(1).strip()
+                clean_nb_name = re.sub(r'[\\/*?:"<>| ]', "_", nb_name)
+                index_link = f"{clean_nb_name}_notebook_index".lower()
+                
+                # 指向該筆記本首頁
+                relations.append(f"* [[{index_link}]] - NotebookLM 筆記本：{nb_name} 首頁索引")
+                
+                # 列出同屬於這本筆記本的其他 Sources 檔案
+                same_nb_sources = notebook_groups.get(nb_name, [])
+                other_sources = [s for s in same_nb_sources if s["filename"] != filename]
+                
+                if other_sources:
+                    relations.append(f"* 同屬此筆記本的相關文件：")
+                    # 按字母排序
+                    for s in sorted(other_sources, key=lambda x: x["title"]):
+                        link_name = os.path.splitext(s["filename"])[0]
+                        relations.append(f"  * [[{link_name}]] - {s['title']}")
                     
             if relations:
                 print(f" -> 建立關聯: {len(relations)} 個連結")
