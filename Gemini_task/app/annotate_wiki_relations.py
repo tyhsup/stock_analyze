@@ -119,7 +119,7 @@ def annotate_files(changed_files=None):
     # 這樣在 Obsidian 中點選筆記本 Wikilink (例如 [[LLM_wiki建構要點_notebook_index]]) 就不會是空連結
     generated_indices = []
     for nb_name, sources in notebook_groups.items():
-        clean_nb_name = re.sub(r'[\\/*?:"<>| ]', "_", nb_name)
+        clean_nb_name = re.sub(r'[\\/*?:"<>|# ]', "_", nb_name)
         index_filename = f"{clean_nb_name}_notebook_index.md".lower()
         index_filepath = os.path.join(VAULT_DIR, "references", "notebooklm", index_filename)
         
@@ -232,7 +232,7 @@ source: "NotebookLM ({nb_name})"
             
             if match:
                 nb_name = match.group(1).strip()
-                clean_nb_name = re.sub(r'[\\/*?:"<>| ]', "_", nb_name)
+                clean_nb_name = re.sub(r'[\\/*?:"<>|# ]', "_", nb_name)
                 index_link = f"{clean_nb_name}_notebook_index".lower()
                 
                 # 指向該筆記本首頁
@@ -262,3 +262,6 @@ source: "NotebookLM ({nb_name})"
             print(f"處理檔案 {filename} 關聯標記出錯: {e}")
             
     print("\n關聯性標註完成！")
+
+if __name__ == "__main__":
+    annotate_files()

@@ -335,7 +335,7 @@ def execute_sync_notebooklm(remarks: str = None):
                     continue
                     
                 # 檔名清理，移除特殊字元
-                clean_title = re.sub(r'[\\/*?:"<>|]', "", src_title).strip()
+                clean_title = re.sub(r'[\\/*?:"<>|#]', "", src_title).strip()
                 clean_title = clean_title.replace(" ", "_")
                 dest_filename = f"{clean_title}.md"
                 dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
@@ -352,6 +352,9 @@ def execute_sync_notebooklm(remarks: str = None):
                     
                     if not raw_text.strip():
                         continue
+                    
+                    # 轉義內文中的 [[ 與 ]]，防止 Obsidian 誤判為 wikilink 產生空檔案
+                    raw_text = raw_text.replace("[[", "\\[\\[").replace("]]", "\\]\\]")
                         
                     # 加上 Frontmatter，用雙引號包裹 title 與 source 以免冒號等特殊字元導致 YAML 解析失敗
                     safe_title = src_title.replace('"', '\\"')
