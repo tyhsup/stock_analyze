@@ -255,7 +255,7 @@ def execute_sync_notebooklm(remarks: str = None):
         
     logger.info(f"成功取得雲端筆記本清單，共 {len(notebooks)} 個筆記本")
     
-    # 本地狀態檔案，紀錄上次同步的修改時間
+    # 本地狀態檔案，紀錄上次同步的修改時間與已同步的 sources 對照
     state_file = r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm\sync_state.json"
     os.makedirs(os.path.dirname(state_file), exist_ok=True)
     
@@ -263,9 +263,21 @@ def execute_sync_notebooklm(remarks: str = None):
     if os.path.exists(state_file):
         try:
             with open(state_file, "r", encoding="utf-8") as f:
-                state = json.load(f)
+                raw_state = json.load(f)
+                # 相容舊格式轉換
+                if "notebooks" not in raw_state:
+                    state = {"notebooks": {}}
+                    for nb_id, modified_at in raw_state.items():
+                        state["notebooks"][nb_id] = {
+                            "modified_at": modified_at,
+                            "sources": {}  # 舊 sources 留空，待本次或後續同步補全
+                        }
+                else:
+                    state = raw_state
         except Exception:
-            state = {}
+            state = {"notebooks": {}}
+    else:
+        state = {"notebooks": {}}
             
     def get_val(obj, key, default=""):
         if isinstance(obj, dict):
@@ -276,6 +288,8 @@ def execute_sync_notebooklm(remarks: str = None):
     target_notebooks = []
     filter_keyword = (remarks or "").strip().lower()
     
+    notebook_states = state.setdefault("notebooks", {})
+    
     for nb in notebooks:
         nb_id = get_val(nb, "id")
         nb_title = get_val(nb, "title")
@@ -285,7 +299,8 @@ def execute_sync_notebooklm(remarks: str = None):
         if filter_keyword and filter_keyword not in nb_title.lower() and filter_keyword not in nb_id:
             continue
             
-        last_sync_modified = state.get(nb_id, "")
+        nb_record = notebook_states.get(nb_id, {})
+        last_sync_modified = nb_record.get("modified_at", "")
         # 如果最後修改時間不同，則判定有更新
         if nb_modified != last_sync_modified:
             target_notebooks.append(nb)
@@ -302,6 +317,12 @@ def execute_sync_notebooklm(remarks: str = None):
         nb_title = get_val(nb, "title")
         logger.info(f"開始同步筆記本: {nb_title} ({nb_id})...")
         
+        nb_record = notebook_states.setdefault(nb_id, {
+            "modified_at": "",
+            "sources": {}
+        })
+        synced_sources = nb_record.setdefault("sources", {})
+        
         try:
             sources = client.get_notebook_sources_with_types(nb_id)
             logger.info(f"筆記本包含 {len(sources)} 個 sources")
@@ -313,7 +334,18 @@ def execute_sync_notebooklm(remarks: str = None):
                 if not src_title or src_title.strip() == "":
                     continue
                     
-                logger.info(f" - 讀取 source: {src_title}...")
+                # 檔名清理，移除特殊字元
+                clean_title = re.sub(r'[\\/*?:"<>|]', "", src_title).strip()
+                clean_title = clean_title.replace(" ", "_")
+                dest_filename = f"{clean_title}.md"
+                dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
+                
+                # 方案 B：如果該 source_id 已經存在於同步狀態中，且本地實體檔案確實存在，則直接跳過下載
+                if src_id in synced_sources and os.path.exists(dest_path):
+                    logger.info(f" - [跳過已存在] source: {src_title}")
+                    continue
+                    
+                logger.info(f" - [下載中] 讀取 source: {src_title}...")
                 try:
                     src_content_res = get_source_content(client, src_id)
                     raw_text = src_content_res.get("content", "")
@@ -321,13 +353,6 @@ def execute_sync_notebooklm(remarks: str = None):
                     if not raw_text.strip():
                         continue
                         
-                    # 檔名清理，移除特殊字元
-                    clean_title = re.sub(r'[\\/*?:"<>|]', "", src_title).strip()
-                    clean_title = clean_title.replace(" ", "_")
-                    
-                    dest_filename = f"{clean_title}.md"
-                    dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
-                    
                     # 加上 Frontmatter，用雙引號包裹 title 與 source 以免冒號等特殊字元導致 YAML 解析失敗
                     safe_title = src_title.replace('"', '\\"')
                     safe_source = f"NotebookLM ({nb_title})".replace('"', '\\"')
@@ -337,11 +362,17 @@ def execute_sync_notebooklm(remarks: str = None):
                         f.write(frontmatter + raw_text)
                     synced_files.append(dest_path)
                     
+                    # 更新 source 同步狀態
+                    synced_sources[src_id] = {
+                        "title": src_title,
+                        "last_synced": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
                 except Exception as e:
                     logger.error(f"   下載 source '{src_title}' 失敗: {e}")
                     
             # 同步成功，更新本地修改時間狀態
-            state[nb_id] = get_val(nb, "modified_at")
+            nb_record["modified_at"] = get_val(nb, "modified_at")
             with open(state_file, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2)
                 
@@ -352,29 +383,40 @@ def execute_sync_notebooklm(remarks: str = None):
         logger.info(f"成功同步了 {len(synced_files)} 個文件。開始自動後處理優化...")
         
         # 1. 執行 README 重命名防同名衝突
+        changed_paths = synced_files
         try:
-            sys.path.append(r"C:\Users\許廷宇\.gemini\antigravity-ide\brain\2a9fb533-0a6c-40c1-b9fd-bf171a8555cd\scratch")
-            from rename_readme_files import rename_readmes
-            rename_readmes()
+            from app.rename_readme_files import rename_readmes
+            renamed_paths = rename_readmes(changed_files=synced_files)
+            if renamed_paths:
+                # 重新組合變更路徑
+                changed_paths = []
+                for p in synced_files:
+                    for r in renamed_paths:
+                        if os.path.dirname(p) == os.path.dirname(r) and os.path.basename(p).lower() == "readme.md":
+                            changed_paths.append(r)
+                            break
+                    else:
+                        if os.path.exists(p):
+                            changed_paths.append(p)
         except Exception as e:
             logger.error(f"更名後處理失敗: {e}")
             
-        # 2. 執行關聯性標籤標記
+        # 2. 執行關聯性標籤標記 (僅增量變更檔案)
         try:
-            from annotate_wiki_relations import annotate_files
-            annotate_files()
+            from app.annotate_wiki_relations import annotate_files
+            annotate_files(changed_files=changed_paths)
         except Exception as e:
             logger.error(f"關聯性標記失敗: {e}")
             
-        # 3. 重建 RAG 向量索引庫
+        # 3. 增量更新 RAG 向量索引庫
         try:
             from llm_wiki.services.gemini_rag import rag_service
-            rag_service.build_index()
-            logger.info("RAG 向量索引庫重建成功！")
+            rag_service.incremental_update(changed_files=changed_paths)
+            logger.info("RAG 向量索引庫增量更新成功！")
         except Exception as e:
-            logger.error(f"RAG 索引重建失敗: {e}")
+            logger.error(f"RAG 索引增量更新失敗: {e}")
             
-        return f"成功同步了 {len(synced_files)} 個文件並重建索引。"
+        return f"成功同步了 {len(synced_files)} 個文件並增量重建索引。"
         
     return "無須同步。"
 

@@ -105,6 +105,7 @@ class GeminiRAG:
         embeddings = []
         self.documents = []
         
+        next_id = 1
         for file in files:
             try:
                 post = read_markdown_file(file)
@@ -112,26 +113,33 @@ class GeminiRAG:
                 if not content.strip():
                     continue
                     
-                # Simple chunking (for production, use LangChain or LlamaIndex chunkers)
+                # Simple chunking
                 chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
                 
                 for idx, chunk in enumerate(chunks):
                     emb = self.get_embedding(chunk)
                     embeddings.append(emb)
                     self.documents.append({
+                        "chunk_id": next_id,
                         "file": os.path.basename(file),
                         "path": file,
                         "chunk_index": idx,
                         "text": chunk
                     })
+                    next_id += 1
             except Exception as e:
                 print(f"Error processing {file}: {e}")
                 
         if embeddings:
             emb_matrix = np.array(embeddings).astype('float32')
-            # FAISS inner product for cosine similarity (assuming normalized, but let's use L2 for safety if unnormalized)
-            self.index = faiss.IndexFlatL2(emb_matrix.shape[1])
-            self.index.add(emb_matrix)
+            dimension = emb_matrix.shape[1]
+            
+            # 使用 IndexIDMap 包裹 IndexFlatL2 以便未來能進行 remove_ids
+            sub_index = faiss.IndexFlatL2(dimension)
+            self.index = faiss.IndexIDMap(sub_index)
+            
+            ids = np.array([doc["chunk_id"] for doc in self.documents]).astype('int64')
+            self.index.add_with_ids(emb_matrix, ids)
             
             # Save index and metadata
             faiss.write_index(self.index, self.index_path)
@@ -142,11 +150,123 @@ class GeminiRAG:
 
     def load_index(self):
         if os.path.exists(self.index_path) and os.path.exists(self.metadata_path):
-            self.index = faiss.read_index(self.index_path)
-            self.documents = np.load(self.metadata_path, allow_pickle=True).tolist()
-            print("FAISS index loaded.")
+            try:
+                loaded_index = faiss.read_index(self.index_path)
+                self.documents = np.load(self.metadata_path, allow_pickle=True).tolist()
+                
+                # 自動相容升級：如果讀取出來的不是 IndexIDMap，就地升級它
+                if not isinstance(loaded_index, faiss.IndexIDMap):
+                    print("偵測到舊版 Flat 索引格式，開始就地升級為 IndexIDMap...")
+                    dimension = loaded_index.d
+                    sub_index = faiss.IndexFlatL2(dimension)
+                    self.index = faiss.IndexIDMap(sub_index)
+                    
+                    # 重新為 documents 分配 chunk_id
+                    for idx, doc in enumerate(self.documents):
+                        doc["chunk_id"] = idx + 1
+                        
+                    # 從舊索引中抽取所有向量重建
+                    if loaded_index.ntotal > 0:
+                        vectors = loaded_index.reconstruct_n(0, loaded_index.ntotal)
+                        ids = np.array([doc["chunk_id"] for doc in self.documents]).astype('int64')
+                        self.index.add_with_ids(vectors, ids)
+                        
+                    # 寫回磁碟存檔，完成升級
+                    faiss.write_index(self.index, self.index_path)
+                    np.save(self.metadata_path, self.documents)
+                    print("舊版 Flat 索引升級完成。")
+                else:
+                    self.index = loaded_index
+                    # 確保 documents 中每個 doc 都至少有 chunk_id，防微小缺失
+                    modified = False
+                    for idx, doc in enumerate(self.documents):
+                        if "chunk_id" not in doc:
+                            doc["chunk_id"] = idx + 1
+                            modified = True
+                    if modified:
+                        np.save(self.metadata_path, self.documents)
+                
+                print("FAISS index loaded successfully.")
+            except Exception as e:
+                print(f"載入 FAISS 索引失敗，將在下次執行時重建: {e}")
+                self.index = None
+                self.documents = []
         else:
             print("No FAISS index found. Please build index.")
+
+    def incremental_update(self, changed_files):
+        """僅對變更的 Markdown 檔案更新向量索引。"""
+        if not changed_files:
+            print("無變更檔案，跳過 RAG 增量更新。")
+            return
+            
+        print(f"RAG 開始增量更新，變按檔案數: {len(changed_files)}")
+        self.load_index()
+        
+        if self.index is None or not self.documents:
+            print("本地無索引或 metadata 損毀，執行全量重建...")
+            self.build_index()
+            return
+            
+        # 1. 篩選出需要移除的舊 chunks IDs
+        changed_basenames = [os.path.basename(f) for f in changed_files]
+        old_chunks_to_remove = [doc for doc in self.documents if doc["file"] in changed_basenames]
+        
+        if old_chunks_to_remove:
+            old_ids = [doc["chunk_id"] for doc in old_chunks_to_remove]
+            print(f"正在從索引中移除舊 chunks，共計 {len(old_ids)} 個向量...")
+            # 從 FAISS 索引中刪除
+            self.index.remove_ids(np.array(old_ids).astype('int64'))
+            # 從 metadata 列表中移除
+            self.documents = [doc for doc in self.documents if doc["file"] not in changed_basenames]
+            
+        # 2. 讀取並處理變更的檔案，產生新 chunks 的 Embedding
+        embeddings = []
+        new_docs = []
+        
+        # 決定自增 ID 起始值
+        max_id = max([doc.get("chunk_id", 0) for doc in self.documents]) if self.documents else 0
+        next_id = max_id + 1
+        
+        for file in changed_files:
+            # 如果檔案在本地被刪除了（例如刪除 Source），我們就不新增它，此時已完成 remove_ids 即可
+            if not os.path.exists(file):
+                print(f"檔案已在本地刪除，僅清理其向量索引: {os.path.basename(file)}")
+                continue
+                
+            try:
+                post = read_markdown_file(file)
+                content = post.content
+                if not content.strip():
+                    continue
+                
+                # 分塊 (Chunking)
+                chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+                for idx, chunk in enumerate(chunks):
+                    emb = self.get_embedding(chunk)
+                    embeddings.append(emb)
+                    new_docs.append({
+                        "chunk_id": next_id,
+                        "file": os.path.basename(file),
+                        "path": file,
+                        "chunk_index": idx,
+                        "text": chunk
+                    })
+                    next_id += 1
+            except Exception as e:
+                print(f"增量處理檔案失敗 {file}: {e}")
+                
+        # 3. 追加新向量與 metadata 並存檔
+        if embeddings:
+            emb_matrix = np.array(embeddings).astype('float32')
+            new_ids = np.array([doc["chunk_id"] for doc in new_docs]).astype('int64')
+            self.index.add_with_ids(emb_matrix, new_ids)
+            self.documents.extend(new_docs)
+            
+        # 4. 寫回磁碟存檔
+        faiss.write_index(self.index, self.index_path)
+        np.save(self.metadata_path, self.documents)
+        print(f"RAG 增量更新成功！新增了 {len(new_docs)} 個 chunks，目前總計 {len(self.documents)} 個 chunks。")
 
     def chat(self, query):
         if self.index is None or len(self.documents) == 0:
