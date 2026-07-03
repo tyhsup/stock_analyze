@@ -5,7 +5,9 @@ from .views import (
     api_insider_trades, 
     api_sync_13f, 
     api_sync_insider,
-    api_financial_data
+    api_financial_data,
+    api_institution_holdings,
+    api_sync_institution_13f
 )
 
 urlpatterns = [
@@ -15,4 +17,6 @@ urlpatterns = [
     path('api/financial/<str:ticker>/', api_financial_data, name='api_financial_data'),
     path('api/sync/13f/', api_sync_13f, name='api_sync_13f'),
     path('api/sync/insider/', api_sync_insider, name='api_sync_insider'),
+    path('api/institution/holdings/', api_institution_holdings, name='api_institution_holdings'),
+    path('api/sync/institution/', api_sync_institution_13f, name='api_sync_institution_13f'),
 ]

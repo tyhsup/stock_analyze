@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SEC EDGAR 美股大數據整合儀表板 - {{ current_ticker }}</title>
+    <title>SEC EDGAR 美股機構持股儀表板</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -345,37 +345,40 @@
             margin-bottom: 1rem;
             opacity: 0.5;
         }
+        
+        /* Clickable stock row styles */
+        .clickable-stock-row {
+            transition: background-color 0.2s ease;
+        }
+        .clickable-stock-row:hover td {
+            background: rgba(255, 255, 255, 0.04) !important;
+            color: var(--text-primary) !important;
+        }
+        .clickable-stock-row.selected-row td {
+            background: rgba(59, 130, 246, 0.15) !important;
+            color: var(--text-primary) !important;
+            border-left: 3px solid #3b82f6;
+        }
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 3rem 1rem;
+        }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>美股 SEC EDGAR 整合數據儀表板</h1>
+        <h1>美股 SEC EDGAR 機構持股儀表板</h1>
         
         <div class="header-controls">
-            <!-- Ticker Dropdown -->
-            <select id="tickerSelector" onchange="changeTicker(this.value)">
-                <option value="AAPL" {% if current_ticker == "AAPL" %}selected{% endif %}>AAPL - Apple</option>
-                <option value="MSFT" {% if current_ticker == "MSFT" %}selected{% endif %}>MSFT - Microsoft</option>
-                <option value="NVDA" {% if current_ticker == "NVDA" %}selected{% endif %}>NVDA - Nvidia</option>
-                <option value="TSLA" {% if current_ticker == "TSLA" %}selected{% endif %}>TSLA - Tesla</option>
-                <option value="AMZN" {% if current_ticker == "AMZN" %}selected{% endif %}>AMZN - Amazon</option>
-                <option value="META" {% if current_ticker == "META" %}selected{% endif %}>META - Meta</option>
-                <option value="GOOGL" {% if current_ticker == "GOOGL" %}selected{% endif %}>GOOGL - Google</option>
-                {% for stock in us_stocks %}
-                    {% if stock.symbol != "AAPL" and stock.symbol != "MSFT" and stock.symbol != "NVDA" and stock.symbol != "TSLA" and stock.symbol != "AMZN" and stock.symbol != "META" and stock.symbol != "GOOGL" %}
-                    <option value="{{ stock.symbol }}" {% if current_ticker == stock.symbol %}selected{% endif %}>{{ stock.symbol }} - {{ stock.name }}</option>
-                    {% endif %}
-                {% endfor %}
-            </select>
-
             <!-- 手動同步控制區 -->
             <div class="sync-group">
                 <button id="btnSync13F" class="btn" onclick="triggerSync('13F')">
                     <span class="spinner" id="spinner13F"></span>
-                    同步 13F 機構
+                    同步機構 13F
                 </button>
-                <button id="btnSyncInsider" class="btn btn-secondary" onclick="triggerSync('insider')">
+                <button id="btnSyncInsider" class="btn btn-secondary" onclick="triggerSync('insider')" disabled>
                     <span class="spinner" id="spinnerInsider"></span>
                     同步 內部人/財務
                 </button>
@@ -385,53 +388,59 @@
 
     <div class="dashboard-grid">
         
-        <!-- 左半部分：13F 機構持股（官方數據與爬蟲補充並存） -->
+        <!-- 左半部分：13F 機構持股（以機構為中心） -->
         <div class="panel">
             <div class="panel-header">
-                <h2 class="panel-title">13F 機構持股分析</h2>
+                <h2 class="panel-title">13F 機構持倉明細</h2>
                 {% if latest_13f_period %}
-                <span class="panel-subtitle">最新報告期末日：{{ latest_13f_period|date:"Y-m-d" }}</span>
+                <span class="panel-subtitle">報告期末日：{{ latest_13f_period }}</span>
                 {% endif %}
             </div>
 
-            <!-- Tab 控制器 -->
-            <div class="tabs-header">
-                <button class="tab-btn active" onclick="switchTab('sec_13f')">SEC 官方官方數據 (推薦)</button>
-                <button class="tab-btn" onclick="switchTab('stockzoa_13f')">Stockzoa 爬蟲數據 (補充)</button>
+            <!-- 機構選單 -->
+            <div style="margin-bottom: 1.5rem; display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
+                <label for="institutionSelector" style="font-weight: 600; color: var(--text-secondary); font-size: 0.9rem;">選擇投資機構：</label>
+                <select id="institutionSelector" onchange="changeInstitution(this.value)" style="flex: 1; min-width: 200px; padding: 0.6rem 1.2rem;">
+                    {% for cik, inst in known_institutions.items %}
+                        <option value="{{ cik }}" {% if current_cik == cik %}selected{% endif %}>{{ inst.name_zh }}</option>
+                    {% endfor %}
+                </select>
             </div>
 
-            <!-- Tab 1: SEC 官方持股數據 -->
+            <!-- 機構持股數據 -->
             <div id="sec_13f" class="tab-content active">
-                <div class="table-container">
+                <div class="table-container" style="max-height: 580px;">
                     {% if sec_13f_data %}
                     <table>
                         <thead>
                             <tr>
-                                <th>持有機構 (CIK)</th>
+                                <th>股票代號</th>
+                                <th>證券名稱</th>
                                 <th>持股類型</th>
                                 <th class="num-col">持股數量</th>
                                 <th class="num-col">持股總值 (USD)</th>
+                                <th class="num-col">持倉佔比</th>
                                 <th class="num-col">季度變動</th>
                                 <th>異動類型</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for row in sec_13f_data %}
-                            <tr>
-                                <td style="font-weight: 500; color: var(--text-primary);">
-                                    {{ row.company_name }} <span style="font-size: 0.75rem; color: var(--text-secondary);">({{ row.cik }})</span>
-                                </td>
+                            <tr {% if row.ticker %}class="clickable-stock-row" data-ticker="{{ row.ticker }}" onclick="selectStock('{{ row.ticker }}', this)" style="cursor: pointer;"{% endif %}>
+                                <td style="font-weight: 700; color: #38bdf8;">{{ row.ticker|default:"-" }}</td>
+                                <td style="font-weight: 500; color: var(--text-primary);">{{ row.security_name }}</td>
                                 <td>
-                                    {% if row.put_call %}
+                                    {% if row.put_call == 'PUT' or row.put_call == 'CALL' %}
                                         <span style="color: var(--color-sold);">{{ row.put_call }}</span>
                                     {% else %}
-                                        <span>現股</span>
+                                        <span style="color: var(--text-secondary);">現股</span>
                                     {% endif %}
                                 </td>
                                 <td class="num-col">{{ row.shares }}</td>
                                 <td class="num-col">${{ row.value_usd }}</td>
+                                <td class="num-col" style="font-weight: 600; color: #a855f7;">{{ row.weight }}%</td>
                                 <td class="num-col {% if row.change_pct > 0 %}text-up{% elif row.change_pct < 0 %}text-down{% endif %}">
-                                    {% if row.change_pct %}
+                                    {% if row.change_pct is not None %}
                                         {{ row.change_pct|floatformat:2 }}%
                                     {% else %}
                                         -
@@ -457,41 +466,8 @@
                     {% else %}
                     <div class="no-data">
                         <div class="no-data-icon">📂</div>
-                        <p>資料庫中暫無該股票的官方 13F 數據</p>
-                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊上方「同步 13F 機構」下載最新申報資料</p>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Tab 2: Stockzoa 爬蟲數據 -->
-            <div id="stockzoa_13f" class="tab-content">
-                <div class="table-container">
-                    {% if stockzoa_data %}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>機構名稱</th>
-                                <th class="num-col">持股數量</th>
-                                <th class="num-col">持股佔比</th>
-                                <th>採集日期</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in stockzoa_data %}
-                            <tr>
-                                <td style="font-weight: 500; color: var(--text-primary);">{{ row.holder_name }}</td>
-                                <td class="num-col">{{ row.shares }}</td>
-                                <td class="num-col">{{ row.pct_out }}%</td>
-                                <td>{{ row.date|date:"Y-m-d" }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="no-data">
-                        <div class="no-data-icon">📂</div>
-                        <p>暫無 Stockzoa 採集數據</p>
+                        <p>資料庫中暫無該機構的官方 13F 數據</p>
+                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊右上方「同步機構 13F」下載最新申報資料</p>
                     </div>
                     {% endif %}
                 </div>
@@ -501,112 +477,76 @@
         <!-- 右半部分：內部人交易與 XBRL 財務數據 -->
         <div style="display: flex; flex-direction: column; gap: 2rem;">
             
-            <!-- 內部人交易面板 -->
-            <div class="panel">
-                <div class="panel-header">
-                    <h2 class="panel-title">內部人交易動態 (Form 4)</h2>
-                    <span class="panel-subtitle">最近 50 筆交易</span>
-                </div>
-
-                <div class="table-container" style="max-height: 250px;">
-                    {% if insider_trades %}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>申報日期</th>
-                                <th>內部人 / 職稱</th>
-                                <th class="num-col">異動股數</th>
-                                <th class="num-col">均價</th>
-                                <th>代碼</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for trade in insider_trades %}
-                            <tr>
-                                <td>{{ trade.filing_date|date:"Y-m-d" }}</td>
-                                <td style="font-weight: 500; color: var(--text-primary);">
-                                    {{ trade.insider_name }}
-                                    {% if trade.is_senior_officer %}
-                                        <span style="color: #eab308; font-size: 0.75rem;">★</span>
-                                    {% endif %}
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 400;">
-                                        {{ trade.insider_title|default:"-" }}
-                                    </div>
-                                </td>
-                                <td class="num-col {% if trade.transaction_code == 'P' %}text-up{% elif trade.transaction_code == 'S' %}text-down{% endif %}">
-                                    {{ trade.shares }}
-                                </td>
-                                <td class="num-col">${{ trade.price_per_share }}</td>
-                                <td>
-                                    {% if trade.transaction_code == 'P' %}
-                                        <span class="badge badge-up">P (購入)</span>
-                                    {% elif trade.transaction_code == 'S' %}
-                                        <span class="badge badge-down">S (售出)</span>
-                                    {% else %}
-                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">
-                                            {{ trade.transaction_code }}
-                                        </span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="no-data" style="padding: 1.5rem 1rem;">
-                        <div class="no-data-icon">💼</div>
-                        <p>暫無內部人交易紀錄</p>
-                        <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊右上角「同步 內部人/財務」抓取</p>
-                    </div>
-                    {% endif %}
-                </div>
+            <!-- 初始佔位提示 -->
+            <div id="rightPanelPlaceholder" class="panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 500px; text-align: center; padding: 3rem 2rem;">
+                <div class="no-data-icon" style="font-size: 4rem; opacity: 0.6; background: linear-gradient(to right, #38bdf8, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">📊</div>
+                <h3 style="font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 0.8rem; font-weight: 600;">點擊股票載入分析</h3>
+                <p style="color: var(--text-secondary); max-width: 320px; font-size: 0.9rem; line-height: 1.5;">請點擊左側 13F 機構持倉明細中的任何一支美股，以在此載入其內部人交易動態與 XBRL 財務指標。</p>
             </div>
 
-            <!-- XBRL 財務數據面板 -->
-            <div class="panel">
-                <div class="panel-header">
-                    <h2 class="panel-title">XBRL 標準化財務指標 (10-K/10-Q)</h2>
+            <!-- 動態資料顯示區 -->
+            <div id="rightPanelContent" style="display: none; flex-direction: column; gap: 2rem;">
+                
+                <!-- 內部人交易面板 -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">內部人交易動態 (Form 4) <span id="insiderTickerBadge" style="font-size: 0.9rem; color: #38bdf8; margin-left: 0.5rem;"></span></h2>
+                        <span class="panel-subtitle">最近 50 筆交易</span>
+                    </div>
+
+                    <!-- Loader -->
+                    <div id="insiderLoader" class="loader">
+                        <div class="spinner" style="display: inline-block; width: 30px; height: 30px;"></div>
+                        <p style="margin-top: 0.8rem; color: var(--text-secondary);">資料載入中...</p>
+                    </div>
+
+                    <div id="insiderTableContainer" class="table-container" style="max-height: 250px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>申報日期</th>
+                                    <th>內部人 / 職稱</th>
+                                    <th class="num-col">異動股數</th>
+                                    <th class="num-col">均價</th>
+                                    <th>代碼</th>
+                                </tr>
+                            </thead>
+                            <tbody id="insiderTradesBody">
+                                <!-- 動態填入 -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <div class="table-container" style="max-height: 250px;">
-                    {% if financial_data %}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>報告期末</th>
-                                <th>指標概念</th>
-                                <th class="num-col">數值 (USD)</th>
-                                <th>申報週期</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for f in financial_data %}
-                            <tr>
-                                <td>{{ f.period_end|date:"Y-m-d" }}</td>
-                                <td style="font-weight: 500; color: var(--text-primary);">{{ f.concept }}</td>
-                                <td class="num-col" style="font-variant-numeric: tabular-nums;">
-                                    ${{ f.value }}
-                                </td>
-                                <td>
-                                    {% if f.fiscal_quarter == 0 %}
-                                        <span class="badge badge-new">10-K (年報)</span>
-                                    {% else %}
-                                        <span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">
-                                            10-Q (Q{{ f.fiscal_quarter }})
-                                        </span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="no-data" style="padding: 1.5rem 1rem;">
-                        <div class="no-data-icon">📈</div>
-                        <p>暫無 XBRL 財務數據</p>
+                <!-- XBRL 財務數據面板 -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">XBRL 標準化財務指標 (10-K/10-Q) <span id="financialsTickerBadge" style="font-size: 0.9rem; color: #38bdf8; margin-left: 0.5rem;"></span></h2>
                     </div>
-                    {% endif %}
+
+                    <!-- Loader -->
+                    <div id="financialsLoader" class="loader">
+                        <div class="spinner" style="display: inline-block; width: 30px; height: 30px;"></div>
+                        <p style="margin-top: 0.8rem; color: var(--text-secondary);">資料載入中...</p>
+                    </div>
+
+                    <div id="financialsTableContainer" class="table-container" style="max-height: 250px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>報告期末</th>
+                                    <th>指標概念</th>
+                                    <th class="num-col">數值 (USD)</th>
+                                    <th>申報週期</th>
+                                </tr>
+                            </thead>
+                            <tbody id="financialsBody">
+                                <!-- 動態填入 -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
+
             </div>
 
         </div>
@@ -615,57 +555,187 @@
 
     <!-- JS 互動與 Ajax 同步 -->
     <script>
-        // 更改股票
-        function changeTicker(ticker) {
-            window.location.href = '?ticker=' + ticker;
+        let currentSelectedTicker = null;
+        const currentCik = '{{ current_cik }}';
+
+        // 更改機構
+        function changeInstitution(cik) {
+            window.location.href = '?cik=' + cik;
         }
 
-        // 切換 Tab
-        function switchTab(tabId) {
-            // 切換按鈕樣式
-            const buttons = document.querySelectorAll('.tab-btn');
-            buttons.forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
+        // 選擇股票並聯動載入右側數據
+        function selectStock(ticker, element) {
+            currentSelectedTicker = ticker;
+            
+            // 高亮選中行
+            const rows = document.querySelectorAll('.clickable-stock-row');
+            rows.forEach(r => r.classList.remove('selected-row'));
+            element.classList.add('selected-row');
 
-            // 切換內容區
-            const contents = document.querySelectorAll('.tab-content');
-            contents.forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById(tabId).classList.add('active');
+            // 顯示內容區，隱藏佔位區
+            document.getElementById('rightPanelPlaceholder').style.display = 'none';
+            document.getElementById('rightPanelContent').style.display = 'flex';
+
+            // 更新 Badge 顯示目前選擇的個股
+            document.getElementById('insiderTickerBadge').innerText = '(' + ticker + ')';
+            document.getElementById('financialsTickerBadge').innerText = '(' + ticker + ')';
+
+            // 顯示 Loading
+            document.getElementById('insiderLoader').style.display = 'block';
+            document.getElementById('financialsLoader').style.display = 'block';
+            document.getElementById('insiderTableContainer').style.display = 'none';
+            document.getElementById('financialsTableContainer').style.display = 'none';
+
+            // 啟用右側同步按鈕
+            document.getElementById('btnSyncInsider').disabled = false;
+
+            // 載入內部人交易
+            fetch('/sec-edgar/api/insider/' + ticker + '/')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('insiderLoader').style.display = 'none';
+                    document.getElementById('insiderTableContainer').style.display = 'block';
+                    const tbody = document.getElementById('insiderTradesBody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.status === 'success' && data.data.length > 0) {
+                        data.data.forEach(trade => {
+                            const badgeClass = trade.transaction_code === 'P' ? 'badge-up' : (trade.transaction_code === 'S' ? 'badge-down' : '');
+                            const badgeText = trade.transaction_code === 'P' ? 'P (購入)' : (trade.transaction_code === 'S' ? 'S (售出)' : trade.transaction_code);
+                            
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td>${trade.filing_date || '-'}</td>
+                                <td style="font-weight: 500; color: var(--text-primary);">
+                                    ${trade.insider_name}
+                                    ${trade.is_senior_officer ? '<span style="color: #eab308; font-size: 0.75rem;">★</span>' : ''}
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 400;">
+                                        ${trade.insider_title || '-'}
+                                    </div>
+                                </td>
+                                <td class="num-col ${trade.transaction_code === 'P' ? 'text-up' : (trade.transaction_code === 'S' ? 'text-down' : '')}">
+                                    ${trade.shares.toLocaleString()}
+                                </td>
+                                <td class="num-col">$${trade.price_per_share.toFixed(2)}</td>
+                                <td>
+                                    <span class="badge ${badgeClass}">${badgeText}</span>
+                                </td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="5" class="no-data" style="padding: 2rem 1rem;">
+                                    <div class="no-data-icon">💼</div>
+                                    <p>暫無此股票之內部人交易紀錄</p>
+                                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊右上方「同步 內部人/財務」進行更新</p>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('insiderLoader').style.display = 'none';
+                    document.getElementById('insiderTableContainer').style.display = 'block';
+                    console.error('Error loading insider trades:', error);
+                });
+
+            // 載入財務 XBRL
+            fetch('/sec-edgar/api/financial/' + ticker + '/')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('financialsLoader').style.display = 'none';
+                    document.getElementById('financialsTableContainer').style.display = 'block';
+                    const tbody = document.getElementById('financialsBody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.status === 'success' && data.data.length > 0) {
+                        data.data.forEach(f => {
+                            const cycleBadge = f.fiscal_quarter === 0 ? '<span class="badge badge-new">10-K (年報)</span>' : `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-secondary);">10-Q (Q${f.fiscal_quarter})</span>`;
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td>${f.period_end}</td>
+                                <td style="font-weight: 500; color: var(--text-primary);">${f.concept}</td>
+                                <td class="num-col">$${f.value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                <td>${cycleBadge}</td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="4" class="no-data" style="padding: 2rem 1rem;">
+                                    <div class="no-data-icon">📈</div>
+                                    <p>暫無此股票之 XBRL 財務數據</p>
+                                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">請點擊右上方「同步 內部人/財務」進行更新</p>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('financialsLoader').style.display = 'none';
+                    document.getElementById('financialsTableContainer').style.display = 'block';
+                    console.error('Error loading financial data:', error);
+                });
         }
 
         // Ajax 同步
         function triggerSync(type) {
-            const ticker = document.getElementById('tickerSelector').value;
             const btn = type === '13F' ? document.getElementById('btnSync13F') : document.getElementById('btnSyncInsider');
             const spinner = type === '13F' ? document.getElementById('spinner13F') : document.getElementById('spinnerInsider');
-            const apiUrl = type === '13F' ? '/sec-edgar/api/sync/13f/' : '/sec-edgar/api/sync/insider/';
-
+            
             // 停用按鈕並顯示 Loading
             btn.disabled = true;
             spinner.style.display = 'inline-block';
             
-            fetch(apiUrl + '?ticker=' + ticker)
-                .then(response => response.json())
-                .then(data => {
+            if (type === '13F') {
+                const apiUrl = '/sec-edgar/api/sync/institution/?cik=' + currentCik;
+                fetch(apiUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        spinner.style.display = 'none';
+                        btn.disabled = false;
+                        if (data.status === 'success') {
+                            alert('機構 13F 資料同步成功！共導入 ' + data.count + ' 筆紀錄。');
+                            window.location.reload();
+                        } else {
+                            alert('同步失敗：' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        spinner.style.display = 'none';
+                        btn.disabled = false;
+                        alert('同步請求發生錯誤：' + error);
+                    });
+            } else if (type === 'insider') {
+                if (!currentSelectedTicker) {
+                    alert('請先在左側選擇一支股票以進行內部人與財務同步。');
                     spinner.style.display = 'none';
                     btn.disabled = false;
-                    
-                    if (data.status === 'success') {
-                        alert('同步成功！' + data.message);
-                        window.location.reload(); // 重新整理頁面呈現最新數據
-                    } else {
-                        alert('同步失敗：' + data.message);
-                    }
-                })
-                .catch(error => {
-                    spinner.style.display = 'none';
-                    btn.disabled = false;
-                    alert('請求發生錯誤：' + error);
-                });
+                    return;
+                }
+                const apiUrl = '/sec-edgar/api/sync/insider/?ticker=' + currentSelectedTicker;
+                fetch(apiUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        spinner.style.display = 'none';
+                        btn.disabled = false;
+                        if (data.status === 'success') {
+                            alert('內部人與財務數據同步成功！' + data.message);
+                            // 重新載入目前選取股票之詳細數據
+                            selectStock(currentSelectedTicker, document.querySelector('.clickable-stock-row.selected-row'));
+                        } else {
+                            alert('同步失敗：' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        spinner.style.display = 'none';
+                        btn.disabled = false;
+                        alert('同步請求發生錯誤：' + error);
+                    });
+            }
         }
     </script>
 </body>

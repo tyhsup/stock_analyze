@@ -9,6 +9,7 @@ from sec_edgar.models import SecFilingIndex, Sec13fHoldings, SecInsiderTrades, S
 from sec_edgar.services.edgar_13f_service import Edgar13FService
 from sec_edgar.services.edgar_insider_service import EdgarInsiderService
 from sec_edgar.services.edgar_financial_service import EdgarFinancialService
+from sec_edgar.services.edgar_institution_service import EdgarInstitutionService
 
 logger = logging.getLogger(__name__)
 
@@ -16,77 +17,57 @@ def dashboard_view(request):
     """
     SEC EDGAR 整合儀表板視圖
     """
-    ticker = request.GET.get('ticker', 'AAPL').upper()
+    cik = request.GET.get('cik', '0001067983').strip()
     
-    # 獲取所有美股列表供下拉選單使用
-    us_stocks = []
-    try:
-        us_stocks = StockUS.objects.all().order_by('symbol')[:200]  # 限制數量防渲染過載
-    except Exception as e:
-        logger.error(f"Error querying StockUS list: {e}")
-
-    # 1. 取得 SEC 13F 官方持股數據
+    service_inst = EdgarInstitutionService()
+    known_institutions = service_inst.KNOWN_INSTITUTIONS
+    
+    # 預設載入該機構的最新持股資料，供伺服器端初次渲染
     sec_13f_data = []
     latest_13f_period = None
     try:
-        service_13f = Edgar13FService()
-        sec_13f_data = service_13f.get_top_holders_from_db(ticker, limit=50)
+        sec_13f_data = service_inst.get_institution_holdings(cik, limit=100)
         if sec_13f_data:
             latest_13f_period = sec_13f_data[0]['period_of_report']
     except Exception as e:
-        logger.error(f"Error fetching SEC 13F holdings from DB: {e}")
-
-    # 2. 取得 Stockzoa 爬蟲持股數據 (備用/補充)
-    stockzoa_data = []
-    try:
-        with connection.cursor() as cursor:
-            # 依據資料庫實際欄位讀取
-            cursor.execute(
-                "SELECT holder_name, shares, pct_out, date FROM stock_investor_us WHERE ticker = %s ORDER BY date DESC LIMIT 50",
-                [ticker]
-            )
-            rows = cursor.fetchall()
-            for r in rows:
-                stockzoa_data.append({
-                    'holder_name': r[0],
-                    'shares': r[1],
-                    'pct_out': r[2],
-                    'date': r[3]
-                })
-    except Exception as e:
-        logger.warning(f"Failed to query stock_investor_us table: {e}")
-
-    # 3. 取得內部人交易數據
-    insider_trades = []
-    try:
-        insider_trades = SecInsiderTrades.objects.filter(ticker=ticker).order_by('-transaction_date', '-filing_date')[:50]
-    except Exception as e:
-        logger.error(f"Error querying insider trades: {e}")
-
-    # 4. 取得標準化 XBRL 財務數據
-    financial_data = []
-    try:
-        # 只取出重要財務概念，如 Revenues, NetIncomeLoss, OperatingIncomeLoss 等
-        target_concepts = ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 
-                           'NetIncomeLoss', 'OperatingIncomeLoss', 'Assets', 'Liabilities']
-        financial_data = SecFinancialXbrl.objects.filter(
-            ticker=ticker,
-            concept__in=target_concepts
-        ).order_by('-period_end', 'concept')
-    except Exception as e:
-        logger.error(f"Error querying financial XBRL data: {e}")
-
+        logger.error(f"Error fetching initial holdings for CIK {cik} in dashboard_view: {e}")
+        
     context = {
-        'current_ticker': ticker,
-        'us_stocks': us_stocks,
+        'current_cik': cik,
+        'known_institutions': known_institutions,
         'sec_13f_data': sec_13f_data,
         'latest_13f_period': latest_13f_period,
-        'stockzoa_data': stockzoa_data,
-        'insider_trades': insider_trades,
-        'financial_data': financial_data,
     }
     
     return render(request, 'sec_edgar/index.html', context)
+
+
+def api_institution_holdings(request):
+    """
+    獲取指定機構的 13F 持股 API
+    """
+    cik = request.GET.get('cik', '0001067983').strip()
+    try:
+        service = EdgarInstitutionService()
+        data = service.get_institution_holdings(cik, limit=200)
+        return JsonResponse({"status": "success", "data": data})
+    except Exception as e:
+        logger.error(f"Error fetching holdings for CIK {cik}: {e}")
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def api_sync_institution_13f(request):
+    """
+    同步指定機構的 13F 資料 API
+    """
+    cik = request.GET.get('cik', '0001067983').strip()
+    try:
+        service = EdgarInstitutionService()
+        result = service.sync_institution_13f(cik, quarters_limit=1)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Error syncing holdings for CIK {cik}: {e}")
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
 def api_13f_holdings(request, ticker):
