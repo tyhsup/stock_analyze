@@ -49,11 +49,18 @@ def chips_view(request):
         else:
             error = f"Failed to load US chip data: {e}"
 
+    from sec_edgar.services.edgar_institution_service import EdgarInstitutionService
+    service_inst = EdgarInstitutionService()
+    known_institutions = service_inst.KNOWN_INSTITUTIONS
+    current_cik = request.GET.get('cik', '0001067983').strip()
+
     return render(request, 'institutional_chips/index.html', {
         'buysell_json': buysell_json,
         'comparison_json': comparison_json,
         'us_investor_json': us_investor_json,
         'error': error,
+        'known_institutions': known_institutions,
+        'current_cik': current_cik,
     })
 
 

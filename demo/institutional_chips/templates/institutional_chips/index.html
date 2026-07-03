@@ -422,7 +422,7 @@
             <!-- Sub Tab 2: SEC 13F Holdings -->
             <div class="tab-pane fade" id="us-13f-panel" role="tabpanel" aria-labelledby="us-13f-tab">
                 <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
                         <div class="d-flex align-items-center">
                             <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
                                 <i class="bi bi-building text-primary fs-5"></i>
@@ -432,25 +432,38 @@
                                 <small class="text-muted" id="sec-13f-period">SEC official filings</small>
                             </div>
                         </div>
+                        
+                        <!-- Institution Dropdown Selector -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="chipsInstitutionSelector" class="form-label mb-0 small fw-bold text-muted">選擇投資機構:</label>
+                            <select id="chipsInstitutionSelector" class="form-select form-select-sm" style="min-width: 250px;">
+                                {% for cik, inst in known_institutions.items %}
+                                    <option value="{{ cik }}" {% if current_cik == cik %}selected{% endif %}>{{ inst.name_zh }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
                         <span class="badge bg-primary rounded-pill px-3 py-2" id="sec-13f-count">0 records</span>
                     </div>
                     <div class="card-body p-0">
                         <div id="sec-13f-loader" class="text-center py-5">
                             <div class="spinner-border text-primary" role="status"></div>
-                            <p class="mt-2 text-muted">Select a ticker and switch to this tab to load data...</p>
+                            <p class="mt-2 text-muted">Loading institution 13F data...</p>
                         </div>
                         <div id="sec-13f-empty" class="text-center py-5" style="display:none;">
                             <i class="bi bi-inbox text-secondary display-4"></i>
-                            <p class="mt-3 text-muted">No 13F data found for this ticker.<br>Click "Sync 13F" to fetch from SEC EDGAR.</p>
+                            <p class="mt-3 text-muted">No 13F data found for this institution.<br>Click "Sync 13F" to fetch from SEC EDGAR.</p>
                         </div>
                         <div class="table-responsive" id="sec-13f-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
                             <table class="table table-hover table-striped mb-0 align-middle">
                                 <thead class="table-light sticky-top">
                                     <tr>
-                                        <th class="ps-4">Holding Institution (CIK)</th>
+                                        <th class="ps-4">Ticker</th>
+                                        <th>Security Name</th>
                                         <th>Type</th>
                                         <th class="text-end">Shares</th>
                                         <th class="text-end">Value (USD)</th>
+                                        <th class="text-end">Weight (占比)</th>
                                         <th class="text-end">Quarterly Change</th>
                                         <th>Action</th>
                                     </tr>
@@ -690,6 +703,15 @@
     /* Force ApexCharts menu text to be black */
     .apexcharts-menu, .apexcharts-menu-item {
         color: #000000 !important;
+    }
+
+    /* Clickable stock row styles */
+    .clickable-stock-row:hover td {
+        background-color: rgba(var(--bs-primary-rgb), 0.05) !important;
+    }
+    .clickable-stock-row.selected-row td {
+        background-color: rgba(var(--bs-primary-rgb), 0.15) !important;
+        border-left: 3px solid var(--bs-primary);
     }
 </style>
 
@@ -1208,16 +1230,16 @@
             });
         }
 
-        // --- Fetch SEC 13F Holdings ---
+        // --- Fetch SEC 13F Holdings by CIK ---
         let cached13f = {};
-        async function fetchSec13F(ticker) {
-            if (cached13f[ticker]) { render13F(cached13f[ticker]); return; }
+        async function fetchSec13F(cik) {
+            if (cached13f[cik]) { render13F(cached13f[cik]); return; }
             showPanelState('sec-13f', 'loading');
             try {
-                const res = await fetch(secBaseUrl + '/13f/' + ticker + '/');
+                const res = await fetch(secBaseUrl + '/institution/holdings/?cik=' + cik);
                 const json = await res.json();
                 if (json.status === 'success' && json.data && json.data.length > 0) {
-                    cached13f[ticker] = json.data;
+                    cached13f[cik] = json.data;
                     render13F(json.data);
                 } else {
                     showPanelState('sec-13f', 'empty');
@@ -1241,18 +1263,24 @@
                 let changeClass = '';
                 let changeText = '-';
                 if (changePct !== null && changePct !== undefined) {
-                    changeClass = changePct > 0 ? 'text-success fw-bold' : (changePct < 0 ? 'text-danger fw-bold' : '');
+                    changeClass = changePct > 0 ? 'text-danger fw-bold' : (changePct < 0 ? 'text-success fw-bold' : '');
                     changeText = (changePct > 0 ? '+' : '') + Number(changePct).toFixed(2) + '%';
                 }
                 const tr = document.createElement('tr');
+                if (row.ticker) {
+                    tr.className = 'clickable-stock-row';
+                    tr.style.cursor = 'pointer';
+                    tr.setAttribute('onclick', `selectInstitutionStock('${row.ticker}', this)`);
+                }
                 tr.innerHTML = `
                     <td class="ps-4">
-                        <span class="fw-semibold">${row.company_name || 'N/A'}</span>
-                        <span class="text-muted small ms-1">(${row.cik})</span>
+                        <span class="fw-bold text-primary">${row.ticker || '-'}</span>
                     </td>
+                    <td><span class="fw-semibold">${row.security_name || 'N/A'}</span></td>
                     <td>${row.put_call ? '<span class="text-warning fw-bold">' + row.put_call + '</span>' : 'Common'}</td>
                     <td class="text-end font-monospace">${fmtNum(row.shares)}</td>
                     <td class="text-end font-monospace">${fmtCurrency(row.value_usd)}</td>
+                    <td class="text-end font-monospace text-primary fw-bold">${row.weight}%</td>
                     <td class="text-end ${changeClass}">${changeText}</td>
                     <td>${actionBadge(row.action_type)}</td>
                 `;
@@ -1260,6 +1288,38 @@
             });
             showPanelState('sec-13f', 'data');
         }
+
+        function selectInstitutionStock(ticker, element) {
+            const rows = document.querySelectorAll('#sec-13f-tbody tr');
+            rows.forEach(r => r.classList.remove('selected-row'));
+            if (element) element.classList.add('selected-row');
+
+            if (secTickerSelect) {
+                let optionExists = false;
+                for (let i = 0; i < secTickerSelect.options.length; i++) {
+                    if (secTickerSelect.options[i].value === ticker) {
+                        optionExists = true;
+                        break;
+                    }
+                }
+                if (!optionExists) {
+                    const opt = document.createElement('option');
+                    opt.value = ticker;
+                    opt.textContent = ticker;
+                    secTickerSelect.appendChild(opt);
+                }
+                secTickerSelect.value = ticker;
+            }
+
+            secInsiderLoaded = false;
+            secFinLoaded = false;
+
+            const periodBadge = document.getElementById('sec-13f-period');
+            if (periodBadge) {
+                periodBadge.innerHTML = `<span class="badge bg-success">Selected ${ticker}</span> (Switch to Insider or Financial tabs to view detail)`;
+            }
+        }
+        window.selectInstitutionStock = selectInstitutionStock;
 
         // --- Fetch Insider Trades ---
         let cachedInsider = {};
@@ -1354,15 +1414,23 @@
         const syncText = document.getElementById('sec-sync-text');
 
         async function triggerSecSync(type) {
-            const ticker = secTickerSelect.value;
-            if (!ticker) { alert('Please select a ticker first.'); return; }
+            let apiUrl = '';
+            let syncMsg = '';
             
-            const apiUrl = type === '13f' 
-                ? secBaseUrl + '/sync/13f/?ticker=' + ticker 
-                : secBaseUrl + '/sync/insider/?ticker=' + ticker;
+            if (type === '13f') {
+                const cik = document.getElementById('chipsInstitutionSelector').value;
+                if (!cik) { alert('Please select an institution first.'); return; }
+                apiUrl = secBaseUrl + '/sync/institution/?cik=' + cik;
+                syncMsg = 'Syncing 13F for CIK ' + cik + '...';
+            } else {
+                const ticker = secTickerSelect.value;
+                if (!ticker) { alert('Please select a ticker first.'); return; }
+                apiUrl = secBaseUrl + '/sync/insider/?ticker=' + ticker;
+                syncMsg = 'Syncing Insider for ' + ticker + '...';
+            }
             
             syncStatus.style.display = '';
-            syncText.textContent = 'Syncing ' + type.toUpperCase() + ' for ' + ticker + '...';
+            syncText.textContent = syncMsg;
             
             if (type === '13f') { btnSync13F.disabled = true; }
             else { btnSyncInsider.disabled = true; }
@@ -1374,15 +1442,18 @@
                 
                 if (data.status === 'success') {
                     alert('Sync successful: ' + (data.message || ''));
-                    // Clear cache and reload current tab
                     if (type === '13f') {
-                        delete cached13f[ticker];
-                        fetchSec13F(ticker);
+                        const cik = document.getElementById('chipsInstitutionSelector').value;
+                        delete cached13f[cik];
+                        fetchSec13F(cik);
                     } else {
+                        const ticker = secTickerSelect.value;
                         delete cachedInsider[ticker];
                         delete cachedFinancial[ticker];
                         fetchInsiderTrades(ticker);
                     }
+                } else {
+                    alert('Sync failed: ' + (data.message || ''));
                 }
             } catch (e) {
                 syncStatus.style.display = 'none';
@@ -1516,9 +1587,9 @@
 
         if (us13fTab) {
             us13fTab.addEventListener('shown.bs.tab', function() {
-                const ticker = secTickerSelect.value;
-                if (!sec13fLoaded || !cached13f[ticker]) {
-                    fetchSec13F(ticker);
+                const cik = document.getElementById('chipsInstitutionSelector').value;
+                if (!sec13fLoaded || !cached13f[cik]) {
+                    fetchSec13F(cik);
                     sec13fLoaded = true;
                 }
             });
@@ -1556,18 +1627,24 @@
         // --- Ticker Change: Reset caches and reload active SEC tab ---
         if (secTickerSelect) {
             secTickerSelect.addEventListener('change', function() {
-                sec13fLoaded = false;
                 secInsiderLoaded = false;
                 secFinLoaded = false;
 
                 // Reload data for the currently active SEC sub-tab
-                const active13f = document.getElementById('us-13f-panel').classList.contains('show');
                 const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
                 const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
 
-                if (active13f) fetchSec13F(this.value);
-                else if (activeInsider) fetchInsiderTrades(this.value);
+                if (activeInsider) fetchInsiderTrades(this.value);
                 else if (activeFin) fetchFinancialData(this.value);
+            });
+        }
+
+        // --- Institution Selector Change ---
+        const chipsInstitutionSelector = document.getElementById('chipsInstitutionSelector');
+        if (chipsInstitutionSelector) {
+            chipsInstitutionSelector.addEventListener('change', function() {
+                sec13fLoaded = false;
+                fetchSec13F(this.value);
             });
         }
 
