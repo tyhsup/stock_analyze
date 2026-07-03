@@ -54,3 +54,27 @@ class StockMetrics(models.Model):
     def __str__(self):
         return f"{self.market} - {self.symbol}: PE={self.pe}, PB={self.pb}"
 
+
+class MasterSelection(models.Model):
+    market = models.CharField(max_length=10)  # 'tw' 或 'us'
+    symbol = models.CharField(max_length=20)
+    name = models.CharField(max_length=100, null=True, blank=True)
+    master_name = models.CharField(max_length=50)  # 'buffett'
+    rank = models.IntegerField()
+    close_price = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    roe = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    gross_margin = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    debt_ratio = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    net_income_growth = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'master_selection'
+        unique_together = ('market', 'master_name', 'symbol')
+        ordering = ['market', 'master_name', 'rank']
+
+    def __str__(self):
+        return f"{self.market} - {self.symbol} ({self.master_name}) Rank {self.rank}"
+
+

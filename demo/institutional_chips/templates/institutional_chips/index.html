@@ -86,6 +86,11 @@
             <i class="bi bi-grid-3x3-gap me-1"></i> 產業資金流向
         </button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-master-tab" data-bs-toggle="tab" data-bs-target="#tw-master-panel" type="button" role="tab" aria-controls="tw-master-panel" aria-selected="false">
+            <i class="bi bi-award me-1"></i> 大師選股
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content" id="tw-sub-tabs-content">
@@ -261,6 +266,52 @@
             </div>
         </div>
     </div>
+    
+    <!-- Tab Panel 3: 大師選股 -->
+    <div class="tab-pane fade" id="tw-master-panel" role="tabpanel" aria-labelledby="tw-master-tab">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                        <i class="bi bi-award text-primary fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title fw-bold mb-0">大師選股 - 巴菲特價值投資法則 (台股)</h5>
+                        <small class="text-muted">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale" id="btn-refresh-tw-master">
+                    <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div id="tw-master-loader" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted fw-bold">正在分析台股基本面數據並進行評分篩選...</p>
+                </div>
+                <div class="table-responsive" id="tw-master-table-wrap" style="display:none;">
+                    <table class="table table-hover table-striped mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4" style="width: 80px;">排名</th>
+                                <th style="width: 120px;">代號</th>
+                                <th>名稱</th>
+                                <th>最新收盤價</th>
+                                <th>ROE</th>
+                                <th>營業毛利率</th>
+                                <th>負債比率</th>
+                                <th>淨利成長率</th>
+                                <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tw-master-tbody">
+                            <!-- Injected dynamically by Javascript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
     </div>
 
@@ -337,6 +388,11 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link fw-bold" id="us-moneyflow-tab" data-bs-toggle="tab" data-bs-target="#us-moneyflow-panel" type="button" role="tab" aria-selected="false">
                     <i class="bi bi-grid-3x3-gap-fill me-1"></i> US Money Flow Heatmap
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-master-tab" data-bs-toggle="tab" data-bs-target="#us-master-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-award me-1"></i> 大師選股
                 </button>
             </li>
         </ul>
@@ -522,6 +578,52 @@
                             <p class="mt-3 text-muted">No money flow data calculated.</p>
                         </div>
                         <div id="us-moneyflow-chart" style="min-height: 500px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 6: 大師選股 -->
+            <div class="tab-pane fade" id="us-master-panel" role="tabpanel" aria-labelledby="us-master-tab">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-award text-primary fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">大師選股 - 巴菲特價值投資法則 (美股)</h5>
+                                <small class="text-muted">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale" id="btn-refresh-us-master">
+                            <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="us-master-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted fw-bold">正在分析美股基本面數據並進行評分篩選...</p>
+                        </div>
+                        <div class="table-responsive" id="us-master-table-wrap" style="display:none;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4" style="width: 80px;">排名</th>
+                                        <th style="width: 120px;">代號</th>
+                                        <th>名稱</th>
+                                        <th>最新收盤價</th>
+                                        <th>ROE</th>
+                                        <th>營業毛利率</th>
+                                        <th>負債比率</th>
+                                        <th>淨利成長率</th>
+                                        <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="us-master-tbody">
+                                    <!-- Injected dynamically by Javascript -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1450,6 +1552,106 @@
                 if (active13f) fetchSec13F(this.value);
                 else if (activeInsider) fetchInsiderTrades(this.value);
                 else if (activeFin) fetchFinancialData(this.value);
+            });
+        }
+
+        // --- Master Stock Selection (Buffett Mode) Lazy Load & AJAX ---
+        let twMasterLoaded = false;
+        let usMasterLoaded = false;
+
+        const twMasterTab = document.getElementById('tw-master-tab');
+        const usMasterTab = document.getElementById('us-master-tab');
+
+        if (twMasterTab) {
+            twMasterTab.addEventListener('shown.bs.tab', function() {
+                if (!twMasterLoaded) {
+                    fetchMasterSelection('tw');
+                    twMasterLoaded = true;
+                }
+            });
+        }
+
+        if (usMasterTab) {
+            usMasterTab.addEventListener('shown.bs.tab', function() {
+                if (!usMasterLoaded) {
+                    fetchMasterSelection('us');
+                    usMasterLoaded = true;
+                }
+            });
+        }
+
+        async function fetchMasterSelection(market, force = false) {
+            const loader = document.getElementById(`${market}-master-loader`);
+            const wrap = document.getElementById(`${market}-master-table-wrap`);
+            const tbody = document.getElementById(`${market}-master-tbody`);
+
+            if (loader) loader.style.display = '';
+            if (wrap) wrap.style.display = 'none';
+            if (tbody) tbody.innerHTML = '';
+
+            try {
+                const res = await fetch(`/chips/api/master-selection/?market=${market}&force=${force}`);
+                const json = await res.json();
+
+                if (loader) loader.style.display = 'none';
+
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    if (wrap) wrap.style.display = '';
+                    
+                    json.data.forEach(item => {
+                        const roeClass = item.roe >= 0.15 ? 'text-success fw-bold' : (item.roe >= 0.10 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                        const gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : (item.gross_margin >= 0.15 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                        const debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : (item.debt_ratio <= 0.60 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                        const growthClass = item.net_income_growth > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+
+                        const closeStr = item.close_price > 0 ? (market === 'tw' ? `${item.close_price.toFixed(2)} 元` : `$${item.close_price.toFixed(2)}`) : '--';
+                        const roeStr = (item.roe * 100).toFixed(2) + '%';
+                        const gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                        const debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                        const growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+
+                        const row = `
+                            <tr>
+                                <td class="ps-4"><span class="badge bg-secondary rounded-pill px-2 py-1">${item.rank}</span></td>
+                                <td><span class="fw-bold text-primary">${item.symbol}</span></td>
+                                <td><span class="fw-bold">${item.name}</span></td>
+                                <td>${closeStr}</td>
+                                <td class="${roeClass}">${roeStr}</td>
+                                <td class="${gmClass}">${gmStr}</td>
+                                <td class="${debtClass}">${debtStr}</td>
+                                <td class="${growthClass}">${growthStr}</td>
+                                <td class="pe-4 text-end"><span class="badge bg-success px-3 py-2 fs-6 shadow-sm">${item.score.toFixed(1)}</span></td>
+                            </tr>
+                        `;
+                        if (tbody) tbody.insertAdjacentHTML('beforeend', row);
+                    });
+                } else {
+                    if (tbody) {
+                        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">目前暫無大師選股數據，請點選強制重新計算。</td></tr>`;
+                    }
+                    if (wrap) wrap.style.display = '';
+                }
+            } catch (e) {
+                console.error(`Fetch ${market} Master Selection error:`, e);
+                if (loader) loader.style.display = 'none';
+                if (tbody) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">載入失敗: ${e.message}</td></tr>`;
+                }
+                if (wrap) wrap.style.display = '';
+            }
+        }
+
+        const btnRefreshTwMaster = document.getElementById('btn-refresh-tw-master');
+        const btnRefreshUsMaster = document.getElementById('btn-refresh-us-master');
+
+        if (btnRefreshTwMaster) {
+            btnRefreshTwMaster.addEventListener('click', function() {
+                fetchMasterSelection('tw', true);
+            });
+        }
+        if (btnRefreshUsMaster) {
+            btnRefreshUsMaster.addEventListener('click', function() {
+                fetchMasterSelection('us', true);
             });
         }
 

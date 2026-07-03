@@ -249,3 +249,60 @@ def api_industry_flow(request):
         logging.getLogger(__name__).error(f"api_industry_flow error: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+def api_master_selection(request):
+    """
+    大師選股 (巴菲特選股模式) API
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+        
+    market = request.GET.get('market', 'tw').lower()
+    if market not in ['tw', 'us']:
+        return JsonResponse({'error': 'Invalid market'}, status=400)
+        
+    from valuation.models import MasterSelection
+    from valuation.services.master_selection_service import MasterSelectionService
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    try:
+        # 查詢是否有既有紀錄
+        records = MasterSelection.objects.filter(market=market, master_name='buffett').order_by('rank')
+        
+        need_update = False
+        if not records.exists():
+            need_update = True
+        else:
+            latest_record = records.order_by('-updated_at').first()
+            if timezone.now() - latest_record.updated_at > timedelta(hours=24):
+                need_update = True
+                
+        force_refresh = request.GET.get('force', 'false').lower() == 'true'
+        if need_update or force_refresh:
+            service = MasterSelectionService()
+            service.run_buffett_selection(market)
+            records = MasterSelection.objects.filter(market=market, master_name='buffett').order_by('rank')
+            
+        data = []
+        for r in records:
+            data.append({
+                'rank': r.rank,
+                'symbol': r.symbol,
+                'name': r.name,
+                'close_price': float(r.close_price) if r.close_price else 0.0,
+                'roe': float(r.roe) if r.roe else 0.0,
+                'gross_margin': float(r.gross_margin) if r.gross_margin else 0.0,
+                'debt_ratio': float(r.debt_ratio) if r.debt_ratio else 0.0,
+                'net_income_growth': float(r.net_income_growth) if r.net_income_growth else 0.0,
+                'score': float(r.score) if r.score else 0.0
+            })
+            
+        return JsonResponse({'status': 'success', 'data': data})
+        
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"api_master_selection error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
