@@ -252,7 +252,7 @@ def api_industry_flow(request):
 
 def api_master_selection(request):
     """
-    大師選股 (巴菲特選股模式) API
+    大師選股 API (支援 巴菲特/彼得林區/威廉歐尼爾)
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'GET required'}, status=405)
@@ -261,6 +261,10 @@ def api_master_selection(request):
     if market not in ['tw', 'us']:
         return JsonResponse({'error': 'Invalid market'}, status=400)
         
+    master = request.GET.get('master', 'buffett').lower()
+    if master not in ['buffett', 'lynch', 'oneil']:
+        return JsonResponse({'error': 'Invalid master name'}, status=400)
+        
     from valuation.models import MasterSelection
     from valuation.services.master_selection_service import MasterSelectionService
     from django.utils import timezone
@@ -268,7 +272,7 @@ def api_master_selection(request):
     
     try:
         # 查詢是否有既有紀錄
-        records = MasterSelection.objects.filter(market=market, master_name='buffett').order_by('rank')
+        records = MasterSelection.objects.filter(market=market, master_name=master).order_by('rank')
         
         need_update = False
         if not records.exists():
@@ -281,12 +285,13 @@ def api_master_selection(request):
         force_refresh = request.GET.get('force', 'false').lower() == 'true'
         if need_update or force_refresh:
             service = MasterSelectionService()
-            service.run_buffett_selection(market)
-            records = MasterSelection.objects.filter(market=market, master_name='buffett').order_by('rank')
+            service.run_selection(market, master)
+            records = MasterSelection.objects.filter(market=market, master_name=master).order_by('rank')
             
         data = []
         for r in records:
-            data.append({
+            # 針對彼得林區模式特別傳回 PE 和 PEG 以利前台渲染 (雖然數值也是在原有欄位映射)
+            item_data = {
                 'rank': r.rank,
                 'symbol': r.symbol,
                 'name': r.name,
@@ -296,7 +301,8 @@ def api_master_selection(request):
                 'debt_ratio': float(r.debt_ratio) if r.debt_ratio else 0.0,
                 'net_income_growth': float(r.net_income_growth) if r.net_income_growth else 0.0,
                 'score': float(r.score) if r.score else 0.0
-            })
+            }
+            data.append(item_data)
             
         return JsonResponse({'status': 'success', 'data': data})
         

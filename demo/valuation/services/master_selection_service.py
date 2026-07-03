@@ -1,5 +1,6 @@
 import logging
 import os
+import datetime
 import pandas as pd
 import numpy as np
 from decimal import Decimal
@@ -12,38 +13,47 @@ class MasterSelectionService:
     def __init__(self):
         self.op = OP_Fun()
 
-    def run_buffett_selection(self, market: str):
+    def run_selection(self, market: str, master_name: str):
         """
-        執行巴菲特選股策略
-        market: 'tw' 或 'us'
-        回傳選出的前 5 檔股票列表 (dict list)
+        統一入口：執行特定大師的選股策略並回傳結果
+        """
+        master_name = master_name.lower()
+        if master_name == 'buffett':
+            return self.run_buffett_selection(market)
+        elif master_name == 'lynch':
+            return self.run_lynch_selection(market)
+        elif master_name == 'oneil':
+            return self.run_oneil_selection(market)
+        else:
+            logger.error(f"Unknown master name: {master_name}")
+            return []
+
+    def _load_and_calculate_base_metrics(self, market: str):
+        """
+        加載並計算所有股票的基礎財務指標 (TTM 與最新單季數值)
         """
         market = market.lower()
         table_name = f"financial_raw_{market}"
         
-        # 1. 取得所有股票最近 8 季的財務數據以計算 TTM 與去年同期 TTM
-        # 為了效能，我們用一個 SQL 查詢撈出所有資料，再用 pandas 做記憶體計算
+        # 撈取最近三年的所有財報項目
         query = f"""
             SELECT symbol, year, quarter, statement_type, item_name, amount 
             FROM {table_name}
             WHERE year >= (YEAR(CURDATE()) - 3)
         """
-        
         with self.op.engine.connect() as conn:
             df = pd.read_sql(text(query), conn)
 
         if df.empty:
-            logger.warning(f"No financial raw data found for market: {market}")
-            return []
+            return pd.DataFrame()
 
-        # 統一單位：台股資料在資料庫中是千元，我們在 memory 中乘以 1000 統一為元，美股為元
+        # 統一單位：台股資料在資料庫中是千元，轉換為元
         if market == 'tw':
             df['amount'] = df['amount'] * 1000
 
-        # 將 year, quarter 轉化成排序用的數值
+        # 將 year, quarter 轉化成排序用的數值 (e.g. 20253)
         df['period_val'] = df['year'] * 10 + df['quarter']
         
-        # 2. 定義項目的 mapping (跟 valuation/services/financial_data.py 一致)
         mapping = {
             'tw': {
                 'revenue': ["Total Revenue", "Operating Revenue", "營業收入合計", "營業收入", "營業收入淨額"],
@@ -63,7 +73,6 @@ class MasterSelectionService:
             }
         }.get(market, {})
 
-        # 對項目進行映射歸類
         def map_item(name):
             for category, keys in mapping.items():
                 if name in keys:
@@ -73,29 +82,21 @@ class MasterSelectionService:
         df['category'] = df['item_name'].apply(map_item)
         df_filtered = df.dropna(subset=['category']).copy()
 
-        # 3. 對每隻股票分開計算指標
         # 找出每隻股票的最大 period_val，代表最新財報季度
         latest_periods = df_filtered.groupby('symbol')['period_val'].max().to_dict()
         
-        results = []
-        
-        # 針對有資料的 symbol 進行計算
+        calculated_list = []
         grouped = df_filtered.groupby('symbol')
+        
         for symbol, group in grouped:
             latest_p = latest_periods.get(symbol)
             if not latest_p:
                 continue
                 
-            # 取得最新一季的年與季
-            # 為了計算 TTM，我們需要定位最新一季往回推共 4 季的 period_val 清單
-            # 以及去年同期的 4 季清單 (往回推第 5 到第 8 季)
-            # 先將該 symbol 的所有獨特 period_val 排序
             unique_periods = sorted(group['period_val'].unique())
             if len(unique_periods) < 4:
-                # 財報季數不足，無法計算 TTM
                 continue
                 
-            # 定位最新一季在 unique_periods 的 index
             try:
                 latest_idx = unique_periods.index(latest_p)
             except ValueError:
@@ -109,95 +110,100 @@ class MasterSelectionService:
             # 去年同期 TTM 區間 (往回推第 5 到第 8 季)
             pre_ttm_periods = unique_periods[max(0, latest_idx - 7): max(0, latest_idx - 3)]
             
-            # 篩選出對應期間的數據
+            # 定位去年同期的單季 (用於 CANSLIM 的 C)
+            pre_quarter_p = None
+            if latest_idx >= 4:
+                pre_quarter_p = unique_periods[latest_idx - 4]
+
             group_ttm = group[group['period_val'].isin(ttm_periods)]
             group_pre_ttm = group[group['period_val'].isin(pre_ttm_periods)] if pre_ttm_periods else pd.DataFrame()
             group_latest = group[group['period_val'] == latest_p]
+            group_pre_quarter = group[group['period_val'] == pre_quarter_p] if pre_quarter_p else pd.DataFrame()
 
-            # 輔助函數：取得 TTM 加總
             def get_ttm_sum(sub_group, category):
-                # 預防同一個季度同一個 category 內有多個項目重複加總 (例如 Revenues 和 TotalRevenue)
-                # 我們在每個 symbol, period_val, category 內只取 amount 的最大值或第一筆
                 cat_df = sub_group[sub_group['category'] == category]
                 if cat_df.empty:
                     return 0.0
-                # 依據 period_val 進行 pivot/groupby 取第一筆，再加總
                 return cat_df.groupby('period_val')['amount'].first().sum()
 
-            # 輔助函數：取得最新單季數值
             def get_latest_val(sub_group, category):
                 cat_df = sub_group[sub_group['category'] == category]
                 if cat_df.empty:
                     return 0.0
                 return cat_df['amount'].iloc[0]
 
-            # 計算 TTM 財務數據
             revenue_ttm = get_ttm_sum(group_ttm, 'revenue')
             gross_profit_ttm = get_ttm_sum(group_ttm, 'gross_profit')
             net_income_ttm = get_ttm_sum(group_ttm, 'net_income')
-
-            # 計算去年同期 TTM 淨利
             net_income_pre_ttm = get_ttm_sum(group_pre_ttm, 'net_income') if not group_pre_ttm.empty else 0.0
 
-            # 計算最新資產負債表數據
+            # 單季淨利與去年同期單季淨利
+            net_income_latest = get_latest_val(group_latest, 'net_income')
+            net_income_pre_quarter = get_latest_val(group_pre_quarter, 'net_income') if not group_pre_quarter.empty else 0.0
+
             equity_latest = get_latest_val(group_latest, 'equity')
             assets_latest = get_latest_val(group_latest, 'assets')
             liabilities_latest = get_latest_val(group_latest, 'liabilities')
 
-            # 數據合理性檢查 (避免分母為 0)
             if revenue_ttm <= 0 or equity_latest <= 0 or assets_latest <= 0:
                 continue
 
-            # 4. 計算巴菲特指標
-            # ROE = Net Income TTM / Equity
-            roe = net_income_ttm / equity_latest
+            calculated_list.append({
+                'symbol': symbol,
+                'revenue_ttm': revenue_ttm,
+                'gross_profit_ttm': gross_profit_ttm,
+                'net_income_ttm': net_income_ttm,
+                'net_income_pre_ttm': net_income_pre_ttm,
+                'net_income_latest': net_income_latest,
+                'net_income_pre_quarter': net_income_pre_quarter,
+                'equity_latest': equity_latest,
+                'assets_latest': assets_latest,
+                'liabilities_latest': liabilities_latest
+            })
             
-            # Gross Margin = Gross Profit TTM / Revenue TTM
-            # 若 Gross Profit 為 0，有些財報可能沒爬到毛利，可用 (Revenue - Cost) 填補，這裡若為 0 則設為 0
-            gross_margin = gross_profit_ttm / revenue_ttm if gross_profit_ttm > 0 else 0.0
-            
-            # Debt Ratio = Liabilities / Assets
-            # 若 liabilities 為 0，可能是 1 - (Equity / Assets)
-            if liabilities_latest <= 0 and assets_latest > equity_latest:
-                liabilities_latest = assets_latest - equity_latest
-            debt_ratio = liabilities_latest / assets_latest
-            
-            # Net Income Growth = (Net Income TTM - Net Income Pre-TTM) / Net Income Pre-TTM
-            if net_income_pre_ttm != 0:
-                net_income_growth = (net_income_ttm - net_income_pre_ttm) / abs(net_income_pre_ttm)
-            else:
-                net_income_growth = 0.05 # 預設給一個微幅正數
+        return pd.DataFrame(calculated_list)
 
-            # 限制極端值以防干擾評分
+    def run_buffett_selection(self, market: str):
+        """巴菲特選股策略"""
+        market = market.lower()
+        df_base = self._load_and_calculate_base_metrics(market)
+        if df_base.empty:
+            return []
+
+        results = []
+        for _, row in df_base.iterrows():
+            symbol = row['symbol']
+            
+            roe = row['net_income_ttm'] / row['equity_latest']
+            gross_margin = row['gross_profit_ttm'] / row['revenue_ttm'] if row['gross_profit_ttm'] > 0 else 0.0
+            
+            liab = row['liabilities_latest']
+            if liab <= 0 and row['assets_latest'] > row['equity_latest']:
+                liab = row['assets_latest'] - row['equity_latest']
+            debt_ratio = liab / row['assets_latest']
+            
+            pre_income = row['net_income_pre_ttm']
+            if pre_income != 0:
+                net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
+            else:
+                net_income_growth = 0.05
+
+            # 限制範圍
             roe = max(min(roe, 1.5), -0.5)
             gross_margin = max(min(gross_margin, 1.0), 0.0)
             debt_ratio = max(min(debt_ratio, 1.0), 0.0)
             net_income_growth = max(min(net_income_growth, 3.0), -1.0)
 
-            # 5. 計算巴菲特評分 (總分 100 分)
-            # ROE 權重 40% (目標 >= 15%)
+            # 計算巴菲特得分 (總分 100)
             score_roe = min(roe / 0.15, 1.0) * 100 if roe > 0 else 0
-            
-            # 毛利率權重 30% (目標 >= 30%)
             score_gm = min(gross_margin / 0.30, 1.0) * 100
-            
-            # 負債比率權重 20% (目標 <= 50%，越低越高分)
             score_debt = (1.0 - debt_ratio) * 100
             if debt_ratio > 0.5:
-                # 負債比大於 50% 扣分
                 score_debt = max(score_debt - (debt_ratio - 0.5) * 100, 0)
-                
-            # 成長率權重 10% (目標 > 0)
-            score_growth = 0
-            if net_income_growth > 0:
-                score_growth = min(net_income_growth / 0.10, 1.0) * 100
-            else:
-                score_growth = 0
+            score_growth = min(net_income_growth / 0.10, 1.0) * 100 if net_income_growth > 0 else 0
 
             total_score = (score_roe * 0.4) + (score_gm * 0.3) + (score_debt * 0.2) + (score_growth * 0.1)
 
-            # 6. 判斷是否符合巴菲特的四大嚴格標準
-            # 就算沒有完全符合，我們也保留，後面可以用 score 進行綜合排名
             results.append({
                 'symbol': symbol,
                 'roe': roe,
@@ -210,14 +216,261 @@ class MasterSelectionService:
         if not results:
             return []
 
-        # 轉成 DataFrame 進行排序與對接股票名稱
         res_df = pd.DataFrame(results)
+        res_df = self._merge_names_and_prices(res_df, market)
         
-        # 撈取股票名稱與最新股價
+        res_df = res_df.sort_values(by='score', ascending=False)
+        top_5 = res_df.head(5)
+
+        self._save_to_db(top_5, market, 'buffett')
+        return self._format_output(top_5)
+
+    def run_lynch_selection(self, market: str):
+        """彼得·林區 (Peter Lynch) 價值成長型選股策略"""
+        market = market.lower()
+        df_base = self._load_and_calculate_base_metrics(market)
+        if df_base.empty:
+            return []
+
+        # 撈取所有股票的 PE 比率 (從本地 stock_metrics 撈取)
+        metrics_query = "SELECT symbol, CAST(pe AS CHAR) as pe FROM stock_metrics WHERE market = :market"
+        with self.op.engine.connect() as conn:
+            df_pe = pd.read_sql(text(metrics_query), conn, params={'market': market})
+            
+        df_pe['pe'] = pd.to_numeric(df_pe['pe'], errors='coerce').fillna(15.0) # 預設 PE 為 15.0
+        pe_dict = dict(zip(df_pe['symbol'], df_pe['pe']))
+
+        results = []
+        for _, row in df_base.iterrows():
+            symbol = row['symbol']
+            
+            # 計算基本指標
+            roe = row['net_income_ttm'] / row['equity_latest']
+            gross_margin = row['gross_profit_ttm'] / row['revenue_ttm'] if row['gross_profit_ttm'] > 0 else 0.0
+            
+            liab = row['liabilities_latest']
+            if liab <= 0 and row['assets_latest'] > row['equity_latest']:
+                liab = row['assets_latest'] - row['equity_latest']
+            debt_ratio = liab / row['assets_latest']
+            
+            pre_income = row['net_income_pre_ttm']
+            if pre_income != 0:
+                net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
+            else:
+                net_income_growth = 0.05
+                
+            pe = pe_dict.get(symbol, 15.0)
+            if pe <= 0:
+                pe = 15.0
+
+            # 計算 PEG = PE / (淨利成長率 * 100)
+            # 若淨利成長率為負或極低，PEG 設為較大值（代表不理想）
+            growth_pct = net_income_growth * 100
+            if growth_pct > 0:
+                peg = pe / growth_pct
+            else:
+                peg = 99.0 # 無意義或負成長，給予極差值
+
+            # 限制範圍
+            roe = max(min(roe, 1.5), -0.5)
+            gross_margin = max(min(gross_margin, 1.0), 0.0)
+            debt_ratio = max(min(debt_ratio, 1.0), 0.0)
+            net_income_growth = max(min(net_income_growth, 3.0), -1.0)
+            peg = max(min(peg, 5.0), 0.1)
+
+            # 彼得·林區評分機制 (總分 100)：
+            # PEG 佔 40% (目標 <= 1.2 且越小越好)
+            score_peg = (1.2 - min(peg, 1.2)) / 1.2 * 100
+            # ROE 佔 30%
+            score_roe = min(roe / 0.15, 1.0) * 100 if roe > 0 else 0
+            # PE 佔 20% (目標 < 25)
+            score_pe = max((25.0 - pe) / 25.0 * 100, 0)
+            # 負債比率佔 10% (目標 <= 50%)
+            score_debt = (1.0 - debt_ratio) * 100
+            if debt_ratio > 0.5:
+                score_debt = max(score_debt - (debt_ratio - 0.5) * 100, 0)
+
+            total_score = (score_peg * 0.4) + (score_roe * 0.3) + (score_pe * 0.2) + (score_debt * 0.1)
+
+            # 新增彼得林區專屬的指標，在 format_output 時傳回
+            results.append({
+                'symbol': symbol,
+                'roe': roe,
+                'gross_margin': gross_margin,
+                'debt_ratio': debt_ratio,
+                'net_income_growth': net_income_growth,
+                'score': total_score,
+                'pe': pe,
+                'peg': peg
+            })
+
+        if not results:
+            return []
+
+        res_df = pd.DataFrame(results)
+        res_df = self._merge_names_and_prices(res_df, market)
+        
+        res_df = res_df.sort_values(by='score', ascending=False)
+        top_5 = res_df.head(5)
+
+        self._save_to_db(top_5, market, 'lynch')
+        return self._format_output(top_5, extra_fields=['pe', 'peg'])
+
+    def run_oneil_selection(self, market: str):
+        """威廉·歐尼爾 (William J. O'Neil) CANSLIM 選股策略"""
+        market = market.lower()
+        df_base = self._load_and_calculate_base_metrics(market)
+        if df_base.empty:
+            return []
+
+        # 1. 獲取近 90 天所有股票收盤價以計算 3 月漲幅與新高突破度 (動能指標 L & N)
+        price_table = "stock_cost" if market == 'tw' else "stock_cost_us"
+        price_query = f"""
+            SELECT number as symbol, Date as date, Close as close
+            FROM {price_table}
+            WHERE Date >= DATE_SUB((SELECT MAX(Date) FROM {price_table}), INTERVAL 90 DAY)
+        """
+        with self.op.engine.connect() as conn:
+            df_prices = pd.read_sql(text(price_query), conn)
+
+        momentum_dict = {}
+        if not df_prices.empty:
+            # 轉換日期格式
+            df_prices['date'] = pd.to_datetime(df_prices['date'])
+            grouped_prices = df_prices.groupby('symbol')
+            for symbol, p_group in grouped_prices:
+                p_group = p_group.sort_values(by='date')
+                if len(p_group) >= 5:
+                    close_latest = p_group['close'].iloc[-1]
+                    close_old = p_group['close'].iloc[0]
+                    # 3 個月累積漲幅 (L)
+                    growth_3m = (close_latest - close_old) / close_old if close_old > 0 else 0.0
+                    # 60 天內最高收盤價
+                    max_60d = p_group['close'].tail(60).max()
+                    # 接近新高比率 (N)
+                    new_high_ratio = close_latest / max_60d if max_60d > 0 else 1.0
+                    momentum_dict[symbol] = {
+                        'growth_3m': growth_3m,
+                        'new_high_ratio': new_high_ratio
+                    }
+
+        # 2. 獲取法人籌碼買超數據 (I)
+        # 台股近 10 天三大法人買賣超，美股近 120 天 13F 流入流入
+        chips_dict = {}
+        if market == 'tw':
+            chips_query = """
+                SELECT number as symbol, SUM(`三大法人買賣超股數`) as net_chips
+                FROM stock_investor
+                WHERE `日期` >= DATE_SUB((SELECT MAX(`日期`) FROM stock_investor), INTERVAL 15 DAY)
+                GROUP BY number
+            """
+        else:
+            chips_query = """
+                SELECT ticker as symbol, SUM(change_shares) as net_chips
+                FROM stock_investor_us
+                WHERE date >= DATE_SUB((SELECT MAX(date) FROM stock_investor_us), INTERVAL 120 DAY)
+                GROUP BY ticker
+            """
+        try:
+            with self.op.engine.connect() as conn:
+                df_chips = pd.read_sql(text(chips_query), conn)
+            chips_dict = dict(zip(df_chips['symbol'], df_chips['net_chips']))
+        except Exception as e:
+            logger.warning(f"Failed to fetch chips for CANSLIM: {e}")
+
+        # 計算 3 個月漲幅的全市場排名 (用於 C-A-N-S-L-I-M 的 L - 領頭羊)
+        all_growths = [v['growth_3m'] for v in momentum_dict.values()]
+        pct_30_threshold = np.percentile(all_growths, 70) if all_growths else 0.0
+
+        results = []
+        for _, row in df_base.iterrows():
+            symbol = row['symbol']
+            
+            # C (當季淨利 YoY)
+            income_latest = row['net_income_latest']
+            income_pre_quarter = row['net_income_pre_quarter']
+            if income_pre_quarter != 0:
+                quarter_growth = (income_latest - income_pre_quarter) / abs(income_pre_quarter)
+            else:
+                quarter_growth = 0.15 # 預設正成長
+
+            # A (年度淨利 YoY)
+            pre_income = row['net_income_pre_ttm']
+            if pre_income != 0:
+                net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
+            else:
+                net_income_growth = 0.15
+
+            # L & N (動能)
+            mom = momentum_dict.get(symbol, {'growth_3m': 0.0, 'new_high_ratio': 0.85})
+            growth_3m = mom['growth_3m']
+            new_high_ratio = mom['new_high_ratio']
+
+            # I (籌碼認同)
+            net_chips = float(chips_dict.get(symbol, 0.0))
+
+            # 限制極端值以利評分
+            quarter_growth = max(min(quarter_growth, 3.0), -1.0)
+            net_income_growth = max(min(net_income_growth, 3.0), -1.0)
+            growth_3m = max(min(growth_3m, 2.0), -0.5)
+            new_high_ratio = max(min(new_high_ratio, 1.2), 0.5)
+
+            # CANSLIM 評分機制：
+            # C & A 盈餘成長佔 40% (當季成長高、年度成長穩定)
+            score_c = min(quarter_growth / 0.15, 1.0) * 50 if quarter_growth > 0 else 0
+            score_a = min(net_income_growth / 0.15, 1.0) * 50 if net_income_growth > 0 else 0
+            score_growth = score_c + score_a
+
+            # L 領頭羊強度佔 30% (近三月漲幅超越市場 70% 股票)
+            score_leader = min(growth_3m / max(pct_30_threshold, 0.05), 1.0) * 100 if growth_3m > 0 else 0
+            
+            # I 機構認同佔 20%
+            score_chips = 100 if net_chips > 0 else 30
+            
+            # N 新高突破佔 10%
+            score_high = min(new_high_ratio / 0.95, 1.0) * 100
+
+            total_score = (score_growth * 0.4) + (score_leader * 0.3) + (score_chips * 0.2) + (score_high * 0.1)
+
+            # 在結果中保存相對強度與法人買超以利前端展示
+            # 我們將法人買超做個布林值或比率化展示，或是傳遞原始 TTM 成長率
+            # 這裡為了前端介面通用，我們將 roe 代入三月漲幅，將 gross_margin 代入當季成長率，debt_ratio 代入新高突破度以避免修改 DB 結構！
+            # 這是極具擴充性的優化：把大師特定欄位對應到 models.py 既有的 decimal 欄位上！
+            # 對應表：
+            # models.py 欄位  | Buffett      | Peter Lynch  | William O'Neil (CANSLIM)
+            # ----------------+--------------+--------------+------------------------
+            # roe             | ROE          | ROE          | 三個月漲幅
+            # gross_margin    | Gross Margin | Gross Margin | 當季淨利成長率
+            # debt_ratio      | Debt Ratio   | Debt Ratio   | 接近新高比率
+            # 這樣在前台渲染時直接抓這三個欄位，表頭文字根據切換的大師動態改變即可！
+            results.append({
+                'symbol': symbol,
+                'roe': growth_3m,            # 歐尼爾模式：roe 儲存近 3 月漲幅
+                'gross_margin': quarter_growth, # 歐尼爾模式：gross_margin 儲存當季淨利成長率
+                'debt_ratio': new_high_ratio,  # 歐尼爾模式：debt_ratio 儲存接近新高比率
+                'net_income_growth': net_income_growth,
+                'score': total_score,
+                'pe': 0.0,
+                'peg': 0.0
+            })
+
+        if not results:
+            return []
+
+        res_df = pd.DataFrame(results)
+        res_df = self._merge_names_and_prices(res_df, market)
+        
+        res_df = res_df.sort_values(by='score', ascending=False)
+        top_5 = res_df.head(5)
+
+        self._save_to_db(top_5, market, 'oneil')
+        return self._format_output(top_5)
+
+    def _merge_names_and_prices(self, res_df, market: str):
+        """共用邏輯：合併股票名稱與最新收盤價"""
         stocks_table = f"stocks_{market}"
         price_table = f"stock_cost" if market == 'tw' else "stock_cost_us"
         
-        # 取得最新股價
         price_query = f"""
             SELECT p.number as symbol, p.Close as close_price
             FROM {price_table} p
@@ -227,8 +480,6 @@ class MasterSelectionService:
                 GROUP BY number
             ) latest ON p.number = latest.number AND p.Date = latest.max_date
         """
-        
-        # 取得股票名稱
         name_query = f"SELECT symbol, name FROM {stocks_table}"
 
         with self.op.engine.connect() as conn:
@@ -238,21 +489,15 @@ class MasterSelectionService:
         res_df = res_df.merge(df_names, on='symbol', how='left')
         res_df = res_df.merge(df_prices, on='symbol', how='left')
         
-        # 處理缺失名稱與價格
         res_df['name'] = res_df['name'].fillna(res_df['symbol'])
         res_df['close_price'] = res_df['close_price'].fillna(0.0)
+        return res_df
 
-        # 排序：以 total_score 降序排序，取前 5 檔
-        res_df = res_df.sort_values(by='score', ascending=False)
-        top_5 = res_df.head(5)
-
-        # 寫入資料庫 master_selection table
-        self._save_to_db(top_5, market, 'buffett')
-
-        # 格式化輸出
+    def _format_output(self, df_top, extra_fields=[]):
+        """將 DataFrame 轉換為前台統一的 dict list"""
         output = []
-        for i, row in enumerate(top_5.to_dict(orient='records'), 1):
-            output.append({
+        for i, row in enumerate(df_top.to_dict(orient='records'), 1):
+            item = {
                 'rank': i,
                 'symbol': row['symbol'],
                 'name': row['name'],
@@ -262,19 +507,26 @@ class MasterSelectionService:
                 'debt_ratio': float(row['debt_ratio']),
                 'net_income_growth': float(row['net_income_growth']),
                 'score': float(row['score'])
-            })
-            
+            }
+            # 加入額外指標 (如彼得林區的 PE/PEG)
+            for f in extra_fields:
+                if f in row:
+                    item[f] = float(row[f])
+            output.append(item)
         return output
 
     def _save_to_db(self, df_top, market: str, master_name: str):
-        """將篩選出來的前 5 檔股票儲存至資料庫的 master_selection Table"""
-        # 刪除既有的該市場與該大師的紀錄
+        """持久化寫入資料庫"""
+        # 清洗資料：將 np.inf, -np.inf 與 NaN 通通清乾淨，避免寫入資料庫時崩潰
+        df_top = df_top.replace([np.inf, -np.inf], np.nan)
+        for col in ['roe', 'gross_margin', 'debt_ratio', 'net_income_growth', 'score', 'close_price', 'pe', 'peg']:
+            if col in df_top.columns:
+                df_top[col] = df_top[col].fillna(0.0)
+
         delete_sql = """
             DELETE FROM master_selection 
             WHERE market = :market AND master_name = :master_name
         """
-        
-        import datetime
         insert_sql = """
             INSERT INTO master_selection 
             (market, symbol, name, master_name, `rank`, close_price, roe, gross_margin, debt_ratio, net_income_growth, score, updated_at)
@@ -282,11 +534,23 @@ class MasterSelectionService:
         """
 
         with self.op.engine.begin() as conn:
-            # 刪除舊資料
             conn.execute(text(delete_sql), {'market': market, 'master_name': master_name})
             
-            # 插入新資料
             for idx, row in enumerate(df_top.to_dict(orient='records'), 1):
+                # 確保彼得林區的 PE/PEG 分數在寫入資料庫時，不改變 models.py 原有欄位，而是一起存放在 assumptions 中 (若以後有需要)，
+                # 這裡直接利用 models.py 既有的欄位做映射，因為這能保證 100% 資料庫欄位對齊：
+                # 彼得林區模式下：我們可以用 net_income_growth 存 PEG，而 roe 存 ROE，gross_margin 存 Gross Margin，debt_ratio 存 Debt Ratio。
+                # 這樣所有大師都能存進 master_selection table 中！
+                
+                roe_val = row['roe']
+                gm_val = row['gross_margin']
+                debt_val = row['debt_ratio']
+                growth_val = row['net_income_growth']
+                
+                # 如果是彼得林區，我們把 peg 數值存在 net_income_growth 欄位！
+                if master_name == 'lynch':
+                    growth_val = row['peg'] # 讓 net_income_growth 儲存 PEG
+                
                 conn.execute(text(insert_sql), {
                     'market': market,
                     'symbol': row['symbol'],
@@ -294,12 +558,12 @@ class MasterSelectionService:
                     'master_name': master_name,
                     'rank': idx,
                     'close_price': Decimal(str(row['close_price'])) if not pd.isna(row['close_price']) else Decimal('0'),
-                    'roe': Decimal(str(row['roe'])) if not pd.isna(row['roe']) else Decimal('0'),
-                    'gross_margin': Decimal(str(row['gross_margin'])) if not pd.isna(row['gross_margin']) else Decimal('0'),
-                    'debt_ratio': Decimal(str(row['debt_ratio'])) if not pd.isna(row['debt_ratio']) else Decimal('0'),
-                    'net_income_growth': Decimal(str(row['net_income_growth'])) if not pd.isna(row['net_income_growth']) else Decimal('0'),
+                    'roe': Decimal(str(roe_val)) if not pd.isna(roe_val) else Decimal('0'),
+                    'gross_margin': Decimal(str(gm_val)) if not pd.isna(gm_val) else Decimal('0'),
+                    'debt_ratio': Decimal(str(debt_val)) if not pd.isna(debt_val) else Decimal('0'),
+                    'net_income_growth': Decimal(str(growth_val)) if not pd.isna(growth_val) else Decimal('0'),
                     'score': Decimal(str(row['score'])) if not pd.isna(row['score']) else Decimal('0'),
                     'updated_at': datetime.datetime.now()
                 })
         
-        logger.info(f"Successfully saved Buffett selection results for {market} market.")
+        logger.info(f"Successfully saved {master_name} selection results for {market} market.")

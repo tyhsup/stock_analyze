@@ -270,19 +270,27 @@
     <!-- Tab Panel 3: 大師選股 -->
     <div class="tab-pane fade" id="tw-master-panel" role="tabpanel" aria-labelledby="tw-master-tab">
         <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+            <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
                 <div class="d-flex align-items-center">
                     <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
                         <i class="bi bi-award text-primary fs-5"></i>
                     </div>
                     <div>
-                        <h5 class="card-title fw-bold mb-0">大師選股 - 巴菲特價值投資法則 (台股)</h5>
-                        <small class="text-muted">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                        <h5 class="card-title fw-bold mb-0" id="tw-master-title">大師選股 - 巴菲特價值投資法則 (台股)</h5>
+                        <small class="text-muted" id="tw-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale" id="btn-refresh-tw-master">
-                    <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <label for="tw-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
+                    <select id="tw-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
+                        <option value="buffett" selected>巴菲特 (價值投資)</option>
+                        <option value="lynch">彼得·林區 (合理成長)</option>
+                        <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-tw-master">
+                        <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div id="tw-master-loader" class="text-center py-5">
@@ -297,10 +305,10 @@
                                 <th style="width: 120px;">代號</th>
                                 <th>名稱</th>
                                 <th>最新收盤價</th>
-                                <th>ROE</th>
-                                <th>營業毛利率</th>
-                                <th>負債比率</th>
-                                <th>淨利成長率</th>
+                                <th id="th-tw-metrics-1">ROE</th>
+                                <th id="th-tw-metrics-2">營業毛利率</th>
+                                <th id="th-tw-metrics-3">負債比率</th>
+                                <th id="th-tw-metrics-4">淨利成長率</th>
                                 <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
                             </tr>
                         </thead>
@@ -585,19 +593,27 @@
             <!-- Sub Tab 6: 大師選股 -->
             <div class="tab-pane fade" id="us-master-panel" role="tabpanel" aria-labelledby="us-master-tab">
                 <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
                         <div class="d-flex align-items-center">
                             <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
                                 <i class="bi bi-award text-primary fs-5"></i>
                             </div>
                             <div>
-                                <h5 class="card-title fw-bold mb-0">大師選股 - 巴菲特價值投資法則 (美股)</h5>
-                                <small class="text-muted">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                                <h5 class="card-title fw-bold mb-0" id="us-master-title">大師選股 - 巴菲特價值投資法則 (美股)</h5>
+                                <small class="text-muted" id="us-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
                             </div>
                         </div>
-                        <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale" id="btn-refresh-us-master">
-                            <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="us-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
+                            <select id="us-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
+                                <option value="buffett" selected>巴菲特 (價值投資)</option>
+                                <option value="lynch">彼得·林區 (合理成長)</option>
+                                <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-us-master">
+                                <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div id="us-master-loader" class="text-center py-5">
@@ -612,10 +628,10 @@
                                         <th style="width: 120px;">代號</th>
                                         <th>名稱</th>
                                         <th>最新收盤價</th>
-                                        <th>ROE</th>
-                                        <th>營業毛利率</th>
-                                        <th>負債比率</th>
-                                        <th>淨利成長率</th>
+                                        <th id="th-us-metrics-1">ROE</th>
+                                        <th id="th-us-metrics-2">營業毛利率</th>
+                                        <th id="th-us-metrics-3">負債比率</th>
+                                        <th id="th-us-metrics-4">淨利成長率</th>
                                         <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
                                     </tr>
                                 </thead>
@@ -1555,17 +1571,53 @@
             });
         }
 
-        // --- Master Stock Selection (Buffett Mode) Lazy Load & AJAX ---
+        // --- Master Stock Selection (Extended with Dropdowns) ---
         let twMasterLoaded = false;
         let usMasterLoaded = false;
 
         const twMasterTab = document.getElementById('tw-master-tab');
         const usMasterTab = document.getElementById('us-master-tab');
+        const twMasterSelect = document.getElementById('tw-master-select');
+        const usMasterSelect = document.getElementById('us-master-select');
+
+        const masterMeta = {
+            buffett: {
+                title: "大師選股 - 巴菲特價值投資法則",
+                desc: "篩選標準：ROE ≥ 15% | 營業毛利率 ≥ 30% | 負債比率 ≤ 50% | 淨利正成長",
+                headers: ["ROE", "營業毛利率", "負債比率", "淨利成長率"]
+            },
+            lynch: {
+                title: "大師選股 - 彼得·林區合理成長法則",
+                desc: "篩選標準：PEG ≤ 1.2 | PE < 25 | ROE ≥ 10% | 負債比率 ≤ 50%",
+                headers: ["ROE", "營業毛利率", "負債比率", "本益成長比 (PEG)"]
+            },
+            oneil: {
+                title: "大師選股 - 威廉·歐尼爾 CANSLIM 動能法則",
+                desc: "篩選標準：當季成長 ≥ 15% | 年度成長 ≥ 15% | 近 3 月漲幅排名前 30% | 接近新高 (≥ 0.85)",
+                headers: ["近 3 月漲幅", "當季淨利成長", "接近新高比率", "年度淨利成長"]
+            }
+        };
+
+        function updateMasterUI(market, master) {
+            const meta = masterMeta[master];
+            if (!meta) return;
+
+            const titleEl = document.getElementById(`${market}-master-title`);
+            const descEl = document.getElementById(`${market}-master-desc`);
+            if (titleEl) titleEl.innerText = `${meta.title} (${market === 'tw' ? '台股' : '美股'})`;
+            if (descEl) descEl.innerText = meta.desc;
+
+            for (let i = 1; i <= 4; i++) {
+                const th = document.getElementById(`th-${market}-metrics-${i}`);
+                if (th) th.innerText = meta.headers[i - 1];
+            }
+        }
 
         if (twMasterTab) {
             twMasterTab.addEventListener('shown.bs.tab', function() {
                 if (!twMasterLoaded) {
-                    fetchMasterSelection('tw');
+                    const master = twMasterSelect ? twMasterSelect.value : 'buffett';
+                    fetchMasterSelection('tw', master);
                     twMasterLoaded = true;
                 }
             });
@@ -1574,13 +1626,28 @@
         if (usMasterTab) {
             usMasterTab.addEventListener('shown.bs.tab', function() {
                 if (!usMasterLoaded) {
-                    fetchMasterSelection('us');
+                    const master = usMasterSelect ? usMasterSelect.value : 'buffett';
+                    fetchMasterSelection('us', master);
                     usMasterLoaded = true;
                 }
             });
         }
 
-        async function fetchMasterSelection(market, force = false) {
+        if (twMasterSelect) {
+            twMasterSelect.addEventListener('change', function() {
+                updateMasterUI('tw', this.value);
+                fetchMasterSelection('tw', this.value);
+            });
+        }
+
+        if (usMasterSelect) {
+            usMasterSelect.addEventListener('change', function() {
+                updateMasterUI('us', this.value);
+                fetchMasterSelection('us', this.value);
+            });
+        }
+
+        async function fetchMasterSelection(market, master = 'buffett', force = false) {
             const loader = document.getElementById(`${market}-master-loader`);
             const wrap = document.getElementById(`${market}-master-table-wrap`);
             const tbody = document.getElementById(`${market}-master-tbody`);
@@ -1590,7 +1657,7 @@
             if (tbody) tbody.innerHTML = '';
 
             try {
-                const res = await fetch(`/chips/api/master-selection/?market=${market}&force=${force}`);
+                const res = await fetch(`/chips/api/master-selection/?market=${market}&master=${master}&force=${force}`);
                 const json = await res.json();
 
                 if (loader) loader.style.display = 'none';
@@ -1599,16 +1666,45 @@
                     if (wrap) wrap.style.display = '';
                     
                     json.data.forEach(item => {
-                        const roeClass = item.roe >= 0.15 ? 'text-success fw-bold' : (item.roe >= 0.10 ? 'text-warning fw-bold' : 'text-danger fw-bold');
-                        const gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : (item.gross_margin >= 0.15 ? 'text-warning fw-bold' : 'text-danger fw-bold');
-                        const debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : (item.debt_ratio <= 0.60 ? 'text-warning fw-bold' : 'text-danger fw-bold');
-                        const growthClass = item.net_income_growth > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                        let roeClass = '', gmClass = '', debtClass = '', growthClass = '';
+                        let roeStr = '', gmStr = '', debtStr = '', growthStr = '';
 
                         const closeStr = item.close_price > 0 ? (market === 'tw' ? `${item.close_price.toFixed(2)} 元` : `$${item.close_price.toFixed(2)}`) : '--';
-                        const roeStr = (item.roe * 100).toFixed(2) + '%';
-                        const gmStr = (item.gross_margin * 100).toFixed(2) + '%';
-                        const debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
-                        const growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+
+                        if (master === 'buffett') {
+                            roeClass = item.roe >= 0.15 ? 'text-success fw-bold' : (item.roe >= 0.10 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : (item.gross_margin >= 0.15 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : (item.debt_ratio <= 0.60 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            growthClass = item.net_income_growth > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                        } 
+                        else if (master === 'lynch') {
+                            roeClass = item.roe >= 0.10 ? 'text-success fw-bold' : (item.roe >= 0.05 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            const peg = item.net_income_growth;
+                            growthClass = (peg <= 1.2 && peg > 0) ? 'text-success fw-bold' : (peg <= 1.5 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = peg.toFixed(2);
+                        } 
+                        else if (master === 'oneil') {
+                            roeClass = item.roe > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            gmClass = item.gross_margin >= 0.15 ? 'text-success fw-bold' : (item.gross_margin > 0 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            debtClass = item.debt_ratio >= 0.85 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            growthClass = item.net_income_growth >= 0.15 ? 'text-success fw-bold' : (item.net_income_growth > 0 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                        }
 
                         const row = `
                             <tr>
@@ -1646,12 +1742,14 @@
 
         if (btnRefreshTwMaster) {
             btnRefreshTwMaster.addEventListener('click', function() {
-                fetchMasterSelection('tw', true);
+                const master = twMasterSelect ? twMasterSelect.value : 'buffett';
+                fetchMasterSelection('tw', master, true);
             });
         }
         if (btnRefreshUsMaster) {
             btnRefreshUsMaster.addEventListener('click', function() {
-                fetchMasterSelection('us', true);
+                const master = usMasterSelect ? usMasterSelect.value : 'buffett';
+                fetchMasterSelection('us', master, true);
             });
         }
 
