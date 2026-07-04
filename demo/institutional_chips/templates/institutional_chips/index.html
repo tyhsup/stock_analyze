@@ -1180,8 +1180,8 @@
                             if (currentVal && !hasCurrent) {
                                 const opt = document.createElement('option');
                                 opt.value = currentVal;
-                                opt.textContent = currentVal;
-                                secTickerSelect.insertBefore(opt, secTickerSelect.firstChild);
+                                opt.textContent = currentVal + ' (當前選取)';
+                                secTickerSelect.appendChild(opt);
                             }
                             secTickerSelect.value = currentVal;
                         }
