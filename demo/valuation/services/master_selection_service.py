@@ -35,11 +35,11 @@ class MasterSelectionService:
         market = market.lower()
         table_name = f"financial_raw_{market}"
         
-        # 撈取最近三年的所有財報項目
+        # 撈取最近五年的所有財報項目
         query = f"""
             SELECT symbol, year, quarter, statement_type, item_name, amount 
             FROM {table_name}
-            WHERE year >= (YEAR(CURDATE()) - 3)
+            WHERE year >= (YEAR(CURDATE()) - 5)
         """
         with self.op.engine.connect() as conn:
             df = pd.read_sql(text(query), conn)
@@ -402,14 +402,14 @@ class MasterSelectionService:
             if income_pre_quarter != 0:
                 quarter_growth = (income_latest - income_pre_quarter) / abs(income_pre_quarter)
             else:
-                quarter_growth = 0.15 # 預設正成長
+                quarter_growth = 0.0 # 無歷史數據預設為 0
 
             # A (年度淨利 YoY)
             pre_income = row['net_income_pre_ttm']
             if pre_income != 0:
                 net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
             else:
-                net_income_growth = 0.15
+                net_income_growth = 0.0 # 無歷史數據預設為 0
 
             # L & N (動能)
             mom = momentum_dict.get(symbol, {'growth_3m': 0.0, 'new_high_ratio': 0.85})
