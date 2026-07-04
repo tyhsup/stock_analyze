@@ -280,12 +280,16 @@
                         <small class="text-muted" id="tw-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
                     </div>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
                     <label for="tw-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
                     <select id="tw-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
                         <option value="buffett" selected>巴菲特 (價值投資)</option>
                         <option value="lynch">彼得·林區 (合理成長)</option>
                         <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                    </select>
+                    <label for="tw-master-industry-select" class="form-label mb-0 small fw-bold text-muted ms-2">選擇產業:</label>
+                    <select id="tw-master-industry-select" class="form-select form-select-sm rounded-pill px-3" style="width: 180px;">
+                        <option value="all" selected>All (全部產業)</option>
                     </select>
                     <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-tw-master">
                         <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
@@ -304,6 +308,7 @@
                                 <th class="ps-4" style="width: 80px;">排名</th>
                                 <th style="width: 120px;">代號</th>
                                 <th>名稱</th>
+                                <th>產業別</th>
                                 <th>最新收盤價</th>
                                 <th id="th-tw-metrics-1">ROE</th>
                                 <th id="th-tw-metrics-2">營業毛利率</th>
@@ -617,12 +622,16 @@
                                 <small class="text-muted" id="us-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
                             </div>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
                             <label for="us-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
                             <select id="us-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
                                 <option value="buffett" selected>巴菲特 (價值投資)</option>
                                 <option value="lynch">彼得·林區 (合理成長)</option>
                                 <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                            </select>
+                            <label for="us-master-industry-select" class="form-label mb-0 small fw-bold text-muted ms-2">選擇產業:</label>
+                            <select id="us-master-industry-select" class="form-select form-select-sm rounded-pill px-3" style="width: 180px;">
+                                <option value="all" selected>All (全部產業)</option>
                             </select>
                             <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-us-master">
                                 <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
@@ -641,6 +650,7 @@
                                         <th class="ps-4" style="width: 80px;">排名</th>
                                         <th style="width: 120px;">代號</th>
                                         <th>名稱</th>
+                                        <th>產業別</th>
                                         <th>最新收盤價</th>
                                         <th id="th-us-metrics-1">ROE</th>
                                         <th id="th-us-metrics-2">營業毛利率</th>
@@ -1765,14 +1775,38 @@
             });
         }
 
+        // --- Master Selection Industry Filter Event Listeners ---
+        const setupMasterIndustryFilter = (market) => {
+            const select = document.getElementById(`${market}-master-industry-select`);
+            if (!select) return;
+            select.addEventListener('change', function() {
+                const selectedVal = this.value;
+                const tbody = document.getElementById(`${market}-master-tbody`);
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const ind = row.getAttribute('data-industry');
+                    if (selectedVal === 'all' || ind === selectedVal) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        };
+        setupMasterIndustryFilter('tw');
+        setupMasterIndustryFilter('us');
+
         async function fetchMasterSelection(market, master = 'buffett', force = false) {
             const loader = document.getElementById(`${market}-master-loader`);
             const wrap = document.getElementById(`${market}-master-table-wrap`);
             const tbody = document.getElementById(`${market}-master-tbody`);
+            const indSelect = document.getElementById(`${market}-master-industry-select`);
 
             if (loader) loader.style.display = '';
             if (wrap) wrap.style.display = 'none';
             if (tbody) tbody.innerHTML = '';
+            if (indSelect) indSelect.innerHTML = '<option value="all" selected>All (全部產業)</option>';
 
             try {
                 const res = await fetch(`/chips/api/master-selection/?market=${market}&master=${master}&force=${force}`);
@@ -1783,6 +1817,17 @@
                 if (json.status === 'success' && json.data && json.data.length > 0) {
                     if (wrap) wrap.style.display = '';
                     
+                    // 動態渲染產業選單
+                    const industries = Array.from(new Set(json.data.map(item => item.industry).filter(Boolean)));
+                    if (indSelect) {
+                        industries.forEach(ind => {
+                            const opt = document.createElement('option');
+                            opt.value = ind;
+                            opt.textContent = ind;
+                            indSelect.appendChild(opt);
+                        });
+                    }
+
                     json.data.forEach(item => {
                         let roeClass = '', gmClass = '', debtClass = '', growthClass = '';
                         let roeStr = '', gmStr = '', debtStr = '', growthStr = '';
@@ -1825,10 +1870,11 @@
                         }
 
                         const row = `
-                            <tr>
+                            <tr data-industry="${item.industry}">
                                 <td class="ps-4"><span class="badge bg-secondary rounded-pill px-2 py-1">${item.rank}</span></td>
                                 <td><span class="fw-bold text-primary">${item.symbol}</span></td>
                                 <td><span class="fw-bold">${item.name}</span></td>
+                                <td><span class="text-muted small">${item.industry}</span></td>
                                 <td>${closeStr}</td>
                                 <td class="${roeClass}">${roeStr}</td>
                                 <td class="${gmClass}">${gmStr}</td>
@@ -1841,7 +1887,7 @@
                     });
                 } else {
                     if (tbody) {
-                        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">目前暫無大師選股數據，請點選強制重新計算。</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-muted">目前暫無大師選股數據，請點選強制重新計算。</td></tr>`;
                     }
                     if (wrap) wrap.style.display = '';
                 }

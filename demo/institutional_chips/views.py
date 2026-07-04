@@ -304,6 +304,27 @@ def api_master_selection(request):
             service.run_selection(market, master)
             records = MasterSelection.objects.filter(market=market, master_name=master).order_by('rank')
             
+        # 批次查詢產業別資訊以避免 N+1 問題
+        symbols = [r.symbol for r in records]
+        industry_map = {}
+        if symbols:
+            try:
+                symbols_str = ", ".join([f"'{s}'" for s in symbols])
+                SQL_OP = mySQL_OP.OP_Fun()
+                if market == 'tw':
+                    query = f"SELECT `有價證卷代號` as symbol, `產業別` as industry FROM `stock_table_tw` WHERE `有價證卷代號` IN ({symbols_str})"
+                else:
+                    query = f"SELECT `symbol`, `sector` as industry FROM `stock_metadata` WHERE `symbol` IN ({symbols_str})"
+                
+                with SQL_OP.engine.connect() as conn:
+                    from sqlalchemy import text
+                    df_ind = pd.read_sql(text(query), conn)
+                    if not df_ind.empty:
+                        industry_map = df_ind.set_index('symbol')['industry'].to_dict()
+            except Exception as ind_err:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to fetch industry mapping: {ind_err}")
+
         data = []
         for r in records:
             # 針對彼得林區模式特別傳回 PE 和 PEG 以利前台渲染 (雖然數值也是在原有欄位映射)
@@ -316,7 +337,8 @@ def api_master_selection(request):
                 'gross_margin': float(r.gross_margin) if r.gross_margin else 0.0,
                 'debt_ratio': float(r.debt_ratio) if r.debt_ratio else 0.0,
                 'net_income_growth': float(r.net_income_growth) if r.net_income_growth else 0.0,
-                'score': float(r.score) if r.score else 0.0
+                'score': float(r.score) if r.score else 0.0,
+                'industry': industry_map.get(r.symbol, '其他/未分類')
             }
             data.append(item_data)
             

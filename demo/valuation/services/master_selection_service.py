@@ -219,11 +219,12 @@ class MasterSelectionService:
         res_df = pd.DataFrame(results)
         res_df = self._merge_names_and_prices(res_df, market)
         
+        res_df = res_df.drop_duplicates(subset=['symbol'])
         res_df = res_df.sort_values(by='score', ascending=False)
-        top_5 = res_df.head(5)
+        top_30 = res_df.head(30)
 
-        self._save_to_db(top_5, market, 'buffett')
-        return self._format_output(top_5)
+        self._save_to_db(top_30, market, 'buffett')
+        return self._format_output(top_30)
 
     def run_lynch_selection(self, market: str):
         """彼得·林區 (Peter Lynch) 價值成長型選股策略"""
@@ -310,11 +311,12 @@ class MasterSelectionService:
         res_df = pd.DataFrame(results)
         res_df = self._merge_names_and_prices(res_df, market)
         
+        res_df = res_df.drop_duplicates(subset=['symbol'])
         res_df = res_df.sort_values(by='score', ascending=False)
-        top_5 = res_df.head(5)
+        top_30 = res_df.head(30)
 
-        self._save_to_db(top_5, market, 'lynch')
-        return self._format_output(top_5, extra_fields=['pe', 'peg'])
+        self._save_to_db(top_30, market, 'lynch')
+        return self._format_output(top_30, extra_fields=['pe', 'peg'])
 
     def run_oneil_selection(self, market: str):
         """威廉·歐尼爾 (William J. O'Neil) CANSLIM 選股策略"""
@@ -470,11 +472,12 @@ class MasterSelectionService:
         res_df = pd.DataFrame(results)
         res_df = self._merge_names_and_prices(res_df, market)
         
+        res_df = res_df.drop_duplicates(subset=['symbol'])
         res_df = res_df.sort_values(by='score', ascending=False)
-        top_5 = res_df.head(5)
+        top_30 = res_df.head(30)
 
-        self._save_to_db(top_5, market, 'oneil')
-        return self._format_output(top_5)
+        self._save_to_db(top_30, market, 'oneil')
+        return self._format_output(top_30)
 
     def _merge_names_and_prices(self, res_df, market: str):
         """共用邏輯：合併股票名稱與最新收盤價"""
@@ -580,4 +583,52 @@ class MasterSelectionService:
                     'updated_at': datetime.datetime.now()
                 })
         
+        if market == 'us':
+            # 自動為美股推薦標的補全 Metadata
+            try:
+                import yfinance as yf
+                
+                # 先取得資料庫中已有的 symbols 集合
+                check_sql = "SELECT symbol FROM stock_metadata"
+                existing_symbols = set()
+                with self.op.engine.connect() as check_conn:
+                    res = check_conn.execute(text(check_sql)).fetchall()
+                    existing_symbols = {r[0] for r in res}
+                
+                for idx, row in enumerate(df_top.to_dict(orient='records'), 1):
+                    symbol = row['symbol']
+                    if symbol in existing_symbols:
+                        continue
+                    
+                    try:
+                        logger.info(f"Auto-enriching metadata from yfinance for: {symbol}")
+                        ticker = yf.Ticker(symbol)
+                        info = ticker.info
+                        if not info:
+                            continue
+                        
+                        sector = info.get('sector', 'Other/Unknown')
+                        industry = info.get('industry', 'Other/Unknown')
+                        market_cap = info.get('marketCap', 0)
+                        
+                        upsert_sql = """
+                            INSERT INTO stock_metadata (symbol, sector, industry, market_cap)
+                            VALUES (:symbol, :sector, :industry, :market_cap)
+                            ON DUPLICATE KEY UPDATE 
+                                sector=VALUES(sector), 
+                                industry=VALUES(industry), 
+                                market_cap=VALUES(market_cap)
+                        """
+                        with self.op.engine.begin() as conn:
+                            conn.execute(text(upsert_sql), {
+                                'symbol': symbol,
+                                'sector': sector,
+                                'industry': industry,
+                                'market_cap': market_cap
+                            })
+                    except Exception as yf_err:
+                        logger.warning(f"Failed to fetch yfinance metadata for {symbol}: {yf_err}")
+            except Exception as enrich_err:
+                logger.warning(f"Auto metadata enrichment setup failed: {enrich_err}")
+
         logger.info(f"Successfully saved {master_name} selection results for {market} market.")
