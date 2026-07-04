@@ -335,6 +335,9 @@ class MasterSelectionService:
 
         momentum_dict = {}
         if not df_prices.empty:
+            # 去除台股股票代號中的 .TW 或 .TWO 後綴，以與 df_base 純數字代號對齊
+            if market == 'tw':
+                df_prices['symbol'] = df_prices['symbol'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
             # 轉換日期格式
             df_prices['date'] = pd.to_datetime(df_prices['date'])
             grouped_prices = df_prices.groupby('symbol')
@@ -355,15 +358,22 @@ class MasterSelectionService:
                     }
 
         # 2. 獲取法人籌碼買超數據 (I)
-        # 台股近 10 天三大法人買賣超，美股近 120 天 13F 流入流入
+        # 台股近 15 天三大法人買賣超，美股近 120 天 13F 流入流入
         chips_dict = {}
         if market == 'tw':
-            chips_query = """
-                SELECT number as symbol, SUM(`三大法人買賣超股數`) as net_chips
-                FROM stock_investor
-                WHERE `日期` >= DATE_SUB((SELECT MAX(`日期`) FROM stock_investor), INTERVAL 15 DAY)
-                GROUP BY number
-            """
+            try:
+                # 避開 SQL 中的中文欄位名稱以防止 Windows CP950 連接編碼出錯
+                query = "SELECT * FROM stock_investor ORDER BY 1 DESC LIMIT 100000"
+                with self.op.engine.connect() as conn:
+                    df_raw = pd.read_sql(text(query), conn)
+                df_raw = self.op._fix_investor_columns(df_raw)
+                if not df_raw.empty:
+                    unique_dates = sorted(df_raw['日期'].unique(), reverse=True)[:15]
+                    df_filtered = df_raw[df_raw['日期'].isin(unique_dates)]
+                    df_sum = df_filtered.groupby('number')['三大法人買賣超股數'].sum().reset_index()
+                    chips_dict = dict(zip(df_sum['number'], df_sum['三大法人買賣超股數']))
+            except Exception as e:
+                logger.warning(f"Failed to fetch TW chips for CANSLIM: {e}")
         else:
             chips_query = """
                 SELECT ticker as symbol, SUM(change_shares) as net_chips
@@ -371,12 +381,12 @@ class MasterSelectionService:
                 WHERE date >= DATE_SUB((SELECT MAX(date) FROM stock_investor_us), INTERVAL 120 DAY)
                 GROUP BY ticker
             """
-        try:
-            with self.op.engine.connect() as conn:
-                df_chips = pd.read_sql(text(chips_query), conn)
-            chips_dict = dict(zip(df_chips['symbol'], df_chips['net_chips']))
-        except Exception as e:
-            logger.warning(f"Failed to fetch chips for CANSLIM: {e}")
+            try:
+                with self.op.engine.connect() as conn:
+                    df_chips = pd.read_sql(text(chips_query), conn)
+                chips_dict = dict(zip(df_chips['symbol'], df_chips['net_chips']))
+            except Exception as e:
+                logger.warning(f"Failed to fetch US chips for CANSLIM: {e}")
 
         # 計算 3 個月漲幅的全市場排名 (用於 C-A-N-S-L-I-M 的 L - 領頭羊)
         all_growths = [v['growth_3m'] for v in momentum_dict.values()]
@@ -485,6 +495,10 @@ class MasterSelectionService:
         with self.op.engine.connect() as conn:
             df_names = pd.read_sql(text(name_query), conn)
             df_prices = pd.read_sql(text(price_query), conn)
+
+        # 統一將價格代號中的 .TW 或 .TWO 後綴去除，以與 res_df 的純數字代號對齊
+        if market == 'tw':
+            df_prices['symbol'] = df_prices['symbol'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
 
         res_df = res_df.merge(df_names, on='symbol', how='left')
         res_df = res_df.merge(df_prices, on='symbol', how='left')
