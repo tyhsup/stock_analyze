@@ -125,11 +125,20 @@ import numpy as np
 def api_us_stocks_list(request):
     """
     回傳美股股票清單供 SEC EDGAR Ticker 選擇器使用。
-    僅回傳 symbol 與 name，供前端下拉選單渲染。
+    支援 q 參數進行模糊搜尋，限制回傳 50 筆以避免前端卡頓。
     """
     try:
         from market_data.models import StockUS
-        stocks = StockUS.objects.all().order_by('symbol')[:500]
+        from django.db.models import Q
+        
+        q = request.GET.get('q', '').strip()
+        if q:
+            stocks = StockUS.objects.filter(
+                Q(symbol__icontains=q) | Q(name__icontains=q)
+            ).order_by('symbol')[:50]
+        else:
+            stocks = StockUS.objects.all().order_by('symbol')[:500]
+            
         data = [{'symbol': s.symbol, 'name': s.name} for s in stocks]
         return JsonResponse({'stocks': data})
     except Exception as e:

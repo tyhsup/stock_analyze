@@ -341,6 +341,7 @@
                             <label for="sec-ticker-select" class="fw-bold text-nowrap mb-0">
                                 <i class="bi bi-search text-primary me-1"></i>SEC Ticker:
                             </label>
+                            <input type="text" id="sec-ticker-search" class="form-control form-control-sm" placeholder="Search..." style="width: 120px;">
                             <select id="sec-ticker-select" class="form-select form-select-sm" style="min-width: 200px;">
                                 <option value="AAPL" selected>AAPL - Apple</option>
                                 <option value="MSFT">MSFT - Microsoft</option>
@@ -1150,6 +1151,46 @@
         // ========================================================
         const secTickerSelect = document.getElementById('sec-ticker-select');
         const secBaseUrl = '/sec-edgar/api';
+
+        // --- SEC Ticker Autocomplete Search ---
+        const secTickerSearch = document.getElementById('sec-ticker-search');
+        if (secTickerSearch && secTickerSelect) {
+            let searchTimeout;
+            secTickerSearch.addEventListener('input', function() {
+                const query = this.value.trim();
+                clearTimeout(searchTimeout);
+                
+                searchTimeout = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`/chips/api/us-stocks/?q=${encodeURIComponent(query)}`);
+                        const data = await res.json();
+                        if (data.stocks) {
+                            const currentVal = secTickerSelect.value;
+                            secTickerSelect.innerHTML = '';
+                            let hasCurrent = false;
+                            
+                            data.stocks.forEach(s => {
+                                if (s.symbol === currentVal) hasCurrent = true;
+                                const opt = document.createElement('option');
+                                opt.value = s.symbol;
+                                opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                secTickerSelect.appendChild(opt);
+                            });
+                            
+                            if (currentVal && !hasCurrent) {
+                                const opt = document.createElement('option');
+                                opt.value = currentVal;
+                                opt.textContent = currentVal;
+                                secTickerSelect.insertBefore(opt, secTickerSelect.firstChild);
+                            }
+                            secTickerSelect.value = currentVal;
+                        }
+                    } catch (e) {
+                        console.error('Search tickers error:', e);
+                    }
+                }, 300);
+            });
+        }
 
         // --- Utility: Format number with commas ---
         function fmtNum(n) {
