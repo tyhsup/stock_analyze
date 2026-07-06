@@ -337,46 +337,6 @@
         </div>
         {% endif %}
 
-        <!-- USA Market Header: Ticker Selector + Sync Controls -->
-        <div class="row mb-3">
-            <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-3 flex-wrap">
-                        <div class="d-flex align-items-center gap-2">
-                            <label for="sec-ticker-select" class="fw-bold text-nowrap mb-0">
-                                <i class="bi bi-search text-primary me-1"></i>SEC Ticker:
-                            </label>
-                            <input type="text" id="sec-ticker-search" class="form-control form-control-sm" placeholder="Search..." style="width: 120px;">
-                            <select id="sec-ticker-select" class="form-select form-select-sm" style="min-width: 200px;">
-                                <option value="AAPL" selected>AAPL - Apple</option>
-                                <option value="MSFT">MSFT - Microsoft</option>
-                                <option value="NVDA">NVDA - Nvidia</option>
-                                <option value="TSLA">TSLA - Tesla</option>
-                                <option value="AMZN">AMZN - Amazon</option>
-                                <option value="META">META - Meta</option>
-                                <option value="GOOGL">GOOGL - Google</option>
-                            </select>
-                        </div>
-                        <button id="btn-load-more-tickers" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
-                            <i class="bi bi-list-ul me-1"></i> Load Full List
-                        </button>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <div id="sec-sync-status" class="me-2 small text-muted" style="display:none;">
-                            <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
-                            <span id="sec-sync-text">Syncing...</span>
-                        </div>
-                        <button id="btn-sync-13f" class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale">
-                            <i class="bi bi-cloud-download me-1"></i> Sync 13F
-                        </button>
-                        <button id="btn-sync-insider" class="btn btn-sm btn-outline-warning rounded-pill px-3 shadow-sm hover-scale">
-                            <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- USA Sub Tabs -->
         <ul class="nav nav-tabs mb-4" id="us-sub-tabs" role="tablist">
             <li class="nav-item" role="presentation">
@@ -415,6 +375,26 @@
 
             <!-- Sub Tab 1: Institutional Holders (existing content preserved) -->
             <div class="tab-pane fade show active" id="us-holders-panel" role="tabpanel" aria-labelledby="us-holders-tab">
+                <!-- Ticker Selector for Holders -->
+                <div class="d-flex align-items-center bg-white p-3 mb-3 rounded shadow-sm gap-2 flex-wrap">
+                    <label for="sec-ticker-select-holders" class="fw-bold text-nowrap mb-0">
+                        <i class="bi bi-search text-primary me-1"></i>SEC Ticker:
+                    </label>
+                    <input type="text" id="sec-ticker-search-holders" class="form-control form-control-sm sec-ticker-search-input" placeholder="Search..." style="width: 120px;">
+                    <select id="sec-ticker-select-holders" class="form-select form-select-sm sec-ticker-select-dropdown" style="min-width: 200px;">
+                        <option value="AAPL" selected>AAPL - Apple</option>
+                        <option value="MSFT">MSFT - Microsoft</option>
+                        <option value="NVDA">NVDA - Nvidia</option>
+                        <option value="TSLA">TSLA - Tesla</option>
+                        <option value="AMZN">AMZN - Amazon</option>
+                        <option value="META">META - Meta</option>
+                        <option value="GOOGL">GOOGL - Google</option>
+                    </select>
+                    <button id="btn-load-more-tickers-holders" class="btn btn-outline-secondary btn-sm rounded-pill px-3 btn-load-tickers-class">
+                        <i class="bi bi-list-ul me-1"></i> Load Full List
+                    </button>
+                </div>
+
                 <div class="row">
                     <div class="col-12 py-4 text-center bg-white rounded shadow-sm">
                         <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
@@ -439,17 +419,30 @@
                             </div>
                         </div>
                         
-                        <!-- Institution Dropdown Selector -->
-                        <div class="d-flex align-items-center gap-2">
-                            <label for="chipsInstitutionSelector" class="form-label mb-0 small fw-bold text-muted">選擇投資機構:</label>
-                            <select id="chipsInstitutionSelector" class="form-select form-select-sm" style="min-width: 250px;">
-                                {% for cik, inst in known_institutions.items %}
-                                    <option value="{{ cik }}" {% if current_cik == cik %}selected{% endif %}>{{ inst.name_zh }}</option>
-                                {% endfor %}
-                            </select>
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <!-- Institution Dropdown Selector -->
+                            <div class="d-flex align-items-center gap-2">
+                                <label for="chipsInstitutionSelector" class="form-label mb-0 small fw-bold text-muted text-nowrap">選擇投資機構:</label>
+                                <select id="chipsInstitutionSelector" class="form-select form-select-sm" style="min-width: 250px;">
+                                    {% for cik, inst in known_institutions.items %}
+                                        <option value="{{ cik }}" {% if current_cik == cik %}selected{% endif %}>{{ inst.name_zh }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Sync 13F Button -->
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sec-sync-status-class me-2 small text-muted" style="display:none;">
+                                    <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
+                                    <span class="sec-sync-text-class">Syncing...</span>
+                                </div>
+                                <button id="btn-sync-13f" class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale">
+                                    <i class="bi bi-cloud-download me-1"></i> Sync 13F
+                                </button>
+                            </div>
+                            
+                            <span class="badge bg-primary rounded-pill px-3 py-2" id="sec-13f-count">0 records</span>
                         </div>
-                        
-                        <span class="badge bg-primary rounded-pill px-3 py-2" id="sec-13f-count">0 records</span>
                     </div>
                     <div class="card-body p-0">
                         <div id="sec-13f-loader" class="text-center py-5">
@@ -484,7 +477,7 @@
             <!-- Sub Tab 3: Insider Trades -->
             <div class="tab-pane fade" id="us-insider-panel" role="tabpanel" aria-labelledby="us-insider-tab">
                 <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
                         <div class="d-flex align-items-center">
                             <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
                                 <i class="bi bi-person-badge text-warning fs-5"></i>
@@ -494,7 +487,39 @@
                                 <small class="text-muted">Recent insider transactions</small>
                             </div>
                         </div>
-                        <span class="badge bg-warning text-dark rounded-pill px-3 py-2" id="sec-insider-count">0 records</span>
+                        
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <!-- Ticker Selector for Insider -->
+                            <div class="d-flex align-items-center gap-2">
+                                <label for="sec-ticker-select-insider" class="form-label mb-0 small fw-bold text-muted text-nowrap">SEC Ticker:</label>
+                                <input type="text" id="sec-ticker-search-insider" class="form-control form-control-sm sec-ticker-search-input" placeholder="Search..." style="width: 100px;">
+                                <select id="sec-ticker-select-insider" class="form-select form-select-sm sec-ticker-select-dropdown" style="min-width: 150px;">
+                                    <option value="AAPL" selected>AAPL - Apple</option>
+                                    <option value="MSFT">MSFT - Microsoft</option>
+                                    <option value="NVDA">NVDA - Nvidia</option>
+                                    <option value="TSLA">TSLA - Tesla</option>
+                                    <option value="AMZN">AMZN - Amazon</option>
+                                    <option value="META">META - Meta</option>
+                                    <option value="GOOGL">GOOGL - Google</option>
+                                </select>
+                                <button id="btn-load-more-tickers-insider" class="btn btn-outline-secondary btn-sm rounded-pill px-2 btn-load-tickers-class" title="Load Full List">
+                                    <i class="bi bi-list-ul"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- Sync Buttons & Status -->
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sec-sync-status-class me-2 small text-muted" style="display:none;">
+                                    <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
+                                    <span class="sec-sync-text-class">Syncing...</span>
+                                </div>
+                                <button id="btn-sync-insider" class="btn btn-sm btn-outline-warning rounded-pill px-3 shadow-sm hover-scale btn-sync-insider-class">
+                                    <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                                </button>
+                            </div>
+                            
+                            <span class="badge bg-warning text-dark rounded-pill px-3 py-2" id="sec-insider-count">0 records</span>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div id="sec-insider-loader" class="text-center py-5">
@@ -527,7 +552,7 @@
             <!-- Sub Tab 4: Financial Data (XBRL) -->
             <div class="tab-pane fade" id="us-financial-panel" role="tabpanel" aria-labelledby="us-financial-tab">
                 <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
                         <div class="d-flex align-items-center">
                             <div class="bg-success bg-opacity-10 p-2 rounded me-3">
                                 <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
@@ -537,7 +562,39 @@
                                 <small class="text-muted">Standardized financial concepts from SEC filings</small>
                             </div>
                         </div>
-                        <span class="badge bg-success rounded-pill px-3 py-2" id="sec-fin-count">0 records</span>
+                        
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <!-- Ticker Selector for Financial -->
+                            <div class="d-flex align-items-center gap-2">
+                                <label for="sec-ticker-select-financial" class="form-label mb-0 small fw-bold text-muted text-nowrap">SEC Ticker:</label>
+                                <input type="text" id="sec-ticker-search-financial" class="form-control form-control-sm sec-ticker-search-input" placeholder="Search..." style="width: 100px;">
+                                <select id="sec-ticker-select-financial" class="form-select form-select-sm sec-ticker-select-dropdown" style="min-width: 150px;">
+                                    <option value="AAPL" selected>AAPL - Apple</option>
+                                    <option value="MSFT">MSFT - Microsoft</option>
+                                    <option value="NVDA">NVDA - Nvidia</option>
+                                    <option value="TSLA">TSLA - Tesla</option>
+                                    <option value="AMZN">AMZN - Amazon</option>
+                                    <option value="META">META - Meta</option>
+                                    <option value="GOOGL">GOOGL - Google</option>
+                                </select>
+                                <button id="btn-load-more-tickers-financial" class="btn btn-outline-secondary btn-sm rounded-pill px-2 btn-load-tickers-class" title="Load Full List">
+                                    <i class="bi bi-list-ul"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- Sync Buttons & Status -->
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="sec-sync-status-class me-2 small text-muted" style="display:none;">
+                                    <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
+                                    <span class="sec-sync-text-class">Syncing...</span>
+                                </div>
+                                <button id="btn-sync-financial" class="btn btn-sm btn-outline-success rounded-pill px-3 shadow-sm hover-scale btn-sync-insider-class">
+                                    <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                                </button>
+                            </div>
+                            
+                            <span class="badge bg-success rounded-pill px-3 py-2" id="sec-fin-count">0 records</span>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div id="sec-fin-loader" class="text-center py-5">
@@ -1159,48 +1216,95 @@
         // ========================================================
         // SEC EDGAR Integration (AJAX-based, zero coupling)
         // ========================================================
-        const secTickerSelect = document.getElementById('sec-ticker-select');
         const secBaseUrl = '/sec-edgar/api';
 
+        // 取得所有美股 Ticker 下拉選單與搜尋框
+        const selectDropdowns = document.querySelectorAll('.sec-ticker-select-dropdown');
+        const searchInputs = document.querySelectorAll('.sec-ticker-search-input');
+        const loadButtons = document.querySelectorAll('.btn-load-tickers-class');
+        const syncInsiderBtns = document.querySelectorAll('.btn-sync-insider-class');
+        const syncStatuses = document.querySelectorAll('.sec-sync-status-class');
+        const syncTexts = document.querySelectorAll('.sec-sync-text-class');
+
+        // Helper 函數：取得當前選取的 Ticker
+        function getSelectedTicker() {
+            if (selectDropdowns.length > 0) {
+                return selectDropdowns[0].value;
+            }
+            return 'AAPL';
+        }
+
         // --- SEC Ticker Autocomplete Search ---
-        const secTickerSearch = document.getElementById('sec-ticker-search');
-        if (secTickerSearch && secTickerSelect) {
-            let searchTimeout;
-            secTickerSearch.addEventListener('input', function() {
+        let searchTimeout;
+        searchInputs.forEach(inputEl => {
+            inputEl.addEventListener('input', function() {
                 const query = this.value.trim();
-                clearTimeout(searchTimeout);
                 
+                // 同步其他 search input 的文字
+                searchInputs.forEach(otherInput => {
+                    if (otherInput !== inputEl) otherInput.value = query;
+                });
+                
+                clearTimeout(searchTimeout);
                 searchTimeout = setTimeout(async () => {
                     try {
                         const res = await fetch(`/chips/api/us-stocks/?q=${encodeURIComponent(query)}`);
                         const data = await res.json();
                         if (data.stocks) {
-                            const currentVal = secTickerSelect.value;
-                            secTickerSelect.innerHTML = '';
-                            let hasCurrent = false;
+                            const currentVal = getSelectedTicker();
                             
-                            data.stocks.forEach(s => {
-                                if (s.symbol === currentVal) hasCurrent = true;
-                                const opt = document.createElement('option');
-                                opt.value = s.symbol;
-                                opt.textContent = s.symbol + ' - ' + (s.name || '');
-                                secTickerSelect.appendChild(opt);
+                            // 更新所有下拉選單的選項
+                            selectDropdowns.forEach(dropdown => {
+                                dropdown.innerHTML = '';
+                                let hasCurrent = false;
+                                
+                                data.stocks.forEach(s => {
+                                    if (s.symbol === currentVal) hasCurrent = true;
+                                    const opt = document.createElement('option');
+                                    opt.value = s.symbol;
+                                    opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                    dropdown.appendChild(opt);
+                                });
+                                
+                                if (currentVal && !hasCurrent) {
+                                    const opt = document.createElement('option');
+                                    opt.value = currentVal;
+                                    opt.textContent = currentVal + ' (當前選取)';
+                                    dropdown.appendChild(opt);
+                                }
+                                dropdown.value = currentVal;
                             });
-                            
-                            if (currentVal && !hasCurrent) {
-                                const opt = document.createElement('option');
-                                opt.value = currentVal;
-                                opt.textContent = currentVal + ' (當前選取)';
-                                secTickerSelect.appendChild(opt);
-                            }
-                            secTickerSelect.value = currentVal;
                         }
                     } catch (e) {
                         console.error('Search tickers error:', e);
                     }
                 }, 300);
             });
-        }
+        });
+
+        // --- Ticker Change: 同步所有下拉選單並重載活躍的 SEC tab ---
+        selectDropdowns.forEach(dropdown => {
+            dropdown.addEventListener('change', function() {
+                const selectedVal = this.value;
+                
+                // 同步更新所有其他下拉選單的值
+                selectDropdowns.forEach(otherDropdown => {
+                    if (otherDropdown !== dropdown) {
+                        otherDropdown.value = selectedVal;
+                    }
+                });
+
+                secInsiderLoaded = false;
+                secFinLoaded = false;
+
+                // 重新載入當前活躍 sub-tab 的資料
+                const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
+                const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
+
+                if (activeInsider) fetchInsiderTrades(selectedVal);
+                else if (activeFin) fetchFinancialData(selectedVal);
+            });
+        });
 
         // --- Utility: Format number with commas ---
         function fmtNum(n) {
@@ -1247,39 +1351,51 @@
 
         // --- Load Full Ticker List ---
         let tickerListLoaded = false;
-        const btnLoadTickers = document.getElementById('btn-load-more-tickers');
-        if (btnLoadTickers) {
-            btnLoadTickers.addEventListener('click', async function() {
+        loadButtons.forEach(btn => {
+            btn.addEventListener('click', async function() {
                 if (tickerListLoaded) return;
-                btnLoadTickers.disabled = true;
-                btnLoadTickers.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Loading...';
+                
+                loadButtons.forEach(b => {
+                    b.disabled = true;
+                    b.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Loading...';
+                });
+                
                 try {
                     const res = await fetch('/chips/api/us-stocks/');
                     const data = await res.json();
                     if (data.stocks && data.stocks.length > 0) {
-                        const currentVal = secTickerSelect.value;
-                        const existingVals = new Set();
-                        Array.from(secTickerSelect.options).forEach(o => existingVals.add(o.value));
-                        data.stocks.forEach(s => {
-                            if (!existingVals.has(s.symbol)) {
-                                const opt = document.createElement('option');
-                                opt.value = s.symbol;
-                                opt.textContent = s.symbol + ' - ' + (s.name || '');
-                                secTickerSelect.appendChild(opt);
-                            }
+                        const currentVal = getSelectedTicker();
+                        
+                        selectDropdowns.forEach(dropdown => {
+                            const existingVals = new Set();
+                            Array.from(dropdown.options).forEach(o => existingVals.add(o.value));
+                            data.stocks.forEach(s => {
+                                if (!existingVals.has(s.symbol)) {
+                                    const opt = document.createElement('option');
+                                    opt.value = s.symbol;
+                                    opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                    dropdown.appendChild(opt);
+                                }
+                            });
+                            dropdown.value = currentVal;
                         });
-                        secTickerSelect.value = currentVal;
+                        
                         tickerListLoaded = true;
-                        btnLoadTickers.innerHTML = '<i class="bi bi-check-lg me-1"></i> Loaded (' + data.stocks.length + ')';
-                        btnLoadTickers.classList.replace('btn-outline-secondary', 'btn-outline-success');
+                        
+                        loadButtons.forEach(b => {
+                            b.innerHTML = '<i class="bi bi-check-lg me-1"></i> Loaded (' + data.stocks.length + ')';
+                            b.classList.replace('btn-outline-secondary', 'btn-outline-success');
+                        });
                     }
                 } catch (e) {
-                    btnLoadTickers.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Error';
-                    btnLoadTickers.disabled = false;
+                    loadButtons.forEach(b => {
+                        b.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Error';
+                        b.disabled = false;
+                    });
                     console.error('Load tickers error:', e);
                 }
             });
-        }
+        });
 
         // --- Fetch SEC 13F Holdings by CIK ---
         let cached13f = {};
@@ -1345,10 +1461,10 @@
             rows.forEach(r => r.classList.remove('selected-row'));
             if (element) element.classList.add('selected-row');
 
-            if (secTickerSelect) {
+            selectDropdowns.forEach(dropdown => {
                 let optionExists = false;
-                for (let i = 0; i < secTickerSelect.options.length; i++) {
-                    if (secTickerSelect.options[i].value === ticker) {
+                for (let i = 0; i < dropdown.options.length; i++) {
+                    if (dropdown.options[i].value === ticker) {
                         optionExists = true;
                         break;
                     }
@@ -1357,10 +1473,10 @@
                     const opt = document.createElement('option');
                     opt.value = ticker;
                     opt.textContent = ticker;
-                    secTickerSelect.appendChild(opt);
+                    dropdown.appendChild(opt);
                 }
-                secTickerSelect.value = ticker;
-            }
+                dropdown.value = ticker;
+            });
 
             secInsiderLoaded = false;
             secFinLoaded = false;
@@ -1460,9 +1576,6 @@
 
         // --- Sync Buttons ---
         const btnSync13F = document.getElementById('btn-sync-13f');
-        const btnSyncInsider = document.getElementById('btn-sync-insider');
-        const syncStatus = document.getElementById('sec-sync-status');
-        const syncText = document.getElementById('sec-sync-text');
 
         async function triggerSecSync(type) {
             let apiUrl = '';
@@ -1474,22 +1587,28 @@
                 apiUrl = secBaseUrl + '/sync/institution/?cik=' + cik;
                 syncMsg = 'Syncing 13F for CIK ' + cik + '...';
             } else {
-                const ticker = secTickerSelect.value;
+                const ticker = getSelectedTicker();
                 if (!ticker) { alert('Please select a ticker first.'); return; }
                 apiUrl = secBaseUrl + '/sync/insider/?ticker=' + ticker;
                 syncMsg = 'Syncing Insider for ' + ticker + '...';
             }
             
-            syncStatus.style.display = '';
-            syncText.textContent = syncMsg;
+            // 顯示所有同步狀態指示器
+            syncStatuses.forEach(el => el.style.display = '');
+            syncTexts.forEach(el => el.textContent = syncMsg);
             
-            if (type === '13f') { btnSync13F.disabled = true; }
-            else { btnSyncInsider.disabled = true; }
+            if (type === '13f') { 
+                if (btnSync13F) btnSync13F.disabled = true; 
+            } else { 
+                syncInsiderBtns.forEach(btn => btn.disabled = true); 
+            }
             
             try {
                 const res = await fetch(apiUrl);
                 const data = await res.json();
-                syncStatus.style.display = 'none';
+                
+                // 隱藏所有狀態指示器
+                syncStatuses.forEach(el => el.style.display = 'none');
                 
                 if (data.status === 'success') {
                     alert('Sync successful: ' + (data.message || ''));
@@ -1498,7 +1617,7 @@
                         delete cached13f[cik];
                         fetchSec13F(cik);
                     } else {
-                        const ticker = secTickerSelect.value;
+                        const ticker = getSelectedTicker();
                         delete cachedInsider[ticker];
                         delete cachedFinancial[ticker];
                         fetchInsiderTrades(ticker);
@@ -1507,16 +1626,16 @@
                     alert('Sync failed: ' + (data.message || ''));
                 }
             } catch (e) {
-                syncStatus.style.display = 'none';
+                syncStatuses.forEach(el => el.style.display = 'none');
                 alert('Sync request error: ' + e);
             }
             
-            btnSync13F.disabled = false;
-            btnSyncInsider.disabled = false;
+            if (btnSync13F) btnSync13F.disabled = false;
+            syncInsiderBtns.forEach(btn => btn.disabled = false);
         }
 
         if (btnSync13F) btnSync13F.addEventListener('click', () => triggerSecSync('13f'));
-        if (btnSyncInsider) btnSyncInsider.addEventListener('click', () => triggerSecSync('insider'));
+        syncInsiderBtns.forEach(btn => btn.addEventListener('click', () => triggerSecSync('insider')));
 
         // --- Fetch & Render US Money Flow Heatmap ---
         let moneyFlowChart = null;
@@ -1648,7 +1767,7 @@
 
         if (usInsiderTab) {
             usInsiderTab.addEventListener('shown.bs.tab', function() {
-                const ticker = secTickerSelect.value;
+                const ticker = getSelectedTicker();
                 if (!secInsiderLoaded || !cachedInsider[ticker]) {
                     fetchInsiderTrades(ticker);
                     secInsiderLoaded = true;
@@ -1658,7 +1777,7 @@
 
         if (usFinancialTab) {
             usFinancialTab.addEventListener('shown.bs.tab', function() {
-                const ticker = secTickerSelect.value;
+                const ticker = getSelectedTicker();
                 if (!secFinLoaded || !cachedFinancial[ticker]) {
                     fetchFinancialData(ticker);
                     secFinLoaded = true;
@@ -1672,21 +1791,6 @@
                     fetchUSMoneyFlow();
                     moneyflowLoaded = true;
                 }
-            });
-        }
-
-        // --- Ticker Change: Reset caches and reload active SEC tab ---
-        if (secTickerSelect) {
-            secTickerSelect.addEventListener('change', function() {
-                secInsiderLoaded = false;
-                secFinLoaded = false;
-
-                // Reload data for the currently active SEC sub-tab
-                const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
-                const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
-
-                if (activeInsider) fetchInsiderTrades(this.value);
-                else if (activeFin) fetchFinancialData(this.value);
             });
         }
 
