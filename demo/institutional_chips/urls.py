@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
     chips_view, refresh_tw_api, refresh_us_api, refresh_status_api, 
-    api_industry_flow, api_us_stocks_list, api_master_selection
+    api_industry_flow, api_us_stocks_list, api_master_selection,
+    api_us_holders
 )
 from .us_chips_views import api_us_money_flow
 
@@ -14,4 +15,5 @@ urlpatterns = [
     path('api/us-stocks/', api_us_stocks_list, name='api_us_stocks_list'),
     path('api/us-money-flow/', api_us_money_flow, name='api_us_money_flow'),
     path('api/master-selection/', api_master_selection, name='api_master_selection'),
+    path('api/us-holders/', api_us_holders, name='api_us_holders'),
 ]

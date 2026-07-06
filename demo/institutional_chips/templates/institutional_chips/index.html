@@ -10,23 +10,6 @@
                 <h2 class="display-6 fw-bold mb-1"><i class="bi bi-person-check text-primary me-2"></i>Institutional Investor Dashboard</h2>
                 <p class="text-muted mb-0">Analysis of daily buy/sell activity from Foreign, Trust, and Dealer institutions.</p>
             </div>
-            <div id="refresh-controls" class="d-flex align-items-center">
-                <div id="refresh-progress-container" class="me-3" style="display: none; min-width: 200px;">
-                    <div class="d-flex justify-content-between mb-1 small">
-                        <span id="refresh-status-text">Updating...</span>
-                        <span id="refresh-percent">0%</span>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div id="refresh-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-                    </div>
-                </div>
-                <button id="btn-refresh-tw" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm hover-scale me-2">
-                    <i class="bi bi-arrow-clockwise me-1"></i> Update TW Data
-                </button>
-                <button id="btn-refresh-us" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm hover-scale">
-                    <i class="bi bi-arrow-clockwise me-1"></i> Update US Data
-                </button>
-            </div>
         </div>
     </div>
 </div>
@@ -393,11 +376,14 @@
                     <button id="btn-load-more-tickers-holders" class="btn btn-outline-secondary btn-sm rounded-pill px-3 btn-load-tickers-class">
                         <i class="bi bi-list-ul me-1"></i> Load Full List
                     </button>
+                    <button id="btn-generate-holders" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm hover-scale ms-2">
+                        <i class="bi bi-play-fill me-1"></i>確認
+                    </button>
                 </div>
 
                 <div class="row">
                     <div class="col-12 py-4 text-center bg-white rounded shadow-sm">
-                        <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
+                        <p id="us-loading-text" class="text-muted mb-0">請選擇 SEC Ticker 並按下確認以生成該股票的持股機構數據。</p>
                         <div id="us-charts-container" class="mt-4 row text-start">
                             <!-- US Charts will be injected here via JS (existing logic) -->
                         </div>
@@ -514,7 +500,7 @@
                                     <span class="sec-sync-text-class">Syncing...</span>
                                 </div>
                                 <button id="btn-sync-insider" class="btn btn-sm btn-outline-warning rounded-pill px-3 shadow-sm hover-scale btn-sync-insider-class">
-                                    <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                                    <i class="bi bi-cloud-download me-1"></i> Sync Insider
                                 </button>
                             </div>
                             
@@ -588,8 +574,8 @@
                                     <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
                                     <span class="sec-sync-text-class">Syncing...</span>
                                 </div>
-                                <button id="btn-sync-financial" class="btn btn-sm btn-outline-success rounded-pill px-3 shadow-sm hover-scale btn-sync-insider-class">
-                                    <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                                <button id="btn-sync-financial" class="btn btn-sm btn-outline-success rounded-pill px-3 shadow-sm hover-scale btn-sync-financial-class">
+                                    <i class="bi bi-cloud-download me-1"></i> Sync Fin
                                 </button>
                             </div>
                             
@@ -790,84 +776,61 @@
         const usInvestorData = JSON.parse(document.getElementById('us-investor-data').textContent);
         const chartThemeMode = localStorage.getItem('theme') || 'light';
 
-        // --- Data Refresh Logic ---
-        const btnTw = document.getElementById('btn-refresh-tw');
-        const btnUs = document.getElementById('btn-refresh-us');
-        const progressContainer = document.getElementById('refresh-progress-container');
-        const progressBar = document.getElementById('refresh-progress-bar');
-        const statusText = document.getElementById('refresh-status-text');
-        const percentText = document.getElementById('refresh-percent');
-
-        let isPolling = false;
-
-        function updateProgress(status, progress, message) {
-            progressContainer.style.display = 'block';
-            progressBar.style.width = progress + '%';
-            percentText.innerText = progress + '%';
-            statusText.innerText = message || 'Updating...';
-
-            if (status === 'done') {
-                progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
-                progressBar.classList.add('bg-success');
-                setTimeout(() => window.location.reload(), 2000);
-            } else if (status === 'error') {
-                progressBar.classList.add('bg-danger');
-                isPolling = false;
+        // --- US Market Charts Render ---
+        function renderUSInvestorChart(data) {
+            const usContainer = document.getElementById('us-charts-container');
+            const usLoadingText = document.getElementById('us-loading-text');
+            if (usLoadingText) {
+                usLoadingText.style.display = 'none';
             }
-        }
-
-        async function pollStatus(market) {
-            if (!isPolling) return;
-            try {
-                const res = await fetch(`api/refresh-status/${market}/`);
-                const data = await res.json();
-                updateProgress(data.status, data.progress, data.message);
-                if (data.status === 'running') {
-                    setTimeout(() => pollStatus(market), 2000);
-                } else {
-                    isPolling = false;
-                }
-            } catch (e) {
-                console.error("Polling failed", e);
-                isPolling = false;
+            usContainer.innerHTML = '';
+            
+            if (!data) {
+                usContainer.innerHTML = '<div class="col-12 text-center py-4 text-muted">無該股票持股機構數據。</div>';
+                return;
             }
+            
+            const col = document.createElement('div');
+            col.className = 'col-lg-8 mx-auto mb-4';
+            col.innerHTML = `
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="fw-bold mb-0">${data.symbol} Institutional Holders</h5>
+                        <span class="badge bg-primary rounded-pill">Ownership: ${data.total_institutional_pct}%</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="us-chart-single" style="min-height: 400px;"></div>
+                        <div class="row mt-3 text-center small divider-top pt-2">
+                            <div class="col-6 border-end">
+                                <div class="text-muted">Buy Sentiment</div>
+                                <div class="fw-bold text-success">${data.sentiment.ratio.toFixed(2)}x</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted">Top 10 Conc.</div>
+                                <div class="fw-bold">${((data.concentration[0].value / data.total_shares_held)*100).toFixed(1)}%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            usContainer.appendChild(col);
+            
+            const options = {
+                series: [{ name: 'Shares', data: data.shares }],
+                chart: { type: 'bar', height: 400, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 4 } },
+                xaxis: { categories: data.categories, labels: { show: false } },
+                yaxis: { labels: { style: { fontSize: '14px' } } },
+                colors: data.bar_colors,
+                legend: { show: false },
+                tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } },
+                theme: { mode: chartThemeMode }
+            };
+            new ApexCharts(document.querySelector("#us-chart-single"), options).render();
         }
-
-        btnTw.addEventListener('click', async () => {
-            if (isPolling) return;
-            if (!confirm("確定要更新台灣(上市+上櫃)法人資料嗎？這可能需要 1-2 分鐘。")) return;
-            
-            try {
-                const res = await fetch('api/refresh/tw/', { method: 'POST' });
-                const data = await res.json();
-                if (data.status === 'started') {
-                    isPolling = true;
-                    pollStatus('tw');
-                } else {
-                    alert(data.error || "觸發失敗");
-                }
-            } catch (e) { alert("請求失敗: " + e); }
-        });
-
-        btnUs.addEventListener('click', async () => {
-            if (isPolling) return;
-            if (!confirm("確定要更新美股熱門股法人持股嗎？")) return;
-            
-            try {
-                const res = await fetch('api/refresh/us/', { method: 'POST' });
-                const data = await res.json();
-                if (data.status === 'started') {
-                    isPolling = true;
-                    pollStatus('us');
-                } else {
-                    alert(data.error || "觸發失敗");
-                }
-            } catch (e) { alert("請求失敗: " + e); }
-        });
 
         // --- Taiwan Market Charts ---
         if (buySellData) {
-            // ... (keep leadersOptions and laggardsOptions as updated)
             const leadersOptions = {
                 series: buySellData.leaders.series,
                 chart: { type: 'bar', height: 500, stacked: true, toolbar: { show: false } },
@@ -907,52 +870,7 @@
 
         // --- US Market Charts ---
         if (usInvestorData && usInvestorData.length > 0) {
-            const usContainer = document.getElementById('us-charts-container');
-            const usLoadingText = document.getElementById('us-loading-text');
-            if (usLoadingText) {
-                usLoadingText.style.display = 'none';
-            }
-            usContainer.innerHTML = '';
-            
-            usInvestorData.forEach((data, idx) => {
-                const col = document.createElement('div');
-                col.className = 'col-lg-6 mb-4';
-                col.innerHTML = `
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
-                            <h5 class="fw-bold mb-0">${data.symbol} Institutional Holders</h5>
-                            <span class="badge bg-primary rounded-pill">Ownership: ${data.total_institutional_pct}%</span>
-                        </div>
-                        <div class="card-body">
-                            <div id="us-chart-${idx}" style="min-height: 400px;"></div>
-                            <div class="row mt-3 text-center small divider-top pt-2">
-                                <div class="col-6 border-end">
-                                    <div class="text-muted">Buy Sentiment</div>
-                                    <div class="fw-bold text-success">${data.sentiment.ratio.toFixed(2)}x</div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="text-muted">Top 10 Conc.</div>
-                                    <div class="fw-bold">${((data.concentration[0].value / data.total_shares_held)*100).toFixed(1)}%</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                usContainer.appendChild(col);
-                
-                const options = {
-                    series: [{ name: 'Shares', data: data.shares }],
-                    chart: { type: 'bar', height: 400, toolbar: { show: false } },
-                    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 4 } },
-                    xaxis: { categories: data.categories, labels: { show: false } },
-                    yaxis: { labels: { style: { fontSize: '14px' } } },
-                    colors: data.bar_colors,
-                    legend: { show: false },
-                    tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } },
-                    theme: { mode: chartThemeMode }
-                };
-                new ApexCharts(document.querySelector(`#us-chart-${idx}`), options).render();
-            });
+            renderUSInvestorChart(usInvestorData[0]);
         }
 
         if (comparisonData && comparisonData.leaders) {
@@ -1282,7 +1200,7 @@
             });
         });
 
-        // --- Ticker Change: 同步所有下拉選單並重載活躍的 SEC tab ---
+        // --- Ticker Change: 同步所有下拉選單並重載活躍的 SEC tab (不自動加載 Holders 數據) ---
         selectDropdowns.forEach(dropdown => {
             dropdown.addEventListener('change', function() {
                 const selectedVal = this.value;
@@ -1297,7 +1215,7 @@
                 secInsiderLoaded = false;
                 secFinLoaded = false;
 
-                // 重新載入當前活躍 sub-tab 的資料
+                // 重新載入當前活躍 sub-tab 的資料 (Holders 頁面不再此處重載，須點擊確認按鈕)
                 const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
                 const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
 
@@ -1305,6 +1223,41 @@
                 else if (activeFin) fetchFinancialData(selectedVal);
             });
         });
+
+        // --- Holders 確認按鈕事件：生成當隻股票的持股機構數據 ---
+        const btnGenerateHolders = document.getElementById('btn-generate-holders');
+        if (btnGenerateHolders) {
+            btnGenerateHolders.addEventListener('click', async function() {
+                const ticker = getSelectedTicker();
+                if (!ticker) { alert('Please select a ticker first.'); return; }
+                
+                const usContainer = document.getElementById('us-charts-container');
+                const usLoadingText = document.getElementById('us-loading-text');
+                if (usLoadingText) {
+                    usLoadingText.style.display = 'block';
+                    usLoadingText.textContent = `Fetching institutional holders for ${ticker}...`;
+                }
+                usContainer.innerHTML = '';
+                
+                try {
+                    const res = await fetch(`/chips/api/us-holders/?ticker=${ticker}`);
+                    const json = await res.json();
+                    if (json.status === 'success' && json.data) {
+                        renderUSInvestorChart(json.data);
+                    } else {
+                        if (usLoadingText) usLoadingText.style.display = 'none';
+                        usContainer.innerHTML = `<div class="col-12 text-center py-5 text-muted">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3">No institutional holder data found for ${ticker}.</p>
+                        </div>`;
+                    }
+                } catch (e) {
+                    console.error('Fetch US holders error:', e);
+                    if (usLoadingText) usLoadingText.style.display = 'none';
+                    usContainer.innerHTML = `<div class="col-12 text-center py-5 text-danger">Error loading data: ${e.message}</div>`;
+                }
+            });
+        }
 
         // --- Utility: Format number with commas ---
         function fmtNum(n) {
@@ -1576,6 +1529,7 @@
 
         // --- Sync Buttons ---
         const btnSync13F = document.getElementById('btn-sync-13f');
+        const syncFinancialBtns = document.querySelectorAll('.btn-sync-financial-class');
 
         async function triggerSecSync(type) {
             let apiUrl = '';
@@ -1586,11 +1540,16 @@
                 if (!cik) { alert('Please select an institution first.'); return; }
                 apiUrl = secBaseUrl + '/sync/institution/?cik=' + cik;
                 syncMsg = 'Syncing 13F for CIK ' + cik + '...';
-            } else {
+            } else if (type === 'insider') {
                 const ticker = getSelectedTicker();
                 if (!ticker) { alert('Please select a ticker first.'); return; }
                 apiUrl = secBaseUrl + '/sync/insider/?ticker=' + ticker;
                 syncMsg = 'Syncing Insider for ' + ticker + '...';
+            } else if (type === 'financial') {
+                const ticker = getSelectedTicker();
+                if (!ticker) { alert('Please select a ticker first.'); return; }
+                apiUrl = secBaseUrl + '/sync/financial/?ticker=' + ticker;
+                syncMsg = 'Syncing Financials for ' + ticker + '...';
             }
             
             // 顯示所有同步狀態指示器
@@ -1599,8 +1558,10 @@
             
             if (type === '13f') { 
                 if (btnSync13F) btnSync13F.disabled = true; 
-            } else { 
+            } else if (type === 'insider') { 
                 syncInsiderBtns.forEach(btn => btn.disabled = true); 
+            } else if (type === 'financial') {
+                syncFinancialBtns.forEach(btn => btn.disabled = true);
             }
             
             try {
@@ -1610,17 +1571,19 @@
                 // 隱藏所有狀態指示器
                 syncStatuses.forEach(el => el.style.display = 'none');
                 
-                if (data.status === 'success') {
+                if (data.status === 'success' || data.message) {
                     alert('Sync successful: ' + (data.message || ''));
+                    const ticker = getSelectedTicker();
                     if (type === '13f') {
                         const cik = document.getElementById('chipsInstitutionSelector').value;
                         delete cached13f[cik];
                         fetchSec13F(cik);
-                    } else {
-                        const ticker = getSelectedTicker();
+                    } else if (type === 'insider') {
                         delete cachedInsider[ticker];
-                        delete cachedFinancial[ticker];
                         fetchInsiderTrades(ticker);
+                    } else if (type === 'financial') {
+                        delete cachedFinancial[ticker];
+                        fetchFinancialData(ticker);
                     }
                 } else {
                     alert('Sync failed: ' + (data.message || ''));
@@ -1632,10 +1595,12 @@
             
             if (btnSync13F) btnSync13F.disabled = false;
             syncInsiderBtns.forEach(btn => btn.disabled = false);
+            syncFinancialBtns.forEach(btn => btn.disabled = false);
         }
 
         if (btnSync13F) btnSync13F.addEventListener('click', () => triggerSecSync('13f'));
         syncInsiderBtns.forEach(btn => btn.addEventListener('click', () => triggerSecSync('insider')));
+        syncFinancialBtns.forEach(btn => btn.addEventListener('click', () => triggerSecSync('financial')));
 
         // --- Fetch & Render US Money Flow Heatmap ---
         let moneyFlowChart = null;

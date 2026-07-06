@@ -139,17 +139,26 @@ def api_sync_insider(request):
     try:
         service = EdgarInsiderService()
         result = service.sync_insiders_by_ticker(ticker, since='12mo')
-        
-        # 順便同步財務數據以豐富頁面呈現
-        try:
-            fin_service = EdgarFinancialService()
-            fin_service.sync_financials_by_ticker(ticker)
-        except Exception as fin_err:
-            logger.warning(f"Auto financial sync during insider sync failed for {ticker}: {fin_err}")
-            
         return JsonResponse(result)
     except Exception as e:
         logger.error(f"Manual insider sync failed for {ticker}: {e}")
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+def api_sync_financial(request):
+    """
+    手動/非同步觸發同步財務數據 API
+    """
+    ticker = request.GET.get('ticker', '').upper()
+    if not ticker:
+        return JsonResponse({"status": "error", "message": "Ticker parameter is required"}, status=400)
+        
+    try:
+        service = EdgarFinancialService()
+        result = service.sync_financials_by_ticker(ticker)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.error(f"Manual financial sync failed for {ticker}: {e}")
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 

@@ -28,26 +28,8 @@ def chips_view(request):
         logging.getLogger(__name__).error(f"Chips TW view error: {e}")
         error = f"Failed to load TW chip data: {e}"
 
-    try:
-        # US Data (Benchmark tickers for dashboard)
-        from stock_Django.stock_investor_us import USStockInvestorManager
-        us_mgr = USStockInvestorManager()
-        benchmark_tickers = ['AAPL', 'NVDA', 'TSLA', 'MSFT', 'AMZN']
-        
-        for ticker in benchmark_tickers:
-            us_df = us_mgr.get_latest_holders(ticker, top_n=10)
-            if not us_df.empty:
-                us_plot_data = chart.investor_us_apex(us_df, symbol=ticker)
-                if us_plot_data:
-                    us_investor_json.append(us_plot_data)
-
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Chips US view error: {e}")
-        if error:
-            error += f" | Failed to load US chip data: {e}"
-        else:
-            error = f"Failed to load US chip data: {e}"
+    # US Data (Benchmark tickers for dashboard) - Empty initially, loaded on demand via AJAX
+    us_investor_json = []
 
     from sec_edgar.services.edgar_institution_service import EdgarInstitutionService
     service_inst = EdgarInstitutionService()
@@ -347,6 +329,32 @@ def api_master_selection(request):
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"api_master_selection error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def api_us_holders(request):
+    """
+    獲取指定美股個股的持股機構佔比數據 (AJAX)
+    """
+    ticker = request.GET.get('ticker', '').strip().upper()
+    if not ticker:
+        return JsonResponse({'error': 'Ticker parameter is required'}, status=400)
+        
+    try:
+        from stock_Django.stock_investor_us import USStockInvestorManager
+        from stock_Django import stock_chart
+        us_mgr = USStockInvestorManager()
+        us_df = us_mgr.get_latest_holders(ticker, top_n=10)
+        
+        if not us_df.empty:
+            chart = stock_chart.chart_create()
+            us_plot_data = chart.investor_us_apex(us_df, symbol=ticker)
+            if us_plot_data:
+                return JsonResponse({'status': 'success', 'data': us_plot_data})
+        return JsonResponse({'status': 'success', 'data': None})
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"api_us_holders error for {ticker}: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
 
