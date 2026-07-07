@@ -200,6 +200,25 @@ def query_taiwan_chips(symbol: str, limit: int = 10) -> Dict[str, Any]:
                 conn.close()
             return {"status": "error", "message": f"台股籌碼查詢失敗: {str(e_old)}"}
 
+    # 3. 查詢台股歷史價格 (資料表 stock_cost)
+    prices = []
+    try:
+        price_sql = """
+            SELECT Date, Open, High, Low, Close, Volume
+            FROM stock_cost
+            WHERE number LIKE %s
+            ORDER BY Date DESC
+            LIMIT %s
+        """
+        cursor.execute(price_sql, (f"{symbol_clean}.%", limit))
+        price_cols = [col[0] for col in cursor.description]
+        price_rows = cursor.fetchall()
+        for row in price_rows:
+            prices.append(format_row(dict(zip(price_cols, row))))
+        logger.info(f"[LocalDB] 成功從 stock_cost 讀取 {len(prices)} 筆 {symbol_clean} 股價數據。")
+    except Exception as e_price:
+        logger.warning(f"[LocalDB] 讀取台股 {symbol_clean} 股價失敗: {e_price}")
+
     if not is_django:
         cursor.close()
         conn.close()
@@ -209,7 +228,8 @@ def query_taiwan_chips(symbol: str, limit: int = 10) -> Dict[str, Any]:
         "symbol": symbol_clean,
         "market": "TW",
         "count": len(results),
-        "data": results
+        "data": results,
+        "prices": prices
     }
 
 def query_us_market_data(symbol: str, limit: int = 10) -> Dict[str, Any]:
