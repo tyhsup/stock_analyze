@@ -84,6 +84,19 @@ class FinancialOrchestrator:
             }
         ]
 
+    def load_financial_skill(self) -> str:
+        """
+        讀取專案專用的金融 AI 助理技能規範 SKILL.md 的內容。
+        """
+        skill_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".agents", "skills", "financial-ai-assistant", "SKILL.md")
+        if os.path.exists(skill_path):
+            try:
+                with open(skill_path, "r", encoding="utf-8", errors="ignore") as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"[Orchestrator] 載入 SKILL.md 失敗: {e}")
+        return ""
+
     def _call_gemini_api_direct(self, system_prompt: str, user_prompt: str, tools: Optional[List[Dict[str, Any]]] = None) -> Optional[str]:
         """
         優先使用 requests 直接呼叫 Gemini 官方 API (HTTP POST)。
@@ -200,6 +213,10 @@ class FinancialOrchestrator:
         """
         統一的三級推理入口
         """
+        skill_content = self.load_financial_skill()
+        if skill_content:
+            system_prompt = f"{system_prompt}\n\n[金融 AI 助理核心技能與雲端智慧建議指引規範]\n{skill_content}"
+
         res = self._call_gemini_api_direct(system_prompt, user_prompt)
         if res:
             return res
@@ -212,6 +229,10 @@ class FinancialOrchestrator:
         """
         實現 Function Calling 交互，呼叫本地資料庫並回傳給 LLM 產出最終回覆。
         """
+        skill_content = self.load_financial_skill()
+        if skill_content:
+            system_prompt = f"{system_prompt}\n\n[金融 AI 助理核心技能與雲端智慧建議指引規範]\n{skill_content}"
+
         # 1. 帶上 tools 進行第一次調用
         first_res = self._call_gemini_api_direct(system_prompt, user_prompt, tools=self.tools_declaration)
         
