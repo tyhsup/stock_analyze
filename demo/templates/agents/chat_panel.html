@@ -1,0 +1,553 @@
+<!-- 金融 AI 助理懸浮對話面板 -->
+<div id="financial-assistant-container">
+    <!-- 懸浮按鈕 (FAB) -->
+    <button id="assistant-fab" title="開啟金融 AI 助理" aria-label="金融 AI 助理">
+        <i class="fas fa-robot"></i>
+        <span class="pulse-ring"></span>
+    </button>
+
+    <!-- 對話助理視窗 -->
+    <div id="assistant-window" class="hidden">
+        <!-- 視窗頭部 -->
+        <div class="assistant-header">
+            <div class="assistant-title-area">
+                <div class="assistant-avatar">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div>
+                    <h5 class="assistant-title">Smart Financial Copilot</h5>
+                    <span class="assistant-status"><span class="status-dot"></span> 在線服務中</span>
+                </div>
+            </div>
+            <button id="assistant-close" title="關閉視窗">&times;</button>
+        </div>
+
+        <!-- 視窗訊息區 -->
+        <div id="assistant-messages">
+            <div class="message system">
+                <div class="message-content">
+                    您好！我是您的智慧金融助理。我可以協助您導覽本平台，提供金融與財務基礎知識回答，或說明如何進行台股籌碼分析與 DCF 估值計算。請問今天有什麼我可以幫忙的？
+                </div>
+                <div class="message-time">系統</div>
+            </div>
+        </div>
+
+        <!-- 意圖路由日誌 (開發者/專業使用者模式) -->
+        <div id="assistant-route-logger" class="hidden">
+            <div class="logger-title">Orchestrator 任務調度路由日誌：</div>
+            <div id="logger-content"></div>
+        </div>
+
+        <!-- 視窗輸入區 -->
+        <form id="assistant-input-form" onsubmit="return false;">
+            <div class="input-group">
+                <input type="text" id="assistant-input" placeholder="輸入您的問題（如：如何計算 DCF...）" autocomplete="off">
+                <button type="submit" id="assistant-send" title="傳送">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="assistant-footer-meta">
+                <span id="toggle-logger-btn"><i class="fas fa-terminal"></i> 顯示路由日誌</span>
+                <span>Powered by Gemini & Local DB</span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- FontAwesome CDN 引入 (若 base 模板中沒有) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<!-- 精美 CSS 樣式 (極致玻璃擬態與深色微光風格) -->
+<style>
+    :root {
+        --assist-primary: #1e3a8a;
+        --assist-primary-light: #3b82f6;
+        --assist-dark-bg: rgba(15, 23, 42, 0.95);
+        --assist-glass-border: rgba(255, 255, 255, 0.08);
+        --assist-text-light: #f8fafc;
+        --assist-text-dark: #334155;
+        --assist-bubble-user: linear-gradient(135deg, #2563eb, #1d4ed8);
+        --assist-bubble-system: rgba(30, 41, 59, 0.8);
+    }
+
+    #financial-assistant-container {
+        position: fixed;
+        bottom: 25px;
+        right: 25px;
+        z-index: 9999;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* FAB 懸浮按鈕 */
+    #assistant-fab {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        border: none;
+        color: var(--assist-text-light);
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
+    }
+
+    #assistant-fab:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 24px rgba(37, 99, 235, 0.6);
+    }
+
+    #assistant-fab:active {
+        transform: scale(0.95);
+    }
+
+    .pulse-ring {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: 2px solid rgba(59, 130, 246, 0.5);
+        animation: fab-pulse 2s infinite;
+        pointer-events: none;
+    }
+
+    @keyframes fab-pulse {
+        0% { transform: scale(1); opacity: 1; }
+        100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    /* 對話視窗 */
+    #assistant-window {
+        position: absolute;
+        bottom: 80px;
+        right: 0;
+        width: 380px;
+        height: 520px;
+        background: var(--assist-dark-bg);
+        border: 1px solid var(--assist-glass-border);
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.1, 0.8, 0.25, 1);
+        transform-origin: bottom right;
+    }
+
+    #assistant-window.hidden {
+        opacity: 0;
+        transform: scale(0.7) translateY(40px);
+        pointer-events: none;
+    }
+
+    /* 視窗頭部 */
+    .assistant-header {
+        background: linear-gradient(90deg, #1e293b, #0f172a);
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--assist-glass-border);
+    }
+
+    .assistant-title-area {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .assistant-avatar {
+        width: 38px;
+        height: 38px;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 16px;
+    }
+
+    .assistant-title {
+        color: var(--assist-text-light);
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .assistant-status {
+        font-size: 11px;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 2px;
+    }
+
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        background-color: #10b981;
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 0 8px #10b981;
+    }
+
+    #assistant-close {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        font-size: 24px;
+        cursor: pointer;
+        transition: color 0.2s;
+        line-height: 1;
+        padding: 0;
+    }
+
+    #assistant-close:hover {
+        color: var(--assist-text-light);
+    }
+
+    /* 訊息顯示區 */
+    #assistant-messages {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    /* 捲動軸樣式 */
+    #assistant-messages::-webkit-scrollbar {
+        width: 6px;
+    }
+    #assistant-messages::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    #assistant-messages::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 3px;
+    }
+
+    .message {
+        max-width: 85%;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .message.user {
+        align-self: flex-end;
+    }
+
+    .message.system {
+        align-self: flex-start;
+    }
+
+    .message-content {
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 13.5px;
+        line-height: 1.5;
+        word-break: break-word;
+        white-space: pre-wrap;
+    }
+
+    .message.user .message-content {
+        background: var(--assist-bubble-user);
+        color: var(--assist-text-light);
+        border-bottom-right-radius: 2px;
+        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.2);
+    }
+
+    .message.system .message-content {
+        background: var(--assist-bubble-system);
+        color: #e2e8f0;
+        border-bottom-left-radius: 2px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .message-time {
+        font-size: 10px;
+        color: #64748b;
+        padding: 0 4px;
+    }
+
+    .message.user .message-time {
+        align-self: flex-end;
+    }
+
+    /* 輸入區 */
+    #assistant-input-form {
+        padding: 12px 16px;
+        border-top: 1px solid var(--assist-glass-border);
+        background: rgba(15, 23, 42, 0.6);
+    }
+
+    .input-group {
+        display: flex;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--assist-glass-border);
+        border-radius: 8px;
+        overflow: hidden;
+        transition: border-color 0.3s;
+    }
+
+    .input-group:focus-within {
+        border-color: var(--assist-primary-light);
+    }
+
+    #assistant-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        padding: 10px 12px;
+        color: var(--assist-text-light);
+        font-size: 13px;
+        outline: none;
+    }
+
+    #assistant-input::placeholder {
+        color: #64748b;
+    }
+
+    #assistant-send {
+        background: transparent;
+        border: none;
+        color: #94a3b8;
+        padding: 0 14px;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    #assistant-send:hover {
+        color: var(--assist-primary-light);
+    }
+
+    .assistant-footer-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 8px;
+        font-size: 10px;
+        color: #475569;
+    }
+
+    #toggle-logger-btn {
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    #toggle-logger-btn:hover {
+        color: #94a3b8;
+    }
+
+    /* 路由日誌區 */
+    #assistant-route-logger {
+        background: rgba(2, 6, 23, 0.9);
+        border-top: 1px solid #1e293b;
+        padding: 10px 15px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 11px;
+        color: #10b981;
+        max-height: 100px;
+        overflow-y: auto;
+    }
+
+    .logger-title {
+        font-weight: bold;
+        color: #3b82f6;
+        margin-bottom: 4px;
+    }
+
+    /* Typing 動畫 */
+    .typing-indicator {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+    }
+
+    .typing-indicator span {
+        width: 6px;
+        height: 6px;
+        background-color: #94a3b8;
+        border-radius: 50%;
+        animation: typing-bounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+    .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes typing-bounce {
+        0%, 80%, 100% { transform: scale(0); }
+        40% { transform: scale(1); }
+    }
+</style>
+
+<!-- 前端 JS 互動與 AJAX 對話邏輯 -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const fab = document.getElementById("assistant-fab");
+        const win = document.getElementById("assistant-window");
+        const closeBtn = document.getElementById("assistant-close");
+        const input = document.getElementById("assistant-input");
+        const form = document.getElementById("assistant-input-form");
+        const messagesContainer = document.getElementById("assistant-messages");
+        const routeLogger = document.getElementById("assistant-route-logger");
+        const loggerContent = document.getElementById("logger-content");
+        const toggleLoggerBtn = document.getElementById("toggle-logger-btn");
+
+        // 對話上下文歷史紀錄
+        let chatHistory = [];
+
+        // 切換視窗開啟狀態
+        fab.addEventListener("click", () => {
+            win.classList.toggle("hidden");
+            if (!win.classList.contains("hidden")) {
+                input.focus();
+                // 滾動到底部
+                scrollToBottom();
+            }
+        });
+
+        closeBtn.addEventListener("click", () => {
+            win.classList.add("hidden");
+        });
+
+        // 切換顯示日誌
+        toggleLoggerBtn.addEventListener("click", () => {
+            routeLogger.classList.toggle("hidden");
+        });
+
+        // 表單提交處理
+        form.addEventListener("submit", function(e) {
+            e.preventDefault();
+            sendMessage();
+        });
+
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function appendMessage(sender, content, timestamp = "剛剛") {
+            const msgDiv = document.createElement("div");
+            msgDiv.classList.add("message", sender);
+            
+            const contentDiv = document.createElement("div");
+            contentDiv.classList.add("message-content");
+            contentDiv.textContent = content;
+            
+            const timeDiv = document.createElement("div");
+            timeDiv.classList.add("message-time");
+            timeDiv.textContent = timestamp;
+            
+            msgDiv.appendChild(contentDiv);
+            msgDiv.appendChild(timeDiv);
+            messagesContainer.appendChild(msgDiv);
+            scrollToBottom();
+        }
+
+        function appendTypingIndicator() {
+            const typingDiv = document.createElement("div");
+            typingDiv.id = "assistant-typing-indicator";
+            typingDiv.classList.add("message", "system");
+            
+            const contentDiv = document.createElement("div");
+            contentDiv.classList.add("message-content");
+            
+            const indicator = document.createElement("div");
+            indicator.classList.add("typing-indicator");
+            indicator.innerHTML = "<span></span><span></span><span></span>";
+            
+            contentDiv.appendChild(indicator);
+            typingDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(typingDiv);
+            scrollToBottom();
+            return typingDiv;
+        }
+
+        function addLog(logs) {
+            if (!logs || logs.length === 0) return;
+            logs.forEach(log => {
+                const line = document.createElement("div");
+                line.textContent = log;
+                loggerContent.appendChild(line);
+            });
+            routeLogger.scrollTop = routeLogger.scrollHeight;
+        }
+
+        function sendMessage() {
+            const queryText = input.value.trim();
+            if (!queryText) return;
+
+            // 1. 使用者訊息上屏
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            appendMessage("user", queryText, timeStr);
+            input.value = "";
+
+            // 2. 顯示輸入狀態指標
+            const indicator = appendTypingIndicator();
+
+            // 3. 準備發送 POST 到 /agents/api/chat/
+            const url = "/agents/api/chat/";
+            
+            fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    message: queryText,
+                    history: chatHistory
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`伺服器響應異常: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // 移除 Typing Indicator
+                if (indicator && indicator.parentNode) {
+                    indicator.parentNode.removeChild(indicator);
+                }
+
+                if (data.status === "success") {
+                    // 4. AI 響應上屏
+                    appendMessage("system", data.response, "AI 助理");
+                    
+                    // 5. 新增路由日誌
+                    addLog(data.route_log);
+                    
+                    // 6. 更新歷史上下文 (只保留最近 10 次對話以防上下文爆量)
+                    chatHistory.push({"role": "user", "content": queryText});
+                    chatHistory.push({"role": "assistant", "content": data.response});
+                    if (chatHistory.length > 20) {
+                        chatHistory = chatHistory.slice(-20);
+                    }
+                } else {
+                    appendMessage("system", `發生錯誤: ${data.message}`, "系統錯誤");
+                }
+            })
+            .catch(error => {
+                // 移除 Typing Indicator
+                if (indicator && indicator.parentNode) {
+                    indicator.parentNode.removeChild(indicator);
+                }
+                console.error("對話請求失敗:", error);
+                appendMessage("system", "抱歉，與對話助理伺服器連線失敗。請確認 Django 伺服器運作正常。", "系統錯誤");
+            });
+        }
+    });
+</script>

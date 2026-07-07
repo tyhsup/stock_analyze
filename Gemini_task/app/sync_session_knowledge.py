@@ -82,7 +82,7 @@ def sync_session(request_name, root_cause=None):
     plan_src = os.path.join(brain_dir, "implementation_plan.md")
     if os.path.exists(plan_src):
         try:
-            with open(plan_src, "r", encoding="utf-8") as f:
+            with open(plan_src, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             clean_body = strip_frontmatter(content)
             
@@ -112,7 +112,7 @@ source: "Antigravity Session ({conv_id})"
     wt_src = os.path.join(brain_dir, "walkthrough.md")
     if os.path.exists(wt_src):
         try:
-            with open(wt_src, "r", encoding="utf-8") as f:
+            with open(wt_src, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             clean_body = strip_frontmatter(content)
             
@@ -145,7 +145,7 @@ source: "Antigravity Session ({conv_id})"
         try:
             clean_body = ""
             if os.path.exists(err_src):
-                with open(err_src, "r", encoding="utf-8") as f:
+                with open(err_src, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 clean_body = strip_frontmatter(content)
             else:

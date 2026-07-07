@@ -176,7 +176,7 @@
                             <span class="text-muted">Current Price:</span>
                             <span class="fw-bold">{{ valuation.current_price|floatformat:2 }}</span>
                         </div>
-                        <div class="d-flex justify-content-between border-bottom py-2">
+                        <div class="d-flex justify-content-between border-bottom py-2 mb-3">
                             <span class="text-muted">Upside / Downside:</span>
                             <span
                                 class="fw-bold {% if valuation.upside > 0 %}text-success{% else %}text-danger{% endif %} text-center">
@@ -184,6 +184,11 @@
                                     class="bi {% if valuation.upside > 0 %}bi-arrow-up-right{% else %}bi-arrow-down-right{% endif %} me-1"></i>
                                 {{ valuation.upside|to_percentage }}
                             </span>
+                        </div>
+                        <div class="text-center mt-3">
+                            <a href="{% url 'valuation_export_excel' %}?ticker={{ ticker }}" class="btn btn-outline-success btn-sm w-100 py-2 fw-bold">
+                                <i class="bi bi-file-earmark-excel-fill me-1"></i> Export Excel Valuation Model
+                            </a>
                         </div>
                     </div>
                 </div>

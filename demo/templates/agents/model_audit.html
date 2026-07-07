@@ -1,0 +1,284 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h1 class="fw-bold mb-2 text-primary"><i class="bi bi-shield-check me-2"></i> Financial Model Auditor</h1>
+            <p class="text-muted">上傳您的 Excel (.xlsx) 財務模型，AI 代理將自動偵測硬編碼、公式斷鏈錯誤與勾稽不一致問題。</p>
+        </div>
+    </div>
+
+    <!-- Upload & Quick Summary Zone -->
+    <div class="row mb-5 justify-content-center">
+        <div class="col-lg-8 col-md-10">
+            <!-- Glassmorphic Drag & Drop Box -->
+            <div id="drop-zone" class="upload-box p-5 text-center rounded-4 shadow-sm border border-2 border-dashed">
+                <i class="bi bi-file-earmark-spreadsheet-fill text-success display-3 mb-3 d-block upload-icon"></i>
+                <h4 class="fw-bold mb-2">拖放您的 Excel 財務模型至此處</h4>
+                <p class="text-muted small mb-3">或點擊此區域瀏覽並選擇本地的 <code>.xlsx</code> 檔案</p>
+                <input type="file" id="excel-file-input" accept=".xlsx" style="display: none;">
+                <button class="btn btn-primary px-4 py-2"><i class="bi bi-folder2-open me-2"></i> 選擇檔案</button>
+            </div>
+
+            <!-- Loader -->
+            <div id="upload-loader" class="text-center py-5 d-none">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5 class="fw-bold text-primary">模型稽核中 (Analyzing Spreadsheet Formulas)...</h5>
+                <p class="text-muted small">系統正在剖析儲存格的公式參照、值勾稽一致性以及靜態常數值...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Zone (Hidden by Default) -->
+    <div id="audit-results-container" class="d-none">
+        <!-- Summary Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
+                    <div class="card-body text-center d-flex flex-column justify-content-center py-4">
+                        <h6 class="text-muted text-uppercase fw-bold small mb-2">工作表檢查數 (Sheets Audited)</h6>
+                        <h2 id="summary-sheets-count" class="display-5 fw-bold text-dark mb-0">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
+                    <div class="card-body text-center d-flex flex-column justify-content-center py-4">
+                        <h6 class="text-muted text-uppercase fw-bold small mb-2">偵測到的問題數 (Total Issues)</h6>
+                        <h2 id="summary-issues-count" class="display-5 fw-bold text-danger mb-0">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-white">
+                    <div class="card-body text-center d-flex flex-column justify-content-center py-4">
+                        <h6 class="text-muted text-uppercase fw-bold small mb-2">模型健康度評分 (Model Health)</h6>
+                        <h2 id="summary-health-rating" class="display-5 fw-bold text-success mb-0">100%</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Issues Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-dark text-white py-3 rounded-top-4">
+                        <h5 class="m-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i> 稽核細項與修復指南</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0" id="issues-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4">工作表 (Sheet)</th>
+                                        <th>單元格 (Cell)</th>
+                                        <th>問題類型</th>
+                                        <th>嚴重度</th>
+                                        <th>問題說明</th>
+                                        <th class="pe-4">修復指南</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="issues-table-body">
+                                    <!-- Dynamic rows go here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Empty state within result container -->
+                        <div id="no-issues-placeholder" class="text-center py-5 d-none">
+                            <i class="bi bi-patch-check-fill text-success display-3 mb-2"></i>
+                            <h4 class="fw-bold text-success">完美無暇的財務模型！</h4>
+                            <p class="text-muted mb-0">AI 代理未在您的活頁簿中檢測到任何硬編碼常數、公式斷鏈或數值勾稽不一致問題。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* upload box glassmorphism design */
+    .upload-box {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-color: #dee2e6;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .upload-box:hover {
+        background: rgba(255, 255, 255, 0.9);
+        border-color: #0d6efd;
+        box-shadow: 0 1rem 3rem rgba(0,0,0,.08) !important;
+        transform: translateY(-2px);
+    }
+    .upload-box.dragover {
+        background: rgba(13, 110, 253, 0.05);
+        border-color: #0d6efd;
+    }
+    .upload-icon {
+        transition: transform 0.3s ease;
+    }
+    .upload-box:hover .upload-icon {
+        transform: scale(1.1);
+    }
+</style>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const dropZone = document.getElementById("drop-zone");
+        const fileInput = document.getElementById("excel-file-input");
+        const loader = document.getElementById("upload-loader");
+        const resultsContainer = document.getElementById("audit-results-container");
+        const noIssuesPlaceholder = document.getElementById("no-issues-placeholder");
+        const issuesTableBody = document.getElementById("issues-table-body");
+        const tableElement = document.getElementById("issues-table");
+
+        // Click to open file explorer
+        dropZone.addEventListener("click", () => fileInput.click());
+
+        // File drag over / leave
+        dropZone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropZone.classList.add("dragover");
+        });
+        dropZone.addEventListener("dragleave", () => {
+            dropZone.classList.remove("dragover");
+        });
+
+        // File drop
+        dropZone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropZone.classList.remove("dragover");
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // File select
+        fileInput.addEventListener("change", (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // Upload and process file
+        function handleFile(file) {
+            if (!file.name.endsWith('.xlsx')) {
+                alert("僅支援上傳 .xlsx 格式的 Excel 檔案！");
+                return;
+            }
+
+            // UI Switch: Show Loader
+            dropZone.classList.add("d-none");
+            loader.classList.remove("d-none");
+            resultsContainer.classList.add("d-none");
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            fetch("{% url 'agents:model_audit_api' %}", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loader.classList.add("d-none");
+                dropZone.classList.remove("d-none");
+
+                if (data.status === 'success') {
+                    renderResults(data);
+                } else {
+                    alert("稽核失敗：" + (data.message || "未知伺服器錯誤"));
+                }
+            })
+            .catch(err => {
+                loader.classList.add("d-none");
+                dropZone.classList.remove("d-none");
+                console.error("Audit upload error:", err);
+                alert("上傳過程中發生錯誤，請稍後重試。");
+            });
+        }
+
+        // Render audit reports
+        function renderResults(data) {
+            resultsContainer.classList.remove("d-none");
+            issuesTableBody.innerHTML = "";
+
+            // Update Summaries
+            document.getElementById("summary-sheets-count").textContent = data.sheets_audited.length;
+            document.getElementById("summary-issues-count").textContent = data.total_issues;
+
+            // Health Rating Calculation
+            let score = 100 - (data.total_issues * 12);
+            score = Math.max(score, 0);
+            const healthEl = document.getElementById("summary-health-rating");
+            healthEl.textContent = score + "%";
+            
+            if (score > 80) {
+                healthEl.className = "display-5 fw-bold text-success mb-0";
+            } else if (score > 50) {
+                healthEl.className = "display-5 fw-bold text-warning mb-0";
+            } else {
+                healthEl.className = "display-5 fw-bold text-danger mb-0";
+            }
+
+            if (data.total_issues === 0) {
+                tableElement.classList.add("d-none");
+                noIssuesPlaceholder.classList.remove("d-none");
+                return;
+            }
+
+            tableElement.classList.remove("d-none");
+            noIssuesPlaceholder.classList.add("d-none");
+
+            // Populate table rows
+            data.issues.forEach(issue => {
+                const tr = document.createElement("tr");
+
+                // Severity badge styling
+                let severityClass = "bg-info";
+                let severityText = "輕微";
+                if (issue.severity === "high") {
+                    severityClass = "bg-danger";
+                    severityText = "嚴重";
+                } else if (issue.severity === "medium") {
+                    severityClass = "bg-warning text-dark";
+                    severityText = "中等";
+                }
+
+                // Issue Type localized
+                let typeText = "未知";
+                if (issue.type === 'hardcoded_value') typeText = "硬編碼常數";
+                else if (issue.type === 'broken_formula') typeText = "公式語法錯誤";
+                else if (issue.type === 'calculated_error') typeText = "計算異常值";
+                else if (issue.type === 'orphan_parameter') typeText = "孤立核心參數";
+                else if (issue.type === 'mismatch_error') typeText = "數值勾稽失敗";
+
+                tr.innerHTML = `
+                    <td class="ps-4 fw-bold text-muted">${issue.sheet}</td>
+                    <td class="fw-bold">${issue.cell}</td>
+                    <td><span class="badge bg-secondary">${typeText}</span></td>
+                    <td><span class="badge ${severityClass}">${severityText}</span></td>
+                    <td class="text-danger small">${issue.message}</td>
+                    <td class="pe-4 text-success small fw-medium">${issue.suggestion}</td>
+                `;
+                issuesTableBody.appendChild(tr);
+            });
+        }
+
+        // 支援 Django test=1 測試資料渲染
+        {% if test_data_json %}
+        const testData = {{ test_data_json|safe }};
+        if (testData) {
+            renderResults(testData);
+        }
+        {% endif %}
+    });
+</script>
+{% endblock %}

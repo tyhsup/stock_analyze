@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'web',
     'sec_edgar',
     'llm_wiki',
+    'agents',
 ]
 
 MIDDLEWARE = [

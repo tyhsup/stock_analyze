@@ -182,6 +182,8 @@ class ValuationService:
                     "wacc": float(wacc),
                     "terminal_value": round(float(terminal_value) / 1000000, 2),
                     "pv_terminal_value": round(float(terminal_value / ((1 + wacc)**5)) / 1000000, 2),
+                    "net_debt": float(net_debt),
+                    "shares_outstanding": float(shares),
                     "projected_fcf": {
                         "years": years_list,
                         "revenues": revenues_list,

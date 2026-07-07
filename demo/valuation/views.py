@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from .services.valuation_service import ValuationService
 
 def valuation_root(request):
@@ -102,4 +102,55 @@ def valuation_refresh_status_api(request, symbol):
     from stock_Django.data_freshness import get_refresh_status
     status_info = get_refresh_status(symbol)
     return JsonResponse(status_info)
+
+
+def valuation_export_excel(request):
+    """
+    Export stock valuation model as an Excel spreadsheet with dynamic formulas.
+    """
+    ticker = request.GET.get('ticker')
+    if not ticker:
+        return JsonResponse({'error': 'Ticker parameter is required'}, status=400)
+    
+    ticker = ticker.upper()
+    try:
+        # Extract weights (similar to valuation_view)
+        try:
+            dcf_weight_val = float(request.GET.get('dcf_weight', 50))
+            market_weight_val = float(request.GET.get('market_weight', 50))
+            total = dcf_weight_val + market_weight_val
+            if total > 0:
+                dcf_weight = dcf_weight_val / total
+                market_weight = market_weight_val / total
+            else:
+                dcf_weight, market_weight = 0.5, 0.5
+        except (ValueError, TypeError):
+            dcf_weight, market_weight = 0.5, 0.5
+            
+        # Get valuation data
+        results = ValuationService.calculate_valuation(ticker, dcf_weight=dcf_weight, market_weight=market_weight)
+        
+        if 'error' in results:
+            return JsonResponse({'error': f"Cannot export Excel: {results['error']}"}, status=400)
+            
+        # Pass weights percentages for displaying in Excel
+        results['dcf_weight_pct'] = round(dcf_weight * 100)
+        results['market_weight_pct'] = round(market_weight * 100)
+        
+        # Generate Excel spreadsheet bytes
+        from .services.excel_utils import generate_valuation_excel
+        excel_data = generate_valuation_excel(results)
+        
+        response = HttpResponse(
+            excel_data,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename={ticker}_valuation_model.xlsx'
+        return response
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Excel export failed for {ticker}: {e}", exc_info=True)
+        return JsonResponse({'error': f"Internal server error: {str(e)}"}, status=500)
 
