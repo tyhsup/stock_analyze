@@ -45,12 +45,37 @@ class USStockInvestorManager:
 
     def get_shares_outstanding(self, ticker: str) -> int:
         """
-        Fetch total shares outstanding from yfinance.
-        Tries yfinance first, falls back to 0 on rate-limit or error.
+        Fetch total shares outstanding.
+        First tries to reconstruct from local DB institutional holding data.
+        Falls back to yfinance with anti-429 delay & wait.
         """
+        # 1. 優先由本地 DB 歷史持股反推 (shares_outstanding = shares / pct_out)
+        try:
+            query = """
+            SELECT shares, pct_out FROM stock_investor_us 
+            WHERE ticker = :ticker AND pct_out > 0.0
+            ORDER BY date DESC LIMIT 1
+            """
+            with self.sql_op.engine.connect() as conn:
+                res = conn.execute(text(query), {"ticker": ticker.upper()}).fetchone()
+                if res and res[0] and res[1]:
+                    shares_held = res[0]
+                    pct = res[1]
+                    shares_out = int(shares_held / pct)
+                    if shares_out > 0:
+                        logger.info(f"{ticker}: 優先使用本地 DB 機構持股還原之發行股數: {shares_out:,}")
+                        return shares_out
+        except Exception as e:
+            logger.debug(f"由本地 DB 還原發行股數失敗: {e}")
+
         if not HAS_YFINANCE:
             logger.warning("yfinance not installed — cannot calculate pct_out.")
             return 0
+
+        # 2. 本地無資料，使用 yfinance 並加入隨機延遲以防 429
+        import random
+        time.sleep(random.uniform(2.0, 5.0))
+        
         try:
             # 統一使用共享 Session
             _yf_session = self.cost_mgr.curl_session
@@ -66,6 +91,10 @@ class USStockInvestorManager:
                 logger.info(f"{ticker}: shares_outstanding = {shares:,}")
                 return int(shares)
         except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "Too Many Requests" in err_msg:
+                logger.warning(f"偵測到 yfinance 頻率限制 (429)，等待 60 秒後繼續...")
+                time.sleep(60)
             logger.debug(f"Error fetching shares for {ticker}: {e}")
             pass
 
@@ -83,6 +112,10 @@ class USStockInvestorManager:
                 logger.info(f"{ticker}: shares_outstanding = {shares:,} (info)")
                 return int(shares)
         except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "Too Many Requests" in err_msg:
+                logger.warning(f"偵測到 yfinance 頻率限制 (429)，等待 60 秒後繼續...")
+                time.sleep(60)
             logger.warning(f"{ticker}: yfinance failed: {e}")
 
         return 0
@@ -159,6 +192,7 @@ class USStockInvestorManager:
             id INT AUTO_INCREMENT PRIMARY KEY,
             ticker VARCHAR(20),
             date DATE,
+            fetch_date DATE,
             holder_name VARCHAR(255),
             shares BIGINT,
             pct_out FLOAT,
@@ -274,7 +308,7 @@ class USStockInvestorManager:
         Query the database for the latest institutional holder data for a given ticker.
         """
         query = """
-        SELECT holder_name, date, shares, pct_out, value_usd, change_shares, change_pct 
+        SELECT holder_name, date, fetch_date, shares, pct_out, value_usd, change_shares, change_pct 
         FROM stock_investor_us 
         WHERE ticker = :ticker 
         AND date = (SELECT MAX(date) FROM stock_investor_us WHERE ticker = :ticker)
@@ -325,15 +359,17 @@ class USStockInvestorManager:
                     return datetime.now().strftime('%Y-%m-%d')
             
             df['date'] = df['date_str'].apply(format_date)
+            df['fetch_date'] = datetime.now().strftime('%Y-%m-%d')
             
             try:
                 with self.sql_op.engine.connect() as conn:
                     for _, row in df.iterrows():
                         upsert_sql = """
                         INSERT INTO stock_investor_us 
-                        (ticker, date, holder_name, shares, pct_out, value_usd, change_shares, change_pct)
-                        VALUES (:ticker, :date, :holder_name, :shares, :pct_out, :value_usd, :change_shares, :change_pct)
+                        (ticker, date, fetch_date, holder_name, shares, pct_out, value_usd, change_shares, change_pct)
+                        VALUES (:ticker, :date, :fetch_date, :holder_name, :shares, :pct_out, :value_usd, :change_shares, :change_pct)
                         ON DUPLICATE KEY UPDATE 
+                        fetch_date = VALUES(fetch_date),
                         shares = VALUES(shares),
                         pct_out = VALUES(pct_out),
                         value_usd = VALUES(value_usd),
@@ -343,6 +379,7 @@ class USStockInvestorManager:
                         conn.execute(text(upsert_sql), {
                             "ticker": row['ticker'],
                             "date": row['date'],
+                            "fetch_date": row['fetch_date'],
                             "holder_name": row['holder_name'],
                             "shares": row['shares'],
                             "pct_out": row['pct_out'],
