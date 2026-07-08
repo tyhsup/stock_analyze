@@ -95,10 +95,12 @@ def execute_us_investor(remarks: str = None):
     若 remarks 中指定了代號 (如 AAPL,NVDA)，則更新該清單。
     否則預設更新 ['AAPL', 'NVDA', 'TSLA']。
     """
+    import re
     manager = USStockInvestorManager()
     ticker_str = (remarks or "").strip()
     
-    if ticker_str:
+    # 僅允許英文字母、逗號及半形/全形空格，防止將錯誤日誌或鎖庫訊息誤判為代碼
+    if ticker_str and re.match(r'^[a-zA-Z,\s，]+$', ticker_str):
         tickers = [t.strip().upper() for t in ticker_str.replace("，", ",").split(",") if t.strip()]
     else:
         tickers = ['AAPL', 'NVDA', 'TSLA']
