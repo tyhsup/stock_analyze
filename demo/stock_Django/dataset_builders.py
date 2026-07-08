@@ -175,7 +175,7 @@ class InstitutionalFlowModel:
             inv_df = sql_op.get_cost_data(table_name=table_name, stock_number=clean_num)
         else:
             # US investor table uses 'ticker' instead of 'number'
-            query = f"SELECT * FROM {table_name} WHERE ticker = :num"
+            query = f"SELECT date, shares, change_pct FROM {table_name} WHERE ticker = :num"
             try:
                 inv_df = pd.read_sql(text(query), con=sql_op.engine, params={'num': clean_num})
             except Exception as e:
@@ -186,33 +186,57 @@ class InstitutionalFlowModel:
         if inv_df.empty:
             return pd.DataFrame({'Net_Buy_Volume': zeros}, index=date_index_df.index)
             
-        inv_df = sql_op._fix_investor_columns(inv_df)
-        target_col = '三大法人買賣超股數' if '三大法人買賣超股數' in inv_df.columns else None
-        
-        if not target_col:
-            for col in inv_df.columns:
-                if '買賣超' in col or 'Net' in col:
-                    target_col = col
-                    break
-                    
-        if not target_col:
-            return pd.DataFrame({'Net_Buy_Volume': zeros}, index=date_index_df.index)
+        if is_tw:
+            inv_df = sql_op._fix_investor_columns(inv_df)
+            target_col = '三大法人買賣超股數' if '三大法人買賣超股數' in inv_df.columns else None
             
-        inv_df['日期'] = pd.to_datetime(inv_df['日期']).dt.normalize()
-        inv_df.set_index('日期', inplace=True)
-        
-        if inv_df[target_col].dtype == object:
-            inv_df[target_col] = inv_df[target_col].astype(str).str.replace(',', '').apply(pd.to_numeric, errors='coerce')
-        
-        # Merge and fill
-        merged = date_index_df.copy()
-        merged = merged.merge(inv_df[[target_col]], left_index=True, right_index=True, how='left')
-        merged[target_col] = merged[target_col].fillna(0)
-        
-        features = pd.DataFrame({
-            'Net_Buy_Volume': merged[target_col]
-        })
-        return features
+            if not target_col:
+                for col in inv_df.columns:
+                    if '買賣超' in col or 'Net' in col:
+                        target_col = col
+                        break
+                        
+            if not target_col:
+                return pd.DataFrame({'Net_Buy_Volume': zeros}, index=date_index_df.index)
+                
+            inv_df['日期'] = pd.to_datetime(inv_df['日期']).dt.normalize()
+            inv_df.set_index('日期', inplace=True)
+            
+            if inv_df[target_col].dtype == object:
+                inv_df[target_col] = inv_df[target_col].astype(str).str.replace(',', '').apply(pd.to_numeric, errors='coerce')
+            
+            # Merge and fill
+            merged = date_index_df.copy()
+            merged = merged.merge(inv_df[[target_col]], left_index=True, right_index=True, how='left')
+            merged[target_col] = merged[target_col].fillna(0)
+            
+            features = pd.DataFrame({
+                'Net_Buy_Volume': merged[target_col]
+            })
+            return features
+        else:
+            # 美股金流特徵提取邏輯 (季度持股變動倒推)
+            inv_df['change_pct'] = pd.to_numeric(inv_df['change_pct'], errors='coerce').fillna(0.0)
+            inv_df['shares'] = pd.to_numeric(inv_df['shares'], errors='coerce').fillna(0.0)
+            
+            def calc_net_buy(row):
+                shares = row['shares']
+                pct = row['change_pct']
+                if pct <= -1.0:
+                    return -shares
+                return shares * (1.0 - 1.0 / (1.0 + pct))
+                
+            inv_df['net_buy'] = inv_df.apply(calc_net_buy, axis=1)
+            inv_df['日期'] = pd.to_datetime(inv_df['date']).dt.normalize()
+            
+            # 按日期加總機構買賣淨額
+            daily_net = inv_df.groupby('日期')['net_buy'].sum().to_frame('Net_Buy_Volume')
+            
+            merged = date_index_df.copy()
+            merged = merged.merge(daily_net, left_index=True, right_index=True, how='left')
+            merged['Net_Buy_Volume'] = merged['Net_Buy_Volume'].ffill().fillna(0.0)
+            
+            return merged[['Net_Buy_Volume']]
 
 class FundamentalFeatureProcessor:
     @staticmethod

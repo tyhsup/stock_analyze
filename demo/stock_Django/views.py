@@ -216,9 +216,11 @@ def gemini_advisor_analysis(request, ticker):
     cache_key = f"gemini_advice_{ticker}"
     
     # 嘗試讀取快取
-    cached_data = cache.get(cache_key)
-    if cached_data:
-        return JsonResponse({"status": "success", "report": cached_data, "cached": True})
+    force_refresh = request.GET.get("force_refresh", "").lower() == "true"
+    if not force_refresh:
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return JsonResponse({"status": "success", "report": cached_data, "cached": True})
         
     service = StockService()
     
@@ -368,17 +370,61 @@ def gemini_advisor_analysis(request, ticker):
             chips_features['margin_history_30d'] = margin_data
             chips_features['shareholder_distribution'] = distribution_data
         else:
-            # 美股籌碼
-            with service.sql_op.engine.connect() as conn:
-                rows = conn.execute(
-                    text("SELECT holder_name, shares, pct_out FROM stock_investor_us WHERE ticker = :tk ORDER BY date DESC LIMIT 5"),
-                    {"tk": valuation_symbol}
-                ).fetchall()
-                if rows:
-                    holders = []
-                    for r in rows:
-                        holders.append({"機構名稱": r[0], "持股比例": f"{float(r[2]):.2f}%"})
-                    chips_features = {"前五大機構持股": holders}
+            # 美股籌碼 (Institutional Ownership)
+            try:
+                with service.sql_op.engine.connect() as conn:
+                    # 獲取最新申報日期
+                    date_row = conn.execute(
+                        text("SELECT MAX(date) FROM stock_investor_us WHERE ticker = :tk"),
+                        {"tk": valuation_symbol}
+                    ).fetchone()
+                    
+                    if date_row and date_row[0]:
+                        latest_date = date_row[0]
+                        # 查詢該日期的前 10 大機構
+                        rows = conn.execute(
+                            text("""
+                                SELECT holder_name, shares, pct_out, value_usd, change_pct 
+                                FROM stock_investor_us 
+                                WHERE ticker = :tk AND date = :dt
+                                ORDER BY shares DESC 
+                                LIMIT 10
+                            """),
+                            {"tk": valuation_symbol, "dt": latest_date}
+                        ).fetchall()
+                        
+                        if rows:
+                            holders = []
+                            total_inst_pct = 0.0
+                            increased_count = 0
+                            decreased_count = 0
+                            
+                            for r in rows:
+                                pct = float(r[2] or 0) * 100.0
+                                change_pct = float(r[4] or 0) * 100.0
+                                total_inst_pct += pct
+                                
+                                if change_pct > 0.01:
+                                    increased_count += 1
+                                elif change_pct < -0.01:
+                                    decreased_count += 1
+                                    
+                                holders.append({
+                                    "機構名稱": r[0],
+                                    "持股數": f"{int(r[1]):,}",
+                                    "持股比例": f"{pct:.2f}%",
+                                    "市值(美元)": f"${int(r[3] or 0):,}",
+                                    "持股變動": f"{change_pct:+.2f}%" if change_pct != 0 else "持平"
+                                })
+                            
+                            chips_features = {
+                                "最新申報日期": str(latest_date),
+                                "前十大機構合計持股比例": f"{total_inst_pct:.2f}%",
+                                "前十大機構增減倉動態": f"加倉: {increased_count} 家, 減倉: {decreased_count} 家, 持平: {len(rows) - increased_count - decreased_count} 家",
+                                "前十大機構持股明細": holders
+                            }
+            except Exception as e_us_chips:
+                logger.warning(f"Failed to fetch US chips for Gemini advice: {e_us_chips}")
     except Exception as e_chips:
         logger.warning(f"Failed to fetch chips for Gemini advice: {e_chips}")
         
