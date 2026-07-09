@@ -158,42 +158,90 @@ class OP_Fun:
             logger.error(f"Failed to fetch latest investor data: {e}")
             return pd.DataFrame()
 
-    def upload_investor_bulk(self, df, table_name='stock_investor'):
+    def get_dynamic_batch_size(self) -> int:
+        """
+        依據環境變數或本機實體記憶體限制，動態計算分塊寫入批次大小。
+        """
+        # 優先讀取環境變數
+        env_batch = os.getenv('MYSQL_BATCH_SIZE')
+        if env_batch:
+            try:
+                return int(env_batch)
+            except ValueError:
+                pass
+        
+        try:
+            import psutil
+            virtual_mem = psutil.virtual_memory()
+            available_gb = virtual_mem.available / (1024.0 ** 3)
+            # 可用實體記憶體小於 4.0 GB 則限流為 100 筆，否則為 200 筆
+            if available_gb < 4.0:
+                return 100
+            else:
+                return 200
+        except ImportError:
+            # Fallback 預設安全批次大小
+            return 200
+
+    def upload_bulk_dynamic(self, df: pd.DataFrame, table_name: str) -> None:
+        """
+        自適應記憶體限制的動態分塊批次寫入。
+        使用 ON DUPLICATE KEY UPDATE 處理重複資料。
+        """
         if df.empty:
             return
 
+        import math
+        batch_size = self.get_dynamic_batch_size()
+        logger.info(f"開始執行自適應批次寫入，目標表：{table_name}，動態批次大小：{batch_size}")
+
         with self.engine.begin() as conn:
-            # --- 自動建表與索引檢查邏輯 ---
+            # 檢查並自動初始化表
             check_table = conn.execute(text(f"SHOW TABLES LIKE '{table_name}'")).fetchone()
+            date_col = 'Date' if 'Date' in df.columns else ('日期' if '日期' in df.columns else None)
             
             if not check_table:
                 logger.info(f"偵測到資料表 {table_name} 不存在，正在執行初始化...")
                 from sqlalchemy import types
-                dtype_dict = {'number': types.VARCHAR(20), '日期': types.VARCHAR(20)}
+                dtype_dict = {}
+                if 'number' in df.columns:
+                    dtype_dict['number'] = types.VARCHAR(20)
+                if date_col:
+                    dtype_dict[date_col] = types.VARCHAR(20)
                 df.head(0).to_sql(name=table_name, con=self.engine, if_exists='replace', index=False, dtype=dtype_dict)
                 
-                index_name = f"idx_{table_name}_unique"
-                conn.execute(text(f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` (`日期`, `number`)"))
+                if date_col and 'number' in df.columns:
+                    index_name = f"idx_{table_name}_unique"
+                    conn.execute(text(f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` (`{date_col}`, `number`)"))
                 logger.info(f"已成功建立資料表 {table_name} 與唯一索引。")
 
-            # --- 批量寫入邏輯 ---
             cols = ", ".join([f"`{c}`" for c in df.columns])
             placeholders = ", ".join(["%s"] * len(df.columns))
-            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in df.columns if c not in ['日期', 'date', 'number']])
-        
-            sql = f"""
-                INSERT INTO `{table_name}` ({cols}) 
-                VALUES ({placeholders})
-                ON DUPLICATE KEY UPDATE {update_cols}
-            """
+            update_cols = ", ".join([f"`{c}`=VALUES(`{c}`)" for c in df.columns if c not in [date_col, 'number', '日期']])
+            
+            if update_cols:
+                sql = f"INSERT INTO `{table_name}` ({cols}) VALUES ({placeholders}) ON DUPLICATE KEY UPDATE {update_cols}"
+            else:
+                sql = f"INSERT IGNORE INTO `{table_name}` ({cols}) VALUES ({placeholders})"
+
             data_list = [tuple(x) for x in df.values]
             
-            try:
-                conn.exec_driver_sql(sql, data_list)
-                logger.info(f"三大法人批量寫入完成：{table_name} (共 {len(df)} 筆)")
-            except Exception as e:
-                logger.error(f"三大法人批量寫入 SQL 執行失敗: {e}")
-                raise e
+            # 分塊執行寫入
+            total_rows = len(data_list)
+            for i in range(0, total_rows, batch_size):
+                chunk = data_list[i:i + batch_size]
+                try:
+                    conn.exec_driver_sql(sql, chunk)
+                except Exception as e:
+                    logger.error(f"批次寫入失敗於區間 {i} 至 {i + len(chunk)}: {e}")
+                    raise e
+                    
+            logger.info(f"自適應批次寫入完成：{table_name} (共 {total_rows} 筆，分為 {math.ceil(total_rows / batch_size)} 個批次)")
+
+    def upload_investor_bulk(self, df, table_name='stock_investor'):
+        """三大法人批量寫入，已重構為呼叫自適應批次寫入"""
+        self.upload_bulk_dynamic(df, table_name)
+
 
     def init_financial_tables(self):
         """初始化財報相關資料表"""

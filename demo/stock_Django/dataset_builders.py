@@ -94,14 +94,17 @@ class SentimentProbabilityModel:
         # 1. 嘗試從快取讀取 (批次)
         cached_embeddings = sql_op.get_sentiment_embeddings(stock_number, start_date, end_date)
         
-        # 2. 判斷缺失日期
-        missing_dates = []
-        for d in date_index_df.index:
-            d_str = d.strftime('%Y-%m-%d')
-            if d_str in cached_embeddings:
-                result_df.loc[d, embedding_cols] = cached_embeddings[d_str]
-            else:
-                missing_dates.append(d)
+        # 2. 向量化快取填充與缺失檢測
+        if cached_embeddings:
+            cache_df = pd.DataFrame.from_dict(cached_embeddings, orient='index', columns=embedding_cols)
+            cache_df.index = pd.to_datetime(cache_df.index)
+            # 使用 update 向量化覆寫已存在的快取數據，避免 for 迴圈
+            result_df.update(cache_df)
+            
+        # 找出缺失快取的日期
+        cached_dates_set = {pd.Timestamp(k) for k in cached_embeddings.keys()}
+        missing_dates = [d for d in date_index_df.index if d not in cached_dates_set]
+
         
         if not missing_dates:
             return result_df[embedding_cols]
@@ -219,14 +222,16 @@ class InstitutionalFlowModel:
             inv_df['change_pct'] = pd.to_numeric(inv_df['change_pct'], errors='coerce').fillna(0.0)
             inv_df['shares'] = pd.to_numeric(inv_df['shares'], errors='coerce').fillna(0.0)
             
-            def calc_net_buy(row):
-                shares = row['shares']
-                pct = row['change_pct']
-                if pct <= -1.0:
-                    return -shares
-                return shares * (1.0 - 1.0 / (1.0 + pct))
-                
-            inv_df['net_buy'] = inv_df.apply(calc_net_buy, axis=1)
+            shares = inv_df['shares']
+            pct = inv_df['change_pct']
+            
+            # 使用 np.where 進行矩陣向量化計算，取代緩慢的 apply 迴圈
+            inv_df['net_buy'] = np.where(
+                pct <= -1.0,
+                -shares,
+                shares * (1.0 - 1.0 / (1.0 + pct))
+            )
+
             inv_df['日期'] = pd.to_datetime(inv_df['date']).dt.normalize()
             
             # 按日期加總機構買賣淨額

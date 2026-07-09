@@ -20,93 +20,118 @@ except ImportError as e:
     logger.error(f"無法載入 stock_Django 中的管理器: {e}")
     raise e
 
+from .self_healing_scheduler import SelfHealingScheduler
+_healing_scheduler = SelfHealingScheduler()
+
+
 def execute_tw_stock_cost(remarks: str = None):
     """
     台股股價與籌碼面更新任務執行器
     若 remarks 中包含特定的股票代碼（如 2330），則執行單一更新，否則全量更新。
+    已整合自癒保護機制。
     """
-    manager = StockCostManager()
-    ticker = (remarks or "").strip()
-    
-    if ticker:
-        # 如果使用者輸入了多個代號，如 "2330, 2454"，逐一更新
-        tickers = [t.strip() for t in ticker.replace("，", ",").split(",") if t.strip()]
-        if len(tickers) > 1:
-            logger.info(f"開始更新多個台股代號: {tickers}")
-            success = True
-            for t in tickers:
-                if not manager.update_single_ticker(t):
-                    success = False
-            if not success:
-                raise Exception(f"部分台股股價更新失敗: {tickers}")
+    def _task():
+        manager = StockCostManager()
+        ticker = (remarks or "").strip()
+        
+        if ticker:
+            # 如果使用者輸入了多個代號，如 "2330, 2454"，逐一更新
+            tickers = [t.strip() for t in ticker.replace("，", ",").split(",") if t.strip()]
+            if len(tickers) > 1:
+                logger.info(f"開始更新多個台股代號: {tickers}")
+                success = True
+                for t in tickers:
+                    if not manager.update_single_ticker(t):
+                        success = False
+                if not success:
+                    raise Exception(f"部分台股股價更新失敗: {tickers}")
+            else:
+                logger.info(f"開始更新單一台股: {tickers[0]}")
+                if not manager.update_single_ticker(tickers[0]):
+                    raise Exception(f"更新單一台股股價失敗: {tickers[0]}")
         else:
-            logger.info(f"開始更新單一台股: {tickers[0]}")
-            if not manager.update_single_ticker(tickers[0]):
-                raise Exception(f"更新單一台股股價失敗: {tickers[0]}")
-    else:
-        logger.info("開始更新全台股股價 (上市及上櫃)")
-        manager.update_all_cost()
+            logger.info("開始更新全台股股價 (上市及上櫃)")
+            manager.update_all_cost()
+            
+    _healing_scheduler.execute_with_healing(_task)
 
 def execute_us_stock_cost(remarks: str = None):
     """
     美股股價與籌碼面更新任務執行器
     若 remarks 中包含特定的股票代碼（如 AAPL），則執行單一更新，否則全量更新。
+    已整合自癒保護機制。
     """
-    manager = StockCostManager()
-    ticker = (remarks or "").strip()
-    
-    if ticker:
-        tickers = [t.strip().upper() for t in ticker.replace("，", ",").split(",") if t.strip()]
-        if len(tickers) > 1:
-            logger.info(f"開始更新多個美股代號: {tickers}")
-            success = True
-            for t in tickers:
-                if not manager.update_single_ticker(t):
-                    success = False
-            if not success:
-                raise Exception(f"部分美股股價更新失敗: {tickers}")
+    def _task():
+        manager = StockCostManager()
+        ticker = (remarks or "").strip()
+        
+        if ticker:
+            tickers = [t.strip().upper() for t in ticker.replace("，", ",").split(",") if t.strip()]
+            if len(tickers) > 1:
+                logger.info(f"開始更新多個美股代號: {tickers}")
+                success = True
+                for t in tickers:
+                    if not manager.update_single_ticker(t):
+                        success = False
+                if not success:
+                    raise Exception(f"部分美股股價更新失敗: {tickers}")
+            else:
+                logger.info(f"開始更新單一美股: {tickers[0]}")
+                if not manager.update_single_ticker(tickers[0]):
+                    raise Exception(f"更新單一美股股價失敗: {tickers[0]}")
         else:
-            logger.info(f"開始更新單一美股: {tickers[0]}")
-            if not manager.update_single_ticker(tickers[0]):
-                raise Exception(f"更新單一美股股價失敗: {tickers[0]}")
-    else:
-        logger.info("開始更新全美股股價")
-        manager.update_us_cost()
+            logger.info("開始更新全美股股價")
+            manager.update_us_cost()
+            
+    _healing_scheduler.execute_with_healing(_task)
 
 def execute_twse_investor(remarks: str = None):
     """
     台股三大法人買賣超 (上市) 更新任務執行器
+    已整合自癒保護機制。
     """
-    logger.info("開始更新台股三大法人買賣超 (上市)")
-    manager = StockInvestorManager()
-    manager.update_investor_data()
+    def _task():
+        logger.info("開始更新台股三大法人買賣超 (上市)")
+        manager = StockInvestorManager()
+        manager.update_investor_data()
+        
+    _healing_scheduler.execute_with_healing(_task)
 
 def execute_tpex_investor(remarks: str = None):
     """
     台股三大法人買賣超 (上櫃) 更新任務執行器
+    已整合自癒保護機制。
     """
-    logger.info("開始更新台股三大法人買賣超 (上櫃)")
-    manager = TPExInvestorManager()
-    manager.update_all_tpex_investors()
+    def _task():
+        logger.info("開始更新台股三大法人買賣超 (上櫃)")
+        manager = TPExInvestorManager()
+        manager.update_all_tpex_investors()
+        
+    _healing_scheduler.execute_with_healing(_task)
 
 def execute_us_investor(remarks: str = None):
     """
     美股三大法人持股更新任務執行器
     若 remarks 中指定了代號 (如 AAPL,NVDA)，則更新該清單。
     否則預設更新 ['AAPL', 'NVDA', 'TSLA']。
+    已整合自癒保護機制。
     """
-    import re
-    manager = USStockInvestorManager()
-    ticker_str = (remarks or "").strip()
-    
-    # 僅允許英文字母、逗號及半形/全形空格，防止將錯誤日誌或鎖庫訊息誤判為代碼
-    if ticker_str and re.match(r'^[a-zA-Z,\s，]+$', ticker_str):
-        tickers = [t.strip().upper() for t in ticker_str.replace("，", ",").split(",") if t.strip()]
-    else:
-        tickers = ['AAPL', 'NVDA', 'TSLA']
+    def _task():
+        import re
+        manager = USStockInvestorManager()
+        ticker_str = (remarks or "").strip()
         
-    logger.info(f"開始更新美股法人持股: {tickers}")
-    manager.update_investor_db(tickers)
+        # 僅允許英文字母、逗號及半形/全形空格，防止將錯誤日誌或鎖庫訊息誤判為代碼
+        if ticker_str and re.match(r'^[a-zA-Z,\s，]+$', ticker_str):
+            tickers = [t.strip().upper() for t in ticker_str.replace("，", ",").split(",") if t.strip()]
+        else:
+            tickers = ['AAPL', 'NVDA', 'TSLA']
+            
+        logger.info(f"開始更新美股法人持股: {tickers}")
+        manager.update_investor_db(tickers)
+        
+    _healing_scheduler.execute_with_healing(_task)
+
 
 def execute_tw_stock_price_only(remarks: str = None):
     """
