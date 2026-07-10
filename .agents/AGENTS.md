@@ -14,7 +14,7 @@
   * **模型配置**：本機推理模型 `Ollama gemma4:e4b`（優先使用，以節省雲端配額）。
   * **職掌**：根據 Planner 的技術規格生成代碼。必須確保 Unicode 防禦、Parameterized Queries、JSON 序列化保護，並遵循零破壞原則。
 * **Evaluator (品質審查官)**
-  * **模型配置**：`Claude Sonnet 4.6`（備援：本機 `gemma4:26b`）。
+  * **模型配置**：`Claude Opus 4.6`（備援：本機 `gemma4:26b`）。
   * **職掌**：對 Generator 的產出進行獨立 Code Review。審查 JSON 序列化失敗風險、UI 遮擋問題，設計自動化測試與 E2E 驗證方案，並出具通過或退回的審查意見。
 
 ---
@@ -66,29 +66,39 @@
 **日期**：[ISO 8601 日期時間]
 
 ### Commander 邊界分析
+- 負責模型：`Gemini 3.5 Flash` (Antigravity Cloud)
 - 影響模組：[列出受影響的檔案與模組]
 - 風險等級：[低 / 中 / 高]
 - 系統安全邊界：[說明哪些功能不得被影響]
+- 簽章：[Commander_Gemini-3.5-Flash_Active]
 
 ### Planner 技術方案
+- 負責模型：`Gemini 3.1 Pro` (Antigravity Cloud) / `Ollama gemma4:26b` (Local)
 - 方案：[技術選擇與理由]
 - 任務拆解：[列出子任務清單]
 - 預計 Checkpoint：[列出各個 Checkpoint 名稱]
+- 簽章：[Planner_Gemini-3.1-Pro_Active]
 
 ### Generator 可行性評估
+- 負責模型：`Ollama gemma4:e4b` (Local)
 - 可行性：[通過 / 有疑慮]
 - 邊緣案例：[列出需特別處理的邊緣情況]
 - 防禦機制：[列出將使用的防禦性代碼模式]
+- 簽章：[Generator_Gemma4-e4b_Active]
 
 ### Evaluator 品質審查意見
+- 負責模型：`Claude Opus 4.6` (Antigravity Cloud) / `Ollama gemma4:26b` (Local)
 - 審查結果：[通過 / 有條件通過 / 退回]
 - 測試案例：[列出必要的驗證步驟]
 - 退回原因（如有）：[說明]
+- 簽章：[Evaluator_Claude-Opus-4.6_Active]
 
 ### Commander 最終決議
+- 負責模型：`Gemini 3.5 Flash` (Antigravity Cloud)
 - 執行方案：[最終選定方案]
 - Checkpoint 清單：[逐條列出]
 - 回滾條件：[說明何種情況需要回滾]
+- 簽章：[Commander_Gemini-3.5-Flash_Approved]
 ```
 
 ---
@@ -98,15 +108,19 @@
 在四 Agent 開會紀錄輸出完畢並獲得使用者確認後，必須在執行任何代碼修改前完成以下前置閘門：
 
 ### 步驟 1：變更邊界確認（Commander 執行）
+
 ```powershell
 python gemma_reasoner.py --check-workflow
 ```
+
 將輸出結果貼至開會紀錄的 Commander 邊界分析欄位。
 
 ### 步驟 2：本地推理規劃（Planner 執行）
+
 ```powershell
 python gemma_reasoner.py "[開發需求描述]"
 ```
+
 將輸出的 Key Points 摘要貼至開會紀錄的 Planner 技術方案欄位。
 
 ### 步驟 3：閘門授權確認

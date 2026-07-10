@@ -30,7 +30,6 @@ class Command(BaseCommand):
         output_json = options.get('json')
 
         if output_json:
-            # 如果是 json 輸出，我們重定向 stdout 避開 Django 預設 stdout 的編碼干擾
             try:
                 sys.stdout.reconfigure(encoding='utf-8')
             except AttributeError:
@@ -77,32 +76,54 @@ class Command(BaseCommand):
             'FEDFUNDS': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=FEDFUNDS', # 聯邦基金有效利率
             'CPIAUCSL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL', # CPI 指數
             'UNRATE': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=UNRATE',     # 失業率
-            'PAYEMS': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PAYEMS'      # 非農就業人口 (Thousands)
+            'PAYEMS': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PAYEMS',      # 非農就業人口
+            'M1SL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=M1SL',          # M1 貨幣供給
+            'M2SL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=M2SL',          # M2 貨幣供給
+            'CPILFESL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPILFESL',  # 核心 CPI 指數
+            'T10Y2Y': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y'       # 10Y-2Y 美債利差
         }
+
+        # 限定 15 年時間跨度
+        cutoff_date = datetime(2011, 1, 1)
 
         data_dict = {}
         for metric, url in metrics_urls.items():
             try:
                 df = pd.read_csv(url)
-                # FRED CSV Columns: observation_date, [metric]
                 df['DATE'] = pd.to_datetime(df['observation_date'])
                 df['VALUE'] = pd.to_numeric(df[metric], errors='coerce')
                 df.dropna(subset=['VALUE'], inplace=True)
+                # 過濾最近 15 年
+                df = df[df['DATE'] >= cutoff_date]
                 data_dict[metric] = df.sort_values('DATE').reset_index(drop=True)
             except Exception as e:
                 raise Exception(f"Failed to fetch US metric {metric} from FRED: {e}")
 
         # 1. 美國 CPI YoY 年增率計算
-        cpi_df = data_dict['CPIAUCSL']
+        cpi_df = data_dict['CPIAUCSL'].copy()
         cpi_df['YoY'] = (cpi_df['VALUE'] - cpi_df['VALUE'].shift(12)) / cpi_df['VALUE'].shift(12) * 100
         cpi_df.dropna(subset=['YoY'], inplace=True)
 
         # 2. 非農就業人口按月新增變動 (NFP Change) 計算
-        payems_df = data_dict['PAYEMS']
+        payems_df = data_dict['PAYEMS'].copy()
         payems_df['NFP_Change'] = (payems_df['VALUE'] - payems_df['VALUE'].shift(1)) * 1000  # 轉為人數
         payems_df.dropna(subset=['NFP_Change'], inplace=True)
 
-        # 3. 入庫寫入 (ORM)
+        # 3. 美國 M1 YoY 年增率計算
+        m1_df = data_dict['M1SL'].copy()
+        m1_df['YoY'] = (m1_df['VALUE'] - m1_df['VALUE'].shift(12)) / m1_df['VALUE'].shift(12) * 100
+        m1_df.dropna(subset=['YoY'], inplace=True)
+
+        # 4. 美國 M2 YoY 年增率計算
+        m2_df = data_dict['M2SL'].copy()
+        m2_df['YoY'] = (m2_df['VALUE'] - m2_df['VALUE'].shift(12)) / m2_df['VALUE'].shift(12) * 100
+        m2_df.dropna(subset=['YoY'], inplace=True)
+
+        # 5. 美國核心 CPI YoY 年增率計算
+        core_cpi_df = data_dict['CPILFESL'].copy()
+        core_cpi_df['YoY'] = (core_cpi_df['VALUE'] - core_cpi_df['VALUE'].shift(12)) / core_cpi_df['VALUE'].shift(12) * 100
+        core_cpi_df.dropna(subset=['YoY'], inplace=True)
+
         total_updated = 0
 
         # A. FEDFUNDS
@@ -141,6 +162,42 @@ class Command(BaseCommand):
             )
             total_updated += 1
 
+        # E. US_M1_YOY
+        for _, row in m1_df.iterrows():
+            _, created = MacroUS.objects.update_or_create(
+                date=row['DATE'].date(),
+                metric='US_M1_YOY',
+                defaults={'value': row['YoY']}
+            )
+            total_updated += 1
+
+        # F. US_M2_YOY
+        for _, row in m2_df.iterrows():
+            _, created = MacroUS.objects.update_or_create(
+                date=row['DATE'].date(),
+                metric='US_M2_YOY',
+                defaults={'value': row['YoY']}
+            )
+            total_updated += 1
+
+        # G. US_CORE_CPI_YOY
+        for _, row in core_cpi_df.iterrows():
+            _, created = MacroUS.objects.update_or_create(
+                date=row['DATE'].date(),
+                metric='US_CORE_CPI_YOY',
+                defaults={'value': row['YoY']}
+            )
+            total_updated += 1
+
+        # H. US_YIELD_SPREAD (美債利差)
+        for _, row in data_dict['T10Y2Y'].iterrows():
+            _, created = MacroUS.objects.update_or_create(
+                date=row['DATE'].date(),
+                metric='US_YIELD_SPREAD',
+                defaults={'value': row['VALUE']}
+            )
+            total_updated += 1
+
         return total_updated
 
     def _fetch_tw_data(self) -> int:
@@ -159,17 +216,17 @@ class Command(BaseCommand):
 
         total_updated = 0
         for item in datasets:
-            # 索引 0: 日期 (例如 "2026M05")
-            # 索引 28: M1B 年增率
-            # 索引 30: M2 年增率
             date_str = item[0]
             m1b_val = item[28]
             m2_val = item[30]
 
-            # 日期解析 (YYYYMdd 轉為 YYYY-MM-DD)
             try:
                 date_obj = datetime.strptime(date_str, "%YM%m").date()
             except ValueError:
+                continue
+
+            # 限定 15 年時間跨度
+            if date_obj < datetime(2011, 1, 1).date():
                 continue
 
             if m1b_val != '-':
@@ -188,7 +245,7 @@ class Command(BaseCommand):
                 )
                 total_updated += 1
 
-        # B. 抓取 台灣 CPI 年增率 (EF07M01)
+        # B. 抓取 台灣 CPI 年增率, 股價指數, 外匯存底 (EF07M01)
         cpi_url = 'https://cpx.cbc.gov.tw/API/DataAPI/Get?FileName=EF07M01'
         try:
             r = requests.get(cpi_url, verify=False, timeout=30)
@@ -196,12 +253,12 @@ class Command(BaseCommand):
             c_data = r.json()
             c_datasets = c_data.get('data', {}).get('dataSets', [])
         except Exception as e:
-            raise Exception(f"Failed to fetch TW CPI from CBC API: {e}")
+            raise Exception(f"Failed to fetch TW CPI/Index from CBC API: {e}")
 
         for item in c_datasets:
-            # 索引 0: 日期
-            # 索引 6: 消費者物價指數年增率
             date_str = item[0]
+            stock_val = item[1]
+            forex_val = item[4]
             cpi_val = item[6]
 
             try:
@@ -209,11 +266,34 @@ class Command(BaseCommand):
             except ValueError:
                 continue
 
+            # 限定 15 年時間跨度
+            if date_obj < datetime(2011, 1, 1).date():
+                continue
+
+            # 寫入 CPI YoY
             if cpi_val != '-':
                 _, created = MacroTW.objects.update_or_create(
                     date=date_obj,
                     metric='CPI_YOY',
                     defaults={'value': float(cpi_val)}
+                )
+                total_updated += 1
+
+            # 寫入 股價指數
+            if stock_val != '-':
+                _, created = MacroTW.objects.update_or_create(
+                    date=date_obj,
+                    metric='TW_STOCK_INDEX',
+                    defaults={'value': float(stock_val)}
+                )
+                total_updated += 1
+
+            # 寫入 外匯存底 (百萬美元除以 1000 轉為十億美元)
+            if forex_val != '-':
+                _, created = MacroTW.objects.update_or_create(
+                    date=date_obj,
+                    metric='TW_FOREX_RESERVE',
+                    defaults={'value': float(forex_val) / 1000.0}
                 )
                 total_updated += 1
 

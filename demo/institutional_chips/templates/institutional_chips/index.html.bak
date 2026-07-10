@@ -1,0 +1,1922 @@
+{% extends "base.html" %}
+
+{% block title %}Institutional Chips Analysis - StockAIG{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center bg-white p-4 rounded shadow-sm border-0">
+            <div>
+                <h2 class="display-6 fw-bold mb-1"><i class="bi bi-person-check text-primary me-2"></i>Institutional Investor Dashboard</h2>
+                <p class="text-muted mb-0">Analysis of daily buy/sell activity from Foreign, Trust, and Dealer institutions.</p>
+            </div>
+            <div id="refresh-controls" class="d-flex align-items-center">
+                <div id="refresh-progress-container" class="me-3" style="display: none; min-width: 200px;">
+                    <div class="d-flex justify-content-between mb-1 small">
+                        <span id="refresh-status-text">Updating...</span>
+                        <span id="refresh-percent">0%</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div id="refresh-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <button id="btn-refresh-tw" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm hover-scale me-2">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Update TW Data
+                </button>
+                <button id="btn-refresh-us" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm hover-scale">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Update US Data
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Market Selector Tabs -->
+<style>
+    .market-tab.nav-link:not(.active) {
+        background-color: white !important;
+        color: var(--bs-secondary);
+    }
+    [data-bs-theme="dark"] .market-tab.nav-link:not(.active) {
+        background-color: var(--card-bg) !important;
+        color: var(--text-secondary) !important;
+        border-color: var(--card-border) !important;
+    }
+</style>
+<ul class="nav nav-pills mb-4" id="market-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active rounded-pill px-4 me-2 shadow-sm border market-tab" id="tw-tab" data-bs-toggle="pill" data-bs-target="#tw-content" type="button" role="tab" aria-selected="true">
+            <span class="fs-5">🇹🇼 Taiwan Market</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link rounded-pill px-4 shadow-sm border market-tab" id="us-tab" data-bs-toggle="pill" data-bs-target="#us-content" type="button" role="tab" aria-selected="false">
+            <span class="fs-5">🇺🇸 USA Market</span>
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="market-tabs-content">
+    <!-- Taiwan Content -->
+    <div class="tab-pane fade show active" id="tw-content" role="tabpanel" aria-labelledby="tw-tab">
+        <div class="d-flex justify-content-end mb-3">
+            {% if buysell_json %}
+            <span class="badge bg-light text-dark border p-2 rounded-pill shadow-sm">
+                <i class="bi bi-calendar-event me-1 text-primary"></i> TW Latest Date: {{ buysell_json.latest_date }}
+            </span>
+            {% endif %}
+        </div>
+
+{% if error %}
+<div class="alert alert-danger shadow-sm border-0 d-flex align-items-center" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+    <div>{{ error }}</div>
+</div>
+{% endif %}
+
+<!-- Sub Tabs for Taiwan Market -->
+<ul class="nav nav-tabs mb-4" id="tw-sub-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active fw-bold" id="tw-chips-tab" data-bs-toggle="tab" data-bs-target="#tw-chips-panel" type="button" role="tab" aria-controls="tw-chips-panel" aria-selected="true">
+            <i class="bi bi-bar-chart-steps me-1"></i> 籌碼買賣超
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-industry-tab" data-bs-toggle="tab" data-bs-target="#tw-industry-panel" type="button" role="tab" aria-controls="tw-industry-panel" aria-selected="false">
+            <i class="bi bi-grid-3x3-gap me-1"></i> 產業資金流向
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-master-tab" data-bs-toggle="tab" data-bs-target="#tw-master-panel" type="button" role="tab" aria-controls="tw-master-panel" aria-selected="false">
+            <i class="bi bi-award me-1"></i> 大師選股
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="tw-sub-tabs-content">
+    <!-- Tab Panel 1: 籌碼買賣超 -->
+    <div class="tab-pane fade show active" id="tw-chips-panel" role="tabpanel" aria-labelledby="tw-chips-tab">
+        <!-- Section 1: Market Leaders & Laggards (Top 10 Buyers/Sellers) -->
+        <div class="row mb-4">
+            <div class="col-12 mb-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-graph-up-arrow text-success fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">Institutional Buy - Top 10 Buyers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="top-buyers-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted">Showing combined net buying volume from the 3 major institutions (TW Market).</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-danger bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-graph-down-arrow text-danger fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">Institutional Sell - Top 10 Sellers</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="top-sellers-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted">Showing combined net selling volume from the 3 major institutions (TW Market).</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: TOP 5 Institutional Chips - Last 5 Days (Individual Charts) -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-layers-half text-primary fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">TOP 5 Institutional Investor Activity - Last 5 Days</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="top-5-container">
+                            <!-- JavaScript will inject charts here -->
+                            <div class="col-12 text-center py-5" id="top-5-loader">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading charts...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Generating per-stock chip analysis...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Panel 2: 產業資金流向 -->
+    <div class="tab-pane fade" id="tw-industry-panel" role="tabpanel" aria-labelledby="tw-industry-tab">
+        <!-- Control Bar -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm p-4 bg-light">
+                    <div class="row align-items-center g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold mb-2"><i class="bi bi-calendar-range me-1 text-primary"></i> 分析天數</label>
+                            <div class="btn-group w-100" role="group" id="days-btn-group">
+                                <button type="button" class="btn btn-outline-primary" data-days="1">1 天</button>
+                                <button type="button" class="btn btn-outline-primary" data-days="5">5 天</button>
+                                <button type="button" class="btn btn-outline-primary active" data-days="10">10 天</button>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold mb-2"><i class="bi bi-sliders me-1 text-primary"></i> 籌碼評分模型權重調整</label>
+                            <div class="row g-2">
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>法人力道:</span> <span id="w1-val" class="fw-bold">50%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w1-slider" min="0" max="100" value="50">
+                                </div>
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>連續天數:</span> <span id="w2-val" class="fw-bold">30%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w2-slider" min="0" max="100" value="30">
+                                </div>
+                                <div class="col-sm-4">
+                                    <div class="small text-muted d-flex justify-content-between">
+                                        <span>資券沉澱:</span> <span id="w3-val" class="fw-bold">20%</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="w3-slider" min="0" max="100" value="20">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button type="button" class="btn btn-primary px-4 shadow-sm hover-scale rounded-pill fw-bold" id="btn-recalculate-flow">
+                            <i class="bi bi-arrow-repeat me-1"></i> 重新計算
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Heatmap Treemap -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm position-relative">
+                    <div class="card-header bg-white border-0 py-3 d-flex align-items-center">
+                        <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                            <i class="bi bi-grid-3x3-gap text-success fs-5"></i>
+                        </div>
+                        <h5 class="card-title fw-bold mb-0">產業資金流向熱力圖</h5>
+                    </div>
+                    <div class="card-body position-relative">
+                        <div id="industry-flow-loader" class="position-absolute top-50 start-50 translate-middle text-center py-5 d-none" style="z-index: 10; background: rgba(255,255,255,0.8); width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 1rem;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading data...</span>
+                            </div>
+                            <p class="mt-2 text-muted fw-bold">計算產業籌碼與評分中...</p>
+                        </div>
+                        <div id="industry-treemap-chart" style="min-height: 500px;"></div>
+                        <div class="mt-3 small text-muted d-flex justify-content-between align-items-center flex-wrap">
+                            <span>提示：區塊面積代表「產業總成交值」，顏色深淺代表「三大法人淨流入金額」（紅買超/綠賣超/灰中性）</span>
+                            <span class="fw-bold"><i class="bi bi-info-circle text-primary"></i> 點擊產業區塊可展開下方個股排行</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top 10 Stocks Table Card -->
+        <div class="row d-none mb-4" id="top-stocks-row">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm border-top border-4 border-primary">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-trophy text-warning fs-5"></i>
+                            </div>
+                            <h5 class="card-title fw-bold mb-0" id="top-stocks-title">最受看好前 10 家公司</h5>
+                        </div>
+                        <span class="badge bg-primary rounded-pill px-3 py-2 fw-bold" id="top-stocks-badge">篩選出 10 檔個股</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4" style="width: 80px;">排名</th>
+                                        <th style="width: 120px;">代號</th>
+                                        <th>名稱</th>
+                                        <th style="width: 140px;">收盤價</th>
+                                        <th style="width: 220px;">三大法人買賣超 (千元)</th>
+                                        <th style="width: 160px;">連續買超天數</th>
+                                        <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-stocks-tbody">
+                                    <!-- Injected dynamically by Javascript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tab Panel 3: 大師選股 -->
+    <div class="tab-pane fade" id="tw-master-panel" role="tabpanel" aria-labelledby="tw-master-tab">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                        <i class="bi bi-award text-primary fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title fw-bold mb-0" id="tw-master-title">大師選股 - 巴菲特價值投資法則 (台股)</h5>
+                        <small class="text-muted" id="tw-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <label for="tw-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
+                    <select id="tw-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
+                        <option value="buffett" selected>巴菲特 (價值投資)</option>
+                        <option value="lynch">彼得·林區 (合理成長)</option>
+                        <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                    </select>
+                    <label for="tw-master-industry-select" class="form-label mb-0 small fw-bold text-muted ms-2">選擇產業:</label>
+                    <select id="tw-master-industry-select" class="form-select form-select-sm rounded-pill px-3" style="width: 180px;">
+                        <option value="all" selected>All (全部產業)</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-tw-master">
+                        <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="tw-master-loader" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted fw-bold">正在分析台股基本面數據並進行評分篩選...</p>
+                </div>
+                <div class="table-responsive" id="tw-master-table-wrap" style="display:none;">
+                    <table class="table table-hover table-striped mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4" style="width: 80px;">排名</th>
+                                <th style="width: 120px;">代號</th>
+                                <th>名稱</th>
+                                <th>產業別</th>
+                                <th>最新收盤價</th>
+                                <th id="th-tw-metrics-1">ROE</th>
+                                <th id="th-tw-metrics-2">營業毛利率</th>
+                                <th id="th-tw-metrics-3">負債比率</th>
+                                <th id="th-tw-metrics-4">淨利成長率</th>
+                                <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tw-master-tbody">
+                            <!-- Injected dynamically by Javascript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    </div>
+
+    <!-- USA Content -->
+    <div class="tab-pane fade" id="us-content" role="tabpanel" aria-labelledby="us-tab">
+        {% if error and "US chip data" in error %}
+        <div class="alert alert-danger shadow-sm border-0 d-flex align-items-center mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
+
+        <!-- USA Market Header: Ticker Selector + Sync Controls -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="sec-ticker-select" class="fw-bold text-nowrap mb-0">
+                                <i class="bi bi-search text-primary me-1"></i>SEC Ticker:
+                            </label>
+                            <input type="text" id="sec-ticker-search" class="form-control form-control-sm" placeholder="Search..." style="width: 120px;">
+                            <select id="sec-ticker-select" class="form-select form-select-sm" style="min-width: 200px;">
+                                <option value="AAPL" selected>AAPL - Apple</option>
+                                <option value="MSFT">MSFT - Microsoft</option>
+                                <option value="NVDA">NVDA - Nvidia</option>
+                                <option value="TSLA">TSLA - Tesla</option>
+                                <option value="AMZN">AMZN - Amazon</option>
+                                <option value="META">META - Meta</option>
+                                <option value="GOOGL">GOOGL - Google</option>
+                            </select>
+                        </div>
+                        <button id="btn-load-more-tickers" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+                            <i class="bi bi-list-ul me-1"></i> Load Full List
+                        </button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div id="sec-sync-status" class="me-2 small text-muted" style="display:none;">
+                            <div class="spinner-border spinner-border-sm text-primary me-1" role="status"></div>
+                            <span id="sec-sync-text">Syncing...</span>
+                        </div>
+                        <button id="btn-sync-13f" class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale">
+                            <i class="bi bi-cloud-download me-1"></i> Sync 13F
+                        </button>
+                        <button id="btn-sync-insider" class="btn btn-sm btn-outline-warning rounded-pill px-3 shadow-sm hover-scale">
+                            <i class="bi bi-cloud-download me-1"></i> Sync Insider/Fin
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- USA Sub Tabs -->
+        <ul class="nav nav-tabs mb-4" id="us-sub-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold" id="us-holders-tab" data-bs-toggle="tab" data-bs-target="#us-holders-panel" type="button" role="tab" aria-selected="true">
+                    <i class="bi bi-bar-chart me-1"></i> Institutional Holders
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-13f-tab" data-bs-toggle="tab" data-bs-target="#us-13f-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-building me-1"></i> SEC 13F Holdings
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-insider-tab" data-bs-toggle="tab" data-bs-target="#us-insider-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-person-badge me-1"></i> Insider Trades
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-financial-tab" data-bs-toggle="tab" data-bs-target="#us-financial-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-file-earmark-spreadsheet me-1"></i> Financial Data
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-moneyflow-tab" data-bs-toggle="tab" data-bs-target="#us-moneyflow-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-grid-3x3-gap-fill me-1"></i> US Money Flow Heatmap
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold" id="us-master-tab" data-bs-toggle="tab" data-bs-target="#us-master-panel" type="button" role="tab" aria-selected="false">
+                    <i class="bi bi-award me-1"></i> 大師選股
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="us-sub-tabs-content">
+
+            <!-- Sub Tab 1: Institutional Holders (existing content preserved) -->
+            <div class="tab-pane fade show active" id="us-holders-panel" role="tabpanel" aria-labelledby="us-holders-tab">
+                <div class="row">
+                    <div class="col-12 py-4 text-center bg-white rounded shadow-sm">
+                        <p id="us-loading-text" class="text-muted mb-0">Fetching data for US markets...</p>
+                        <div id="us-charts-container" class="mt-4 row text-start">
+                            <!-- US Charts will be injected here via JS (existing logic) -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 2: SEC 13F Holdings -->
+            <div class="tab-pane fade" id="us-13f-panel" role="tabpanel" aria-labelledby="us-13f-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-building text-primary fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">13F Institutional Holdings</h5>
+                                <small class="text-muted" id="sec-13f-period">SEC official filings</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Institution Dropdown Selector -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="chipsInstitutionSelector" class="form-label mb-0 small fw-bold text-muted">選擇投資機構:</label>
+                            <select id="chipsInstitutionSelector" class="form-select form-select-sm" style="min-width: 250px;">
+                                {% for cik, inst in known_institutions.items %}
+                                    <option value="{{ cik }}" {% if current_cik == cik %}selected{% endif %}>{{ inst.name_zh }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <span class="badge bg-primary rounded-pill px-3 py-2" id="sec-13f-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-13f-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted">Loading institution 13F data...</p>
+                        </div>
+                        <div id="sec-13f-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No 13F data found for this institution.<br>Click "Sync 13F" to fetch from SEC EDGAR.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-13f-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Ticker</th>
+                                        <th>Security Name</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Value (USD)</th>
+                                        <th class="text-end">Weight (占比)</th>
+                                        <th class="text-end">Quarterly Change</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-13f-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 3: Insider Trades -->
+            <div class="tab-pane fade" id="us-insider-panel" role="tabpanel" aria-labelledby="us-insider-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-person-badge text-warning fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">Insider Trades (Form 4)</h5>
+                                <small class="text-muted">Recent insider transactions</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-warning text-dark rounded-pill px-3 py-2" id="sec-insider-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-insider-loader" class="text-center py-5">
+                            <div class="spinner-border text-warning" role="status"></div>
+                            <p class="mt-2 text-muted">Select a ticker and switch to this tab to load data...</p>
+                        </div>
+                        <div id="sec-insider-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No insider trades found.<br>Click "Sync Insider/Fin" to fetch from SEC EDGAR.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-insider-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Filing Date</th>
+                                        <th>Insider / Title</th>
+                                        <th class="text-end">Shares</th>
+                                        <th class="text-end">Price</th>
+                                        <th class="text-end">Total Value</th>
+                                        <th>Code</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-insider-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 4: Financial Data (XBRL) -->
+            <div class="tab-pane fade" id="us-financial-panel" role="tabpanel" aria-labelledby="us-financial-tab">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">XBRL Financial Metrics (10-K/10-Q)</h5>
+                                <small class="text-muted">Standardized financial concepts from SEC filings</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-success rounded-pill px-3 py-2" id="sec-fin-count">0 records</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="sec-fin-loader" class="text-center py-5">
+                            <div class="spinner-border text-success" role="status"></div>
+                            <p class="mt-2 text-muted">Financial data will load when you switch to this tab...</p>
+                        </div>
+                        <div id="sec-fin-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No financial data found.<br>Click "Sync Insider/Fin" to fetch XBRL data.</p>
+                        </div>
+                        <div class="table-responsive" id="sec-fin-table-wrap" style="display:none; max-height: 600px; overflow-y: auto;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th class="ps-4">Period End</th>
+                                        <th>Concept</th>
+                                        <th class="text-end">Value (USD)</th>
+                                        <th>Report Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sec-fin-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 5: US Money Flow Heatmap -->
+            <div class="tab-pane fade" id="us-moneyflow-panel" role="tabpanel" aria-labelledby="us-moneyflow-tab">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-info bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-grid-3x3-gap-fill text-info fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0">US Stock Money Flow Heatmap</h5>
+                                <small class="text-muted">Node size = Daily volume value (M USD), color = Net Flow Ratio % (CLV weighted)</small>
+                            </div>
+                        </div>
+                        <!-- 天數與數量控制項 -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="us-mf-days" class="form-label mb-0 small fw-bold text-muted">Days:</label>
+                            <select id="us-mf-days" class="form-select form-select-sm rounded-pill px-3" style="width: 90px;">
+                                <option value="1">1 Day</option>
+                                <option value="5" selected>5 Days</option>
+                                <option value="10">10 Days</option>
+                                <option value="20">20 Days</option>
+                            </select>
+                            <label for="us-mf-limit" class="form-label mb-0 small fw-bold text-muted ms-2">Limit:</label>
+                            <select id="us-mf-limit" class="form-select form-select-sm rounded-pill px-3" style="width: 100px;">
+                                <option value="10">Top 10</option>
+                                <option value="20" selected>Top 20</option>
+                                <option value="50">Top 50</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="us-moneyflow-loader" class="text-center py-5" style="display:none;">
+                            <div class="spinner-border text-info" role="status"></div>
+                            <p class="mt-2 text-muted">Calculating US stock money flow...</p>
+                        </div>
+                        <div id="us-moneyflow-empty" class="text-center py-5" style="display:none;">
+                            <i class="bi bi-inbox text-secondary display-4"></i>
+                            <p class="mt-3 text-muted">No money flow data calculated.</p>
+                        </div>
+                        <div id="us-moneyflow-chart" style="min-height: 500px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub Tab 6: 大師選股 -->
+            <div class="tab-pane fade" id="us-master-panel" role="tabpanel" aria-labelledby="us-master-tab">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-white border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                                <i class="bi bi-award text-primary fs-5"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title fw-bold mb-0" id="us-master-title">大師選股 - 巴菲特價值投資法則 (美股)</h5>
+                                <small class="text-muted" id="us-master-desc">篩選標準：ROE &ge; 15% | 營業毛利率 &ge; 30% | 負債比率 &le; 50% | 淨利正成長</small>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <label for="us-master-select" class="form-label mb-0 small fw-bold text-muted">選擇流派:</label>
+                            <select id="us-master-select" class="form-select form-select-sm rounded-pill px-3" style="width: 220px;">
+                                <option value="buffett" selected>巴菲特 (價值投資)</option>
+                                <option value="lynch">彼得·林區 (合理成長)</option>
+                                <option value="oneil">威廉·歐尼爾 (CANSLIM)</option>
+                            </select>
+                            <label for="us-master-industry-select" class="form-label mb-0 small fw-bold text-muted ms-2">選擇產業:</label>
+                            <select id="us-master-industry-select" class="form-select form-select-sm rounded-pill px-3" style="width: 180px;">
+                                <option value="all" selected>All (全部產業)</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-sm hover-scale ms-2" id="btn-refresh-us-master">
+                                <i class="bi bi-arrow-repeat me-1"></i> 強制重新計算
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="us-master-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted fw-bold">正在分析美股基本面數據並進行評分篩選...</p>
+                        </div>
+                        <div class="table-responsive" id="us-master-table-wrap" style="display:none;">
+                            <table class="table table-hover table-striped mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4" style="width: 80px;">排名</th>
+                                        <th style="width: 120px;">代號</th>
+                                        <th>名稱</th>
+                                        <th>產業別</th>
+                                        <th>最新收盤價</th>
+                                        <th id="th-us-metrics-1">ROE</th>
+                                        <th id="th-us-metrics-2">營業毛利率</th>
+                                        <th id="th-us-metrics-3">負債比率</th>
+                                        <th id="th-us-metrics-4">淨利成長率</th>
+                                        <th class="pe-4 text-end" style="width: 150px;">綜合評分</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="us-master-tbody">
+                                    <!-- Injected dynamically by Javascript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- end us-sub-tabs-content -->
+    </div>
+</div>
+
+{{ buysell_json|json_script:"buysell-data" }}
+{{ comparison_json|json_script:"comparison-data" }}
+{{ us_investor_json|json_script:"us-investor-data" }}
+
+<style>
+    .card {
+        border-radius: 1rem;
+        overflow: hidden;
+    }
+
+    .card-header {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .hover-scale {
+        transition: transform 0.2s;
+    }
+
+    .hover-scale:hover {
+        transform: scale(1.02);
+    }
+
+    .chart-box {
+        min-height: 350px;
+    }
+
+    .stock-chip-card {
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        background: #f8f9fa;
+    }
+
+    [data-bs-theme="dark"] .stock-chip-card {
+        background-color: #242424 !important;
+        border-color: var(--card-border) !important;
+    }
+
+    /* Force ApexCharts menu text to be black */
+    .apexcharts-menu, .apexcharts-menu-item {
+        color: #000000 !important;
+    }
+
+    /* Clickable stock row styles */
+    .clickable-stock-row:hover td {
+        background-color: rgba(var(--bs-primary-rgb), 0.05) !important;
+    }
+    .clickable-stock-row.selected-row td {
+        background-color: rgba(var(--bs-primary-rgb), 0.15) !important;
+        border-left: 3px solid var(--bs-primary);
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const buySellData = JSON.parse(document.getElementById('buysell-data').textContent);
+        const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
+        const usInvestorData = JSON.parse(document.getElementById('us-investor-data').textContent);
+        const chartThemeMode = localStorage.getItem('theme') || 'light';
+
+        // --- Data Refresh Logic ---
+        const btnTw = document.getElementById('btn-refresh-tw');
+        const btnUs = document.getElementById('btn-refresh-us');
+        const progressContainer = document.getElementById('refresh-progress-container');
+        const progressBar = document.getElementById('refresh-progress-bar');
+        const statusText = document.getElementById('refresh-status-text');
+        const percentText = document.getElementById('refresh-percent');
+
+        let isPolling = false;
+
+        function updateProgress(status, progress, message) {
+            progressContainer.style.display = 'block';
+            progressBar.style.width = progress + '%';
+            percentText.innerText = progress + '%';
+            statusText.innerText = message || 'Updating...';
+
+            if (status === 'done') {
+                progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+                progressBar.classList.add('bg-success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else if (status === 'error') {
+                progressBar.classList.add('bg-danger');
+                isPolling = false;
+            }
+        }
+
+        async function pollStatus(market) {
+            if (!isPolling) return;
+            try {
+                const res = await fetch(`api/refresh-status/${market}/`);
+                const data = await res.json();
+                updateProgress(data.status, data.progress, data.message);
+                if (data.status === 'running') {
+                    setTimeout(() => pollStatus(market), 2000);
+                } else {
+                    isPolling = false;
+                }
+            } catch (e) {
+                console.error("Polling failed", e);
+                isPolling = false;
+            }
+        }
+
+        btnTw.addEventListener('click', async () => {
+            if (isPolling) return;
+            if (!confirm("確定要更新台灣(上市+上櫃)法人資料嗎？這可能需要 1-2 分鐘。")) return;
+            
+            try {
+                const res = await fetch('api/refresh/tw/', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    isPolling = true;
+                    pollStatus('tw');
+                } else {
+                    alert(data.error || "觸發失敗");
+                }
+            } catch (e) { alert("請求失敗: " + e); }
+        });
+
+        btnUs.addEventListener('click', async () => {
+            if (isPolling) return;
+            if (!confirm("確定要更新美股熱門股法人持股嗎？")) return;
+            
+            try {
+                const res = await fetch('api/refresh/us/', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    isPolling = true;
+                    pollStatus('us');
+                } else {
+                    alert(data.error || "觸發失敗");
+                }
+            } catch (e) { alert("請求失敗: " + e); }
+        });
+
+        // --- Taiwan Market Charts ---
+        if (buySellData) {
+            // ... (keep leadersOptions and laggardsOptions as updated)
+            const leadersOptions = {
+                series: buySellData.leaders.series,
+                chart: { type: 'bar', height: 500, stacked: true, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+                xaxis: {
+                    categories: buySellData.leaders.categories,
+                    labels: { style: { fontSize: '18px', fontWeight: 600 }, formatter: val => (val / 1000).toFixed(0) + 'K' }
+                },
+                yaxis: {
+                    labels: { style: { fontSize: '18px' } }
+                },
+                title: { text: 'Cumulative Buy (Shares)', align: 'left', style: { fontSize: '22px' } },
+                legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                theme: { mode: chartThemeMode }
+            };
+            new ApexCharts(document.querySelector("#top-buyers-chart"), leadersOptions).render();
+
+            const laggardsOptions = {
+                series: buySellData.laggards.series,
+                chart: { type: 'bar', height: 500, stacked: true, toolbar: { show: false } },
+                plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+                xaxis: {
+                    categories: buySellData.laggards.categories,
+                    labels: { style: { fontSize: '18px', fontWeight: 600 }, formatter: val => (val / 1000).toFixed(0) + 'K' }
+                },
+                yaxis: {
+                    labels: { style: { fontSize: '18px' } }
+                },
+                title: { text: 'Cumulative Sell (Shares)', align: 'left', style: { fontSize: '22px' } },
+                legend: { position: 'top', horizontalAlign: 'left', fontSize: '18px' },
+                colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                theme: { mode: chartThemeMode }
+            };
+            new ApexCharts(document.querySelector("#top-sellers-chart"), laggardsOptions).render();
+        }
+
+        // --- US Market Charts ---
+        if (usInvestorData && usInvestorData.length > 0) {
+            const usContainer = document.getElementById('us-charts-container');
+            const usLoadingText = document.getElementById('us-loading-text');
+            if (usLoadingText) {
+                usLoadingText.style.display = 'none';
+            }
+            usContainer.innerHTML = '';
+            
+            usInvestorData.forEach((data, idx) => {
+                const col = document.createElement('div');
+                col.className = 'col-lg-6 mb-4';
+                col.innerHTML = `
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="fw-bold mb-0">${data.symbol} Institutional Holders</h5>
+                            <span class="badge bg-primary rounded-pill">Ownership: ${data.total_institutional_pct}%</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="us-chart-${idx}" style="min-height: 400px;"></div>
+                            <div class="row mt-3 text-center small divider-top pt-2">
+                                <div class="col-6 border-end">
+                                    <div class="text-muted">Buy Sentiment</div>
+                                    <div class="fw-bold text-success">${data.sentiment.ratio.toFixed(2)}x</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="text-muted">Top 10 Conc.</div>
+                                    <div class="fw-bold">${((data.concentration[0].value / data.total_shares_held)*100).toFixed(1)}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                usContainer.appendChild(col);
+                
+                const options = {
+                    series: [{ name: 'Shares', data: data.shares }],
+                    chart: { type: 'bar', height: 400, toolbar: { show: false } },
+                    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 4 } },
+                    xaxis: { categories: data.categories, labels: { show: false } },
+                    yaxis: { labels: { style: { fontSize: '14px' } } },
+                    colors: data.bar_colors,
+                    legend: { show: false },
+                    tooltip: { y: { formatter: val => (val/1000000).toFixed(1) + 'M shares' } },
+                    theme: { mode: chartThemeMode }
+                };
+                new ApexCharts(document.querySelector(`#us-chart-${idx}`), options).render();
+            });
+        }
+
+        if (comparisonData && comparisonData.leaders) {
+            const container = document.getElementById('top-5-container');
+            document.getElementById('top-5-loader').remove();
+
+            const cats = comparisonData.leaders.categories;
+            const series = comparisonData.leaders.series;
+
+            // Group categories by ticker (each ticker has N days)
+            // Format: "Name\nYYYY-MM-DD"
+            const stocks = {};
+            cats.forEach((cat, idx) => {
+                const name = cat.split('\n')[0];
+                if (!stocks[name]) stocks[name] = { categories: [], series: [] };
+                stocks[name].categories.push(cat.split('\n')[1]);
+            });
+
+            series.forEach(s => {
+                let currentIdx = 0;
+                Object.keys(stocks).forEach(name => {
+                    const count = stocks[name].categories.length;
+                    if (!stocks[name].series) stocks[name].series = [];
+                    stocks[name].series.push({
+                        name: s.name,
+                        data: s.data.slice(currentIdx, currentIdx + count)
+                    });
+                    currentIdx += count;
+                });
+            });
+
+            // Create a separate chart for each stock
+            Object.keys(stocks).forEach((name, i) => {
+                const col = document.createElement('div');
+                col.className = 'col-12';
+                col.innerHTML = `
+                <div class="stock-chip-card hover-scale">
+                    <h6 class="fw-bold mb-3 border-bottom pb-2">${name}</h6>
+                    <div id="chart-top5-${i}" class="chart-box"></div>
+                </div>
+            `;
+                container.appendChild(col);
+
+                const options = {
+                    series: stocks[name].series,
+                    chart: { type: 'bar', height: 450, stacked: true, toolbar: { show: false } },
+                    xaxis: {
+                        categories: stocks[name].categories,
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    yaxis: {
+                        labels: { style: { fontSize: '18px' } }
+                    },
+                    plotOptions: { bar: { borderRadius: 4 } },
+                    dataLabels: { enabled: false },
+                    colors: ['#29b6f6', '#ffa726', '#ab47bc', '#26a69a'],
+                    title: { text: 'Inst. Buy/Sell (Last 5 Days)', style: { fontSize: '22px' } },
+                    legend: { fontSize: '18px' },
+                    theme: { mode: chartThemeMode }
+                };
+                new ApexCharts(document.querySelector(`#chart-top5-${i}`), options).render();
+            });
+        }
+
+        // --- Industry Money Flow & Score Heatmap (Treemap) JS Logic ---
+        const w1Slider = document.getElementById('w1-slider');
+        const w2Slider = document.getElementById('w2-slider');
+        const w3Slider = document.getElementById('w3-slider');
+        const w1Val = document.getElementById('w1-val');
+        const w2Val = document.getElementById('w2-val');
+        const w3Val = document.getElementById('w3-val');
+        
+        function updateSliderLabels() {
+            w1Val.innerText = w1Slider.value + '%';
+            w2Val.innerText = w2Slider.value + '%';
+            w3Val.innerText = w3Slider.value + '%';
+        }
+        
+        if (w1Slider && w2Slider && w3Slider) {
+            w1Slider.addEventListener('input', updateSliderLabels);
+            w2Slider.addEventListener('input', updateSliderLabels);
+            w3Slider.addEventListener('input', updateSliderLabels);
+        }
+        
+        let selectedDays = 10;
+        const daysBtnGroup = document.getElementById('days-btn-group');
+        if (daysBtnGroup) {
+            daysBtnGroup.addEventListener('click', function(e) {
+                if (e.target.dataset.days) {
+                    Array.from(daysBtnGroup.children).forEach(btn => btn.classList.remove('active'));
+                    e.target.classList.add('active');
+                    selectedDays = parseInt(e.target.dataset.days);
+                }
+            });
+        }
+        
+        let treemapChart = null;
+        let cachedTopStocks = {};
+        
+        async function fetchIndustryFlow(days, w1, w2, w3) {
+            const loader = document.getElementById('industry-flow-loader');
+            if (loader) loader.classList.remove('d-none');
+            
+            try {
+                const response = await fetch(`api/industry-flow/?days=${days}&w1=${w1}&w2=${w2}&w3=${w3}`);
+                const data = await response.json();
+                
+                if (loader) loader.classList.add('d-none');
+                
+                if (data.error) {
+                    alert('Error calculating flow: ' + data.error);
+                    return;
+                }
+                
+                cachedTopStocks = data.top_stocks;
+                renderTreemap(data.industries);
+                
+                // Select first industry by default if exists
+                if (data.industries && data.industries.length > 0) {
+                    const sorted = [...data.industries].sort((a, b) => b.y - a.y);
+                    displayTopStocks(sorted[0].x);
+                } else {
+                    const row = document.getElementById('top-stocks-row');
+                    if (row) row.classList.add('d-none');
+                }
+                
+            } catch (err) {
+                if (loader) loader.classList.add('d-none');
+                console.error('Fetch flow error:', err);
+            }
+        }
+        
+        function renderTreemap(industries) {
+            const sortedData = [...industries].sort((a, b) => b.y - a.y);
+            
+            // Taiwan Standard: Red = Net Buy, Green = Net Sell, Gray = Neutral
+            const colors = sortedData.map(d => {
+                const flow = d.net_flow;
+                if (flow > 200000) return '#d32f2f';      // Deep Red
+                else if (flow > 20000) return '#ef5350';   // Light Red
+                else if (flow < -200000) return '#2e7d32'; // Deep Green
+                else if (flow < -20000) return '#66bb6a';  // Light Green
+                else return '#9e9e9e';                     // Neutral Gray
+            });
+            
+            const options = {
+                series: [{
+                    data: sortedData
+                }],
+                chart: {
+                    type: 'treemap',
+                    height: 500,
+                    toolbar: { show: false },
+                    events: {
+                        click: function(event, chartContext, config) {
+                            const dataPointIndex = config.dataPointIndex;
+                            const seriesIndex = config.seriesIndex;
+                            if (dataPointIndex !== undefined && dataPointIndex !== -1 && config.config) {
+                                const item = config.config.series[seriesIndex].data[dataPointIndex];
+                                displayTopStocks(item.x);
+                            }
+                        }
+                    }
+                },
+                plotOptions: {
+                    treemap: {
+                        distributed: true,
+                        enableShades: false
+                    }
+                },
+                colors: colors,
+                legend: { show: false },
+                theme: { mode: chartThemeMode },
+                tooltip: {
+                    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+                        const d = w.config.series[seriesIndex].data[dataPointIndex];
+                        const flow = d.net_flow;
+                        const flowText = flow >= 0 ? '+' + (flow / 1000).toFixed(1) + 'M' : (flow / 1000).toFixed(1) + 'M';
+                        const flowClass = flow >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                        return `
+                            <div class="p-3 bg-white text-dark shadow rounded border-0" style="font-family: inherit;">
+                                <h6 class="fw-bold mb-2">${d.x}</h6>
+                                <div class="small text-muted mb-1">成交總值: <span class="fw-bold text-dark">${(d.y).toFixed(1)}M NTD</span></div>
+                                <div class="small text-muted">三大法人買賣超: <span class="${flowClass}">${flowText} NTD</span></div>
+                            </div>
+                        `;
+                    }
+                }
+            };
+            
+            const chartDiv = document.querySelector("#industry-treemap-chart");
+            if (chartDiv) {
+                if (treemapChart) {
+                    treemapChart.destroy();
+                }
+                treemapChart = new ApexCharts(chartDiv, options);
+                treemapChart.render();
+            }
+        }
+        
+        function displayTopStocks(industryName) {
+            const row = document.getElementById('top-stocks-row');
+            const title = document.getElementById('top-stocks-title');
+            const badge = document.getElementById('top-stocks-badge');
+            const tbody = document.getElementById('top-stocks-tbody');
+            
+            if (!row || !title || !badge || !tbody) return;
+            
+            const stocks = cachedTopStocks[industryName] || [];
+            
+            title.innerText = `${industryName} 最受看好前 10 家公司`;
+            badge.innerText = `篩選出 ${stocks.length} 檔個股`;
+            tbody.innerHTML = '';
+            
+            if (stocks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">該產業目前無符合多頭評分之個股</td></tr>';
+            } else {
+                stocks.forEach(s => {
+                    const flow = s.net_flow;
+                    const flowText = flow >= 0 ? '+' + (flow / 1000).toFixed(1) + 'M' : (flow / 1000).toFixed(1) + 'M';
+                    const flowClass = flow >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="ps-4 fw-bold text-muted">${s.rank}</td>
+                        <td><a href="/valuation/${s.number}.TW" class="fw-bold text-primary text-decoration-none">${s.number}</a></td>
+                        <td class="fw-bold text-dark">${s.name}</td>
+                        <td>$${s.close.toFixed(2)}</td>
+                        <td class="${flowClass}">${flowText}</td>
+                        <td>${s.consec_buys} 天</td>
+                        <td class="pe-4 text-end fw-bold text-primary fs-6">${s.score} 分</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            row.classList.remove('d-none');
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        // Sub-tab shown event to load industry flow
+        let flowLoaded = false;
+        const industryTabBtn = document.getElementById('tw-industry-tab');
+        if (industryTabBtn) {
+            industryTabBtn.addEventListener('shown.bs.tab', function () {
+                if (!flowLoaded) {
+                    fetchIndustryFlow(selectedDays, w1Slider.value / 100.0, w2Slider.value / 100.0, w3Slider.value / 100.0);
+                    flowLoaded = true;
+                }
+            });
+        }
+        
+        const btnRecalculate = document.getElementById('btn-recalculate-flow');
+        if (btnRecalculate) {
+            btnRecalculate.addEventListener('click', function() {
+                fetchIndustryFlow(selectedDays, w1Slider.value / 100.0, w2Slider.value / 100.0, w3Slider.value / 100.0);
+                flowLoaded = true;
+            });
+        }
+
+        // ========================================================
+        // SEC EDGAR Integration (AJAX-based, zero coupling)
+        // ========================================================
+        const secTickerSelect = document.getElementById('sec-ticker-select');
+        const secBaseUrl = '/sec-edgar/api';
+
+        // --- SEC Ticker Autocomplete Search ---
+        const secTickerSearch = document.getElementById('sec-ticker-search');
+        if (secTickerSearch && secTickerSelect) {
+            let searchTimeout;
+            secTickerSearch.addEventListener('input', function() {
+                const query = this.value.trim();
+                clearTimeout(searchTimeout);
+                
+                searchTimeout = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`/chips/api/us-stocks/?q=${encodeURIComponent(query)}`);
+                        const data = await res.json();
+                        if (data.stocks) {
+                            const currentVal = secTickerSelect.value;
+                            secTickerSelect.innerHTML = '';
+                            let hasCurrent = false;
+                            
+                            data.stocks.forEach(s => {
+                                if (s.symbol === currentVal) hasCurrent = true;
+                                const opt = document.createElement('option');
+                                opt.value = s.symbol;
+                                opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                secTickerSelect.appendChild(opt);
+                            });
+                            
+                            if (currentVal && !hasCurrent) {
+                                const opt = document.createElement('option');
+                                opt.value = currentVal;
+                                opt.textContent = currentVal + ' (當前選取)';
+                                secTickerSelect.appendChild(opt);
+                            }
+                            secTickerSelect.value = currentVal;
+                        }
+                    } catch (e) {
+                        console.error('Search tickers error:', e);
+                    }
+                }, 300);
+            });
+        }
+
+        // --- Utility: Format number with commas ---
+        function fmtNum(n) {
+            if (n === null || n === undefined) return '-';
+            return Number(n).toLocaleString('en-US');
+        }
+
+        // --- Utility: Format currency ---
+        function fmtCurrency(n) {
+            if (n === null || n === undefined || n === 0) return '-';
+            const abs = Math.abs(Number(n));
+            if (abs >= 1e9) return '$' + (Number(n) / 1e9).toFixed(2) + 'B';
+            if (abs >= 1e6) return '$' + (Number(n) / 1e6).toFixed(2) + 'M';
+            if (abs >= 1e3) return '$' + (Number(n) / 1e3).toFixed(1) + 'K';
+            return '$' + Number(n).toFixed(2);
+        }
+
+        // --- Utility: Action badge ---
+        function actionBadge(action) {
+            const map = {
+                'NEW': '<span class="badge bg-primary bg-opacity-75">NEW</span>',
+                'INCREASED': '<span class="badge bg-success bg-opacity-75">INCREASED</span>',
+                'DECREASED': '<span class="badge bg-danger bg-opacity-75">DECREASED</span>',
+                'SOLD_ALL': '<span class="badge bg-warning text-dark">SOLD ALL</span>',
+                'UNCHANGED': '<span class="text-muted small">No Change</span>'
+            };
+            return map[action] || '<span class="text-muted small">-</span>';
+        }
+
+        // --- Utility: Transaction code badge ---
+        function txnCodeBadge(code) {
+            if (code === 'P') return '<span class="badge bg-success bg-opacity-75">P (Buy)</span>';
+            if (code === 'S') return '<span class="badge bg-danger bg-opacity-75">S (Sell)</span>';
+            if (code === 'F') return '<span class="badge bg-secondary bg-opacity-50">F (Tax)</span>';
+            return '<span class="badge bg-light text-dark border">' + code + '</span>';
+        }
+
+        // --- Utility: Show/hide panel states ---
+        function showPanelState(prefix, state) {
+            document.getElementById(prefix + '-loader').style.display = state === 'loading' ? '' : 'none';
+            document.getElementById(prefix + '-empty').style.display = state === 'empty' ? '' : 'none';
+            document.getElementById(prefix + '-table-wrap').style.display = state === 'data' ? '' : 'none';
+        }
+
+        // --- Load Full Ticker List ---
+        let tickerListLoaded = false;
+        const btnLoadTickers = document.getElementById('btn-load-more-tickers');
+        if (btnLoadTickers) {
+            btnLoadTickers.addEventListener('click', async function() {
+                if (tickerListLoaded) return;
+                btnLoadTickers.disabled = true;
+                btnLoadTickers.innerHTML = '<div class="spinner-border spinner-border-sm me-1"></div> Loading...';
+                try {
+                    const res = await fetch('/chips/api/us-stocks/');
+                    const data = await res.json();
+                    if (data.stocks && data.stocks.length > 0) {
+                        const currentVal = secTickerSelect.value;
+                        const existingVals = new Set();
+                        Array.from(secTickerSelect.options).forEach(o => existingVals.add(o.value));
+                        data.stocks.forEach(s => {
+                            if (!existingVals.has(s.symbol)) {
+                                const opt = document.createElement('option');
+                                opt.value = s.symbol;
+                                opt.textContent = s.symbol + ' - ' + (s.name || '');
+                                secTickerSelect.appendChild(opt);
+                            }
+                        });
+                        secTickerSelect.value = currentVal;
+                        tickerListLoaded = true;
+                        btnLoadTickers.innerHTML = '<i class="bi bi-check-lg me-1"></i> Loaded (' + data.stocks.length + ')';
+                        btnLoadTickers.classList.replace('btn-outline-secondary', 'btn-outline-success');
+                    }
+                } catch (e) {
+                    btnLoadTickers.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Error';
+                    btnLoadTickers.disabled = false;
+                    console.error('Load tickers error:', e);
+                }
+            });
+        }
+
+        // --- Fetch SEC 13F Holdings by CIK ---
+        let cached13f = {};
+        async function fetchSec13F(cik) {
+            if (cached13f[cik]) { render13F(cached13f[cik]); return; }
+            showPanelState('sec-13f', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/institution/holdings/?cik=' + cik);
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cached13f[cik] = json.data;
+                    render13F(json.data);
+                } else {
+                    showPanelState('sec-13f', 'empty');
+                    document.getElementById('sec-13f-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch 13F error:', e);
+                showPanelState('sec-13f', 'empty');
+            }
+        }
+
+        function render13F(data) {
+            const tbody = document.getElementById('sec-13f-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-13f-count').textContent = data.length + ' records';
+            if (data.length > 0 && data[0].period_of_report) {
+                document.getElementById('sec-13f-period').textContent = 'Report period: ' + data[0].period_of_report;
+            }
+            data.forEach(row => {
+                const changePct = row.change_pct;
+                let changeClass = '';
+                let changeText = '-';
+                if (changePct !== null && changePct !== undefined) {
+                    changeClass = changePct > 0 ? 'text-danger fw-bold' : (changePct < 0 ? 'text-success fw-bold' : '');
+                    changeText = (changePct > 0 ? '+' : '') + Number(changePct).toFixed(2) + '%';
+                }
+                const tr = document.createElement('tr');
+                if (row.ticker) {
+                    tr.className = 'clickable-stock-row';
+                    tr.style.cursor = 'pointer';
+                    tr.setAttribute('onclick', `selectInstitutionStock('${row.ticker}', this)`);
+                }
+                tr.innerHTML = `
+                    <td class="ps-4">
+                        <span class="fw-bold text-primary">${row.ticker || '-'}</span>
+                    </td>
+                    <td><span class="fw-semibold">${row.security_name || 'N/A'}</span></td>
+                    <td>${row.put_call ? '<span class="text-warning fw-bold">' + row.put_call + '</span>' : 'Common'}</td>
+                    <td class="text-end font-monospace">${fmtNum(row.shares)}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.value_usd)}</td>
+                    <td class="text-end font-monospace text-primary fw-bold">${row.weight}%</td>
+                    <td class="text-end ${changeClass}">${changeText}</td>
+                    <td>${actionBadge(row.action_type)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-13f', 'data');
+        }
+
+        function selectInstitutionStock(ticker, element) {
+            const rows = document.querySelectorAll('#sec-13f-tbody tr');
+            rows.forEach(r => r.classList.remove('selected-row'));
+            if (element) element.classList.add('selected-row');
+
+            if (secTickerSelect) {
+                let optionExists = false;
+                for (let i = 0; i < secTickerSelect.options.length; i++) {
+                    if (secTickerSelect.options[i].value === ticker) {
+                        optionExists = true;
+                        break;
+                    }
+                }
+                if (!optionExists) {
+                    const opt = document.createElement('option');
+                    opt.value = ticker;
+                    opt.textContent = ticker;
+                    secTickerSelect.appendChild(opt);
+                }
+                secTickerSelect.value = ticker;
+            }
+
+            secInsiderLoaded = false;
+            secFinLoaded = false;
+
+            const periodBadge = document.getElementById('sec-13f-period');
+            if (periodBadge) {
+                periodBadge.innerHTML = `<span class="badge bg-success">Selected ${ticker}</span> (Switch to Insider or Financial tabs to view detail)`;
+            }
+        }
+        window.selectInstitutionStock = selectInstitutionStock;
+
+        // --- Fetch Insider Trades ---
+        let cachedInsider = {};
+        async function fetchInsiderTrades(ticker) {
+            if (cachedInsider[ticker]) { renderInsider(cachedInsider[ticker]); return; }
+            showPanelState('sec-insider', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/insider/' + ticker + '/');
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cachedInsider[ticker] = json.data;
+                    renderInsider(json.data);
+                } else {
+                    showPanelState('sec-insider', 'empty');
+                    document.getElementById('sec-insider-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch insider error:', e);
+                showPanelState('sec-insider', 'empty');
+            }
+        }
+
+        function renderInsider(data) {
+            const tbody = document.getElementById('sec-insider-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-insider-count').textContent = data.length + ' records';
+            data.forEach(row => {
+                const sharesClass = row.transaction_code === 'P' ? 'text-success fw-bold' : (row.transaction_code === 'S' ? 'text-danger fw-bold' : '');
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${row.filing_date || '-'}</td>
+                    <td>
+                        <span class="fw-semibold">${row.insider_name}</span>
+                        ${row.is_senior_officer ? '<span class="text-warning ms-1" title="Senior Officer">&#9733;</span>' : ''}
+                        <div class="text-muted small">${row.insider_title || '-'}</div>
+                    </td>
+                    <td class="text-end font-monospace ${sharesClass}">${fmtNum(row.shares)}</td>
+                    <td class="text-end font-monospace">${row.price_per_share ? '$' + Number(row.price_per_share).toFixed(2) : '-'}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.total_value)}</td>
+                    <td>${txnCodeBadge(row.transaction_code)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-insider', 'data');
+        }
+
+        // --- Fetch Financial Data ---
+        let cachedFinancial = {};
+        async function fetchFinancialData(ticker) {
+            if (cachedFinancial[ticker]) { renderFinancial(cachedFinancial[ticker]); return; }
+            showPanelState('sec-fin', 'loading');
+            try {
+                const res = await fetch(secBaseUrl + '/financial/' + ticker + '/');
+                const json = await res.json();
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    cachedFinancial[ticker] = json.data;
+                    renderFinancial(json.data);
+                } else {
+                    showPanelState('sec-fin', 'empty');
+                    document.getElementById('sec-fin-count').textContent = '0 records';
+                }
+            } catch (e) {
+                console.error('Fetch financial error:', e);
+                showPanelState('sec-fin', 'empty');
+            }
+        }
+
+        function renderFinancial(data) {
+            const tbody = document.getElementById('sec-fin-tbody');
+            tbody.innerHTML = '';
+            document.getElementById('sec-fin-count').textContent = data.length + ' records';
+            data.forEach(row => {
+                const reportBadge = row.fiscal_quarter === 0
+                    ? '<span class="badge bg-primary bg-opacity-75">10-K (Annual)</span>'
+                    : '<span class="badge bg-light text-dark border">10-Q (Q' + row.fiscal_quarter + ')</span>';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${row.period_end}</td>
+                    <td class="fw-semibold">${row.concept}</td>
+                    <td class="text-end font-monospace">${fmtCurrency(row.value)}</td>
+                    <td>${reportBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            showPanelState('sec-fin', 'data');
+        }
+
+        // --- Sync Buttons ---
+        const btnSync13F = document.getElementById('btn-sync-13f');
+        const btnSyncInsider = document.getElementById('btn-sync-insider');
+        const syncStatus = document.getElementById('sec-sync-status');
+        const syncText = document.getElementById('sec-sync-text');
+
+        async function triggerSecSync(type) {
+            let apiUrl = '';
+            let syncMsg = '';
+            
+            if (type === '13f') {
+                const cik = document.getElementById('chipsInstitutionSelector').value;
+                if (!cik) { alert('Please select an institution first.'); return; }
+                apiUrl = secBaseUrl + '/sync/institution/?cik=' + cik;
+                syncMsg = 'Syncing 13F for CIK ' + cik + '...';
+            } else {
+                const ticker = secTickerSelect.value;
+                if (!ticker) { alert('Please select a ticker first.'); return; }
+                apiUrl = secBaseUrl + '/sync/insider/?ticker=' + ticker;
+                syncMsg = 'Syncing Insider for ' + ticker + '...';
+            }
+            
+            syncStatus.style.display = '';
+            syncText.textContent = syncMsg;
+            
+            if (type === '13f') { btnSync13F.disabled = true; }
+            else { btnSyncInsider.disabled = true; }
+            
+            try {
+                const res = await fetch(apiUrl);
+                const data = await res.json();
+                syncStatus.style.display = 'none';
+                
+                if (data.status === 'success') {
+                    alert('Sync successful: ' + (data.message || ''));
+                    if (type === '13f') {
+                        const cik = document.getElementById('chipsInstitutionSelector').value;
+                        delete cached13f[cik];
+                        fetchSec13F(cik);
+                    } else {
+                        const ticker = secTickerSelect.value;
+                        delete cachedInsider[ticker];
+                        delete cachedFinancial[ticker];
+                        fetchInsiderTrades(ticker);
+                    }
+                } else {
+                    alert('Sync failed: ' + (data.message || ''));
+                }
+            } catch (e) {
+                syncStatus.style.display = 'none';
+                alert('Sync request error: ' + e);
+            }
+            
+            btnSync13F.disabled = false;
+            btnSyncInsider.disabled = false;
+        }
+
+        if (btnSync13F) btnSync13F.addEventListener('click', () => triggerSecSync('13f'));
+        if (btnSyncInsider) btnSyncInsider.addEventListener('click', () => triggerSecSync('insider'));
+
+        // --- Fetch & Render US Money Flow Heatmap ---
+        let moneyFlowChart = null;
+        const usMoneyFlowTab = document.getElementById('us-moneyflow-tab');
+        const selectMfDays = document.getElementById('us-mf-days');
+        const selectMfLimit = document.getElementById('us-mf-limit');
+        
+        async function fetchUSMoneyFlow() {
+            const days = selectMfDays ? selectMfDays.value : 5;
+            const limit = selectMfLimit ? selectMfLimit.value : 200;
+            
+            const loader = document.getElementById('us-moneyflow-loader');
+            const empty = document.getElementById('us-moneyflow-empty');
+            const chartDiv = document.getElementById('us-moneyflow-chart');
+            
+            if (loader) loader.style.display = '';
+            if (empty) empty.style.display = 'none';
+            if (chartDiv) chartDiv.style.opacity = '0.3';
+            
+            try {
+                const res = await fetch(`/chips/api/us-money-flow/?days=${days}&limit=${limit}`);
+                const json = await res.json();
+                
+                if (loader) loader.style.display = 'none';
+                if (chartDiv) chartDiv.style.opacity = '1';
+                
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    renderMoneyFlowTreeMap(json.data);
+                } else {
+                    if (empty) empty.style.display = '';
+                    if (chartDiv) chartDiv.innerHTML = '';
+                }
+            } catch (e) {
+                console.error('Fetch US Money Flow error:', e);
+                if (loader) loader.style.display = 'none';
+                if (empty) empty.style.display = '';
+                if (chartDiv) {
+                    chartDiv.style.opacity = '1';
+                    chartDiv.innerHTML = '';
+                }
+            }
+        }
+        
+        function renderMoneyFlowTreeMap(data) {
+            const chartData = data.map(item => ({
+                x: `${item.symbol}\n$${item.close.toFixed(1)}\n${item.net_flow_ratio > 0 ? '+' : ''}${item.net_flow_ratio.toFixed(1)}%`,
+                y: item.volume_value,
+                net_flow: item.net_flow_ratio
+            }));
+
+            const colors = data.map(item => {
+                const ratio = item.net_flow_ratio;
+                if (ratio >= 15) return '#1e7b34';       // Strong Inflow (Deep Green)
+                else if (ratio >= 3) return '#34c759';     // Inflow (Green)
+                else if (ratio >= 0) return '#4f5055';     // Neutral/Pos (Dark Gray)
+                else if (ratio >= -3) return '#8e8e93';    // Neutral/Neg (Gray)
+                else if (ratio >= -15) return '#ff3b30';   // Outflow (Red)
+                else return '#b31b1b';                    // Strong Outflow (Deep Red)
+            });
+            
+            const options = {
+                series: [{
+                    data: chartData
+                }],
+                legend: {
+                    show: false
+                },
+                chart: {
+                    height: 600,
+                    type: 'treemap',
+                    toolbar: {
+                        show: true
+                    }
+                },
+                title: {
+                    text: 'US Market Volume Value & Money Flow Heatmap',
+                    align: 'center'
+                },
+                colors: colors,
+                plotOptions: {
+                    treemap: {
+                        distributed: true,
+                        enableShades: false
+                    }
+                },
+                tooltip: {
+                    y: {
+                        formatter: function (val, { series, seriesIndex, dataPointIndex, w }) {
+                            const rawItem = data[dataPointIndex];
+                            return `Vol Value: $${val.toFixed(1)}M | Net Flow Ratio: ${rawItem.net_flow_ratio.toFixed(2)}%`;
+                        }
+                    }
+                }
+            };
+            
+            const chartContainer = document.getElementById('us-moneyflow-chart');
+            if (chartContainer) {
+                if (moneyFlowChart) {
+                    moneyFlowChart.destroy();
+                }
+                chartContainer.innerHTML = '';
+                moneyFlowChart = new ApexCharts(chartContainer, options);
+                moneyFlowChart.render();
+            }
+        }
+        
+        if (selectMfDays) selectMfDays.addEventListener('change', fetchUSMoneyFlow);
+        if (selectMfLimit) selectMfLimit.addEventListener('change', fetchUSMoneyFlow);
+
+        // --- Lazy Load on Tab Switch ---
+        let sec13fLoaded = false;
+        let secInsiderLoaded = false;
+        let secFinLoaded = false;
+        let moneyflowLoaded = false;
+
+        const us13fTab = document.getElementById('us-13f-tab');
+        const usInsiderTab = document.getElementById('us-insider-tab');
+        const usFinancialTab = document.getElementById('us-financial-tab');
+
+        if (us13fTab) {
+            us13fTab.addEventListener('shown.bs.tab', function() {
+                const cik = document.getElementById('chipsInstitutionSelector').value;
+                if (!sec13fLoaded || !cached13f[cik]) {
+                    fetchSec13F(cik);
+                    sec13fLoaded = true;
+                }
+            });
+        }
+
+        if (usInsiderTab) {
+            usInsiderTab.addEventListener('shown.bs.tab', function() {
+                const ticker = secTickerSelect.value;
+                if (!secInsiderLoaded || !cachedInsider[ticker]) {
+                    fetchInsiderTrades(ticker);
+                    secInsiderLoaded = true;
+                }
+            });
+        }
+
+        if (usFinancialTab) {
+            usFinancialTab.addEventListener('shown.bs.tab', function() {
+                const ticker = secTickerSelect.value;
+                if (!secFinLoaded || !cachedFinancial[ticker]) {
+                    fetchFinancialData(ticker);
+                    secFinLoaded = true;
+                }
+            });
+        }
+        
+        if (usMoneyFlowTab) {
+            usMoneyFlowTab.addEventListener('shown.bs.tab', function() {
+                if (!moneyflowLoaded) {
+                    fetchUSMoneyFlow();
+                    moneyflowLoaded = true;
+                }
+            });
+        }
+
+        // --- Ticker Change: Reset caches and reload active SEC tab ---
+        if (secTickerSelect) {
+            secTickerSelect.addEventListener('change', function() {
+                secInsiderLoaded = false;
+                secFinLoaded = false;
+
+                // Reload data for the currently active SEC sub-tab
+                const activeInsider = document.getElementById('us-insider-panel').classList.contains('show');
+                const activeFin = document.getElementById('us-financial-panel').classList.contains('show');
+
+                if (activeInsider) fetchInsiderTrades(this.value);
+                else if (activeFin) fetchFinancialData(this.value);
+            });
+        }
+
+        // --- Institution Selector Change ---
+        const chipsInstitutionSelector = document.getElementById('chipsInstitutionSelector');
+        if (chipsInstitutionSelector) {
+            chipsInstitutionSelector.addEventListener('change', function() {
+                sec13fLoaded = false;
+                fetchSec13F(this.value);
+            });
+        }
+
+        // --- Master Stock Selection (Extended with Dropdowns) ---
+        let twMasterLoaded = false;
+        let usMasterLoaded = false;
+
+        const twMasterTab = document.getElementById('tw-master-tab');
+        const usMasterTab = document.getElementById('us-master-tab');
+        const twMasterSelect = document.getElementById('tw-master-select');
+        const usMasterSelect = document.getElementById('us-master-select');
+
+        const masterMeta = {
+            buffett: {
+                title: "大師選股 - 巴菲特價值投資法則",
+                desc: "篩選標準：ROE ≥ 15% | 營業毛利率 ≥ 30% | 負債比率 ≤ 50% | 淨利正成長",
+                headers: ["ROE", "營業毛利率", "負債比率", "淨利成長率"]
+            },
+            lynch: {
+                title: "大師選股 - 彼得·林區合理成長法則",
+                desc: "篩選標準：PEG ≤ 1.2 | PE < 25 | ROE ≥ 10% | 負債比率 ≤ 50%",
+                headers: ["ROE", "營業毛利率", "負債比率", "本益成長比 (PEG)"]
+            },
+            oneil: {
+                title: "大師選股 - 威廉·歐尼爾 CANSLIM 動能法則",
+                desc: "篩選標準：當季成長 ≥ 15% | 年度成長 ≥ 15% | 近 3 月漲幅排名前 30% | 接近新高 (≥ 0.85)",
+                headers: ["近 3 月漲幅", "當季淨利成長", "接近新高比率", "年度淨利成長"]
+            }
+        };
+
+        function updateMasterUI(market, master) {
+            const meta = masterMeta[master];
+            if (!meta) return;
+
+            const titleEl = document.getElementById(`${market}-master-title`);
+            const descEl = document.getElementById(`${market}-master-desc`);
+            if (titleEl) titleEl.innerText = `${meta.title} (${market === 'tw' ? '台股' : '美股'})`;
+            if (descEl) descEl.innerText = meta.desc;
+
+            for (let i = 1; i <= 4; i++) {
+                const th = document.getElementById(`th-${market}-metrics-${i}`);
+                if (th) th.innerText = meta.headers[i - 1];
+            }
+        }
+
+        if (twMasterTab) {
+            twMasterTab.addEventListener('shown.bs.tab', function() {
+                if (!twMasterLoaded) {
+                    const master = twMasterSelect ? twMasterSelect.value : 'buffett';
+                    fetchMasterSelection('tw', master);
+                    twMasterLoaded = true;
+                }
+            });
+        }
+
+        if (usMasterTab) {
+            usMasterTab.addEventListener('shown.bs.tab', function() {
+                if (!usMasterLoaded) {
+                    const master = usMasterSelect ? usMasterSelect.value : 'buffett';
+                    fetchMasterSelection('us', master);
+                    usMasterLoaded = true;
+                }
+            });
+        }
+
+        if (twMasterSelect) {
+            twMasterSelect.addEventListener('change', function() {
+                updateMasterUI('tw', this.value);
+                fetchMasterSelection('tw', this.value);
+            });
+        }
+
+        if (usMasterSelect) {
+            usMasterSelect.addEventListener('change', function() {
+                updateMasterUI('us', this.value);
+                fetchMasterSelection('us', this.value);
+            });
+        }
+
+        // --- Master Selection Industry Filter Event Listeners ---
+        const setupMasterIndustryFilter = (market) => {
+            const select = document.getElementById(`${market}-master-industry-select`);
+            if (!select) return;
+            select.addEventListener('change', function() {
+                const selectedVal = this.value;
+                const tbody = document.getElementById(`${market}-master-tbody`);
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const ind = row.getAttribute('data-industry');
+                    if (selectedVal === 'all' || ind === selectedVal) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        };
+        setupMasterIndustryFilter('tw');
+        setupMasterIndustryFilter('us');
+
+        async function fetchMasterSelection(market, master = 'buffett', force = false) {
+            const loader = document.getElementById(`${market}-master-loader`);
+            const wrap = document.getElementById(`${market}-master-table-wrap`);
+            const tbody = document.getElementById(`${market}-master-tbody`);
+            const indSelect = document.getElementById(`${market}-master-industry-select`);
+
+            if (loader) loader.style.display = '';
+            if (wrap) wrap.style.display = 'none';
+            if (tbody) tbody.innerHTML = '';
+            if (indSelect) indSelect.innerHTML = '<option value="all" selected>All (全部產業)</option>';
+
+            try {
+                const res = await fetch(`/chips/api/master-selection/?market=${market}&master=${master}&force=${force}`);
+                const json = await res.json();
+
+                if (loader) loader.style.display = 'none';
+
+                if (json.status === 'success' && json.data && json.data.length > 0) {
+                    if (wrap) wrap.style.display = '';
+                    
+                    // 動態渲染產業選單
+                    const industries = Array.from(new Set(json.data.map(item => item.industry).filter(Boolean)));
+                    if (indSelect) {
+                        industries.forEach(ind => {
+                            const opt = document.createElement('option');
+                            opt.value = ind;
+                            opt.textContent = ind;
+                            indSelect.appendChild(opt);
+                        });
+                    }
+
+                    json.data.forEach(item => {
+                        let roeClass = '', gmClass = '', debtClass = '', growthClass = '';
+                        let roeStr = '', gmStr = '', debtStr = '', growthStr = '';
+
+                        const closeStr = item.close_price > 0 ? (market === 'tw' ? `${item.close_price.toFixed(2)} 元` : `$${item.close_price.toFixed(2)}`) : '--';
+
+                        if (master === 'buffett') {
+                            roeClass = item.roe >= 0.15 ? 'text-success fw-bold' : (item.roe >= 0.10 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : (item.gross_margin >= 0.15 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : (item.debt_ratio <= 0.60 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            growthClass = item.net_income_growth > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                        } 
+                        else if (master === 'lynch') {
+                            roeClass = item.roe >= 0.10 ? 'text-success fw-bold' : (item.roe >= 0.05 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            gmClass = item.gross_margin >= 0.30 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            debtClass = item.debt_ratio <= 0.50 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            const peg = item.net_income_growth;
+                            growthClass = (peg <= 1.2 && peg > 0) ? 'text-success fw-bold' : (peg <= 1.5 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = peg.toFixed(2);
+                        } 
+                        else if (master === 'oneil') {
+                            roeClass = item.roe > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            gmClass = item.gross_margin >= 0.15 ? 'text-success fw-bold' : (item.gross_margin > 0 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+                            debtClass = item.debt_ratio >= 0.85 ? 'text-success fw-bold' : 'text-danger fw-bold';
+                            growthClass = item.net_income_growth >= 0.15 ? 'text-success fw-bold' : (item.net_income_growth > 0 ? 'text-warning fw-bold' : 'text-danger fw-bold');
+
+                            roeStr = (item.roe * 100).toFixed(2) + '%';
+                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
+                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                        }
+
+                        const row = `
+                            <tr data-industry="${item.industry}">
+                                <td class="ps-4"><span class="badge bg-secondary rounded-pill px-2 py-1">${item.rank}</span></td>
+                                <td><span class="fw-bold text-primary">${item.symbol}</span></td>
+                                <td><span class="fw-bold">${item.name}</span></td>
+                                <td><span class="text-muted small">${item.industry}</span></td>
+                                <td>${closeStr}</td>
+                                <td class="${roeClass}">${roeStr}</td>
+                                <td class="${gmClass}">${gmStr}</td>
+                                <td class="${debtClass}">${debtStr}</td>
+                                <td class="${growthClass}">${growthStr}</td>
+                                <td class="pe-4 text-end"><span class="badge bg-success px-3 py-2 fs-6 shadow-sm">${item.score.toFixed(1)}</span></td>
+                            </tr>
+                        `;
+                        if (tbody) tbody.insertAdjacentHTML('beforeend', row);
+                    });
+                } else {
+                    if (tbody) {
+                        tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-muted">目前暫無大師選股數據，請點選強制重新計算。</td></tr>`;
+                    }
+                    if (wrap) wrap.style.display = '';
+                }
+            } catch (e) {
+                console.error(`Fetch ${market} Master Selection error:`, e);
+                if (loader) loader.style.display = 'none';
+                if (tbody) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">載入失敗: ${e.message}</td></tr>`;
+                }
+                if (wrap) wrap.style.display = '';
+            }
+        }
+
+        const btnRefreshTwMaster = document.getElementById('btn-refresh-tw-master');
+        const btnRefreshUsMaster = document.getElementById('btn-refresh-us-master');
+
+        if (btnRefreshTwMaster) {
+            btnRefreshTwMaster.addEventListener('click', function() {
+                const master = twMasterSelect ? twMasterSelect.value : 'buffett';
+                fetchMasterSelection('tw', master, true);
+            });
+        }
+        if (btnRefreshUsMaster) {
+            btnRefreshUsMaster.addEventListener('click', function() {
+                const master = usMasterSelect ? usMasterSelect.value : 'buffett';
+                fetchMasterSelection('us', master, true);
+            });
+        }
+
+    });
+</script>
+{% endblock %}
