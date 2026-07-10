@@ -18,7 +18,7 @@ logger = logging.getLogger("scheduler.llm")
 DAILY_LIMIT = 50
 
 class TaskParseResult(BaseModel):
-    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (更新全台灣股價)、'us_stock_price_only' (更新全美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)、'tw_listed_list_update' (台灣上市公司清單更新)、'tw_otc_list_update' (台灣上櫃公司清單更新)、'us_stock_list_update' (美國上市公司清單更新)、'sync_notebooklm' (同步 NotebookLM 知識庫)")
+    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (更新全台灣股價)、'us_stock_price_only' (更新全美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)、'tw_listed_list_update' (台灣上市公司清單更新)、'tw_otc_list_update' (台灣上櫃公司清單更新)、'us_stock_list_update' (美國上市公司清單更新)、'sync_notebooklm' (同步 NotebookLM 知識庫)、'update_macro_data_us' (更新美國總體經濟數據)、'update_macro_data_tw' (更新台灣總體經濟數據)")
     name: str = Field(description="此任務的中文名稱，描述要執行的操作，例如：'手動更新台股 2330 股價'")
     interval_days: Optional[int] = Field(None, description="週期天數（若是單次執行任務，請填 null 或 0；如果是定期任務如每 3 天更新一次，填 3）")
     remarks: Optional[str] = Field(None, description="解析出的股票代碼清單，多個以半形逗號分隔，例如 '2330' 或 'AAPL,NVDA'。若無特定股票代碼則填 null")
@@ -107,6 +107,8 @@ def parse_task_with_gemini(prompt: str, api_key: str) -> dict:
       9. 'tw_otc_list_update' (台灣上櫃公司清單更新)
       10. 'us_stock_list_update' (美國上市公司清單更新)
       11. 'sync_notebooklm' (同步 NotebookLM 知識庫，可確認有無新筆記內容並下載建立索引，備註中可指定篩選特定的筆記本標題或 ID)
+      12. 'update_macro_data_us' (更新美國總體經濟數據)
+      13. 'update_macro_data_tw' (更新台灣總體經濟數據)
     """
     
     response = client.models.generate_content(
@@ -139,7 +141,7 @@ def parse_task_with_ollama(prompt: str) -> dict:
 
     你必須回傳一個合法的 JSON 物件，格式如下，且不得包含額外的 Markdown 標籤或說明文字：
     {{
-      "task_type": "tw_stock_cost | us_stock_cost | tw_stock_price_only | us_stock_price_only | twse_investor | tpex_investor | us_investor | tw_listed_list_update | tw_otc_list_update | us_stock_list_update | sync_notebooklm",
+      "task_type": "tw_stock_cost | us_stock_cost | tw_stock_price_only | us_stock_price_only | twse_investor | tpex_investor | us_investor | tw_listed_list_update | tw_otc_list_update | us_stock_list_update | sync_notebooklm | update_macro_data_us | update_macro_data_tw",
       "name": "任務描述名稱",
       "interval_days": 週期天數整數或 null,
       "remarks": "代號列表、篩選關鍵字或 null",

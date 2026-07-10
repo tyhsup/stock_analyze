@@ -478,5 +478,7 @@ EXECUTORS = {
     "tw_otc_list_update": execute_tw_otc_list_update,
     "us_stock_list_update": execute_us_stock_list_update,
     "sync_notebooklm": execute_sync_notebooklm,
-    "update_macro_data": execute_update_macro_data
+    "update_macro_data": execute_update_macro_data,
+    "update_macro_data_us": lambda remarks=None: execute_update_macro_data(remarks="us"),
+    "update_macro_data_tw": lambda remarks=None: execute_update_macro_data(remarks="tw")
 }

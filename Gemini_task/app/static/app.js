@@ -289,7 +289,9 @@ document.addEventListener("DOMContentLoaded", () => {
             "us_investor": "美股法人持股",
             "tw_listed_list_update": "台灣上市公司清單更新",
             "tw_otc_list_update": "台灣上櫃公司清單更新",
-            "us_stock_list_update": "美國上市公司清單更新"
+            "us_stock_list_update": "美國上市公司清單更新",
+            "update_macro_data_us": "更新美國總體經濟數據",
+            "update_macro_data_tw": "更新台灣總體經濟數據"
         };
         return typesMap[type] || type;
     }
