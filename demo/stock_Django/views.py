@@ -519,3 +519,41 @@ def macrotrends_ratios_api(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+def macro_dashboard(request):
+    """渲染總體經濟 Dashboard 頁面"""
+    from django.shortcuts import render
+    return render(request, 'macro_dashboard.html')
+
+
+def macro_data_api(request):
+    """獲取台灣與美國總體經濟數據 API (已整合 JSON 序列化保護)"""
+    from market_data.models import MacroUS, MacroTW
+    
+    # 1. 取得美國數據
+    us_qs = MacroUS.objects.all().order_by('date')
+    us_data = []
+    for item in us_qs:
+        us_data.append({
+            'date': item.date.strftime('%Y-%m-%d') if item.date else None,
+            'metric': item.metric,
+            'value': float(item.value) if item.value is not None else None
+        })
+        
+    # 2. 取得台灣數據
+    tw_qs = MacroTW.objects.all().order_by('date')
+    tw_data = []
+    for item in tw_qs:
+        tw_data.append({
+            'date': item.date.strftime('%Y-%m-%d') if item.date else None,
+            'metric': item.metric,
+            'value': float(item.value) if item.value is not None else None
+        })
+        
+    return JsonResponse({
+        'status': 'success',
+        'us': us_data,
+        'tw': tw_data
+    })
+
+
+

@@ -1,0 +1,309 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>總體經濟多維分析儀表板</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Fonts Outfit & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 ApexCharts -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
+            color: #f3f4f6;
+        }
+        .glass-card {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glow-title {
+            text-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+    </style>
+</head>
+<body class="p-6 min-h-screen">
+    <!-- Navbar / Header -->
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-8 pb-4 border-b border-gray-800">
+        <div class="mb-4 md:mb-0">
+            <h1 class="text-3xl font-bold font-outfit text-blue-400 glow-title flex items-center gap-2">
+                📊 全維度總體經濟分析儀表板
+            </h1>
+            <p class="text-gray-400 text-sm mt-1">
+                依據「全維度投資決策架構：專業資產管理實務手冊」建置之宏觀資金流動性與政策監控平台
+            </p>
+        </div>
+        <div class="flex gap-4">
+            <button onclick="location.href='/home/'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition font-medium flex items-center gap-2">
+                🏠 返回首頁
+            </button>
+            <button onclick="refreshData()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition font-medium flex items-center gap-2 shadow-lg shadow-blue-500/20">
+                🔄 更新總經數據
+            </button>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 gap-8">
+        
+        <!-- Indicator Overview Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <span class="text-gray-400 text-sm font-medium">台灣 M1B 年增率</span>
+                <span id="tw-m1b-val" class="text-3xl font-bold mt-2 text-white">--</span>
+                <span id="tw-m1b-date" class="text-xs text-gray-500 mt-2">--</span>
+            </div>
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <span class="text-gray-400 text-sm font-medium">台灣 M2 年增率</span>
+                <span id="tw-m2-val" class="text-3xl font-bold mt-2 text-white">--</span>
+                <span id="tw-m2-date" class="text-xs text-gray-500 mt-2">--</span>
+            </div>
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <span class="text-gray-400 text-sm font-medium">美國最新 CPI YoY</span>
+                <span id="us-cpi-val" class="text-3xl font-bold mt-2 text-white">--</span>
+                <span id="us-cpi-date" class="text-xs text-gray-500 mt-2">--</span>
+            </div>
+            <div class="glass-card p-6 flex flex-col justify-between">
+                <span class="text-gray-400 text-sm font-medium">美國聯邦基金利率</span>
+                <span id="us-fed-val" class="text-3xl font-bold mt-2 text-white">--</span>
+                <span id="us-fed-date" class="text-xs text-gray-500 mt-2">--</span>
+            </div>
+        </div>
+
+        <!-- 台灣宏觀流動性 (M1B & M2) -->
+        <div class="glass-card p-6">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-xl font-bold text-white">台灣貨幣供給與流動性 (M1B & M2)</h2>
+                    <p class="text-gray-400 text-xs mt-1">黃金交叉 (M1B > M2) 通常利多股市；死亡交叉 (M1B < M2) 預示資金緊縮</p>
+                </div>
+                <div class="px-3 py-1 text-xs font-semibold rounded-full" id="tw-gold-status">
+                    檢索中...
+                </div>
+            </div>
+            <div id="chart-tw-liquidity" class="h-96 w-full"></div>
+        </div>
+
+        <!-- 美國通膨與政策利率 (CPI vs Fed Funds Rate) -->
+        <div class="glass-card p-6">
+            <h2 class="text-xl font-bold text-white mb-2">美國物價年增率與聯準會基準利率</h2>
+            <p class="text-gray-400 text-xs mb-6">聯準會利率決策與通貨膨脹（CPI YoY）的歷史對照關係</p>
+            <div id="chart-us-inflation" class="h-96 w-full"></div>
+        </div>
+
+        <!-- 美國就業市場 (Unemployment Rate vs NFP Change) -->
+        <div class="glass-card p-6">
+            <h2 class="text-xl font-bold text-white mb-2">美國就業狀況 (失業率與新增非農人數)</h2>
+            <p class="text-gray-400 text-xs mb-6">失業率與新增非農就業人口的變動趨勢</p>
+            <div id="chart-us-employment" class="h-96 w-full"></div>
+        </div>
+    </div>
+
+    <!-- 頁尾宣告 -->
+    <div class="text-center text-gray-600 text-xs mt-12 py-6 border-t border-gray-900">
+        © 2026 專業資產管理系統平台 · 數據來源：聖路易斯聯準銀行 (FRED) & 中華民國中央銀行
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchMacroData();
+        });
+
+        function fetchMacroData() {
+            fetch('/api/macro/data')
+                .then(response => response.json())
+                .then(res => {
+                    if (res.status === 'success') {
+                        renderDashboard(res);
+                    }
+                })
+                .catch(err => console.error("Error fetching macro data:", err));
+        }
+
+        function refreshData() {
+            const btn = document.querySelector('button[onclick="refreshData()"]');
+            btn.disabled = true;
+            btn.innerHTML = '🔄 更新中...';
+            
+            fetch('/scheduler/api/jobs')
+                .then(r => r.json())
+                .then(jobs => {
+                    const macroJob = jobs.find(j => j.task_type === 'update_macro_data');
+                    if (macroJob) {
+                        return fetch(`/scheduler/api/jobs/execute/${macroJob.id}`, { method: 'POST' });
+                    } else {
+                        alert("排程器中尚未新增 'update_macro_data' 任務，請先到排程 Dashboard 建立此任務！");
+                        btn.disabled = false;
+                        btn.innerHTML = '🔄 更新總經數據';
+                    }
+                })
+                .then(res => {
+                    if (res) {
+                        alert("已成功觸發排程器總經更新任務，請等候 5-10 秒數據寫入後，重新整理此頁面！");
+                        setTimeout(() => {
+                            fetchMacroData();
+                            btn.disabled = false;
+                            btn.innerHTML = '🔄 更新總經數據';
+                        }, 5000);
+                    }
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔄 更新總經數據';
+                });
+        }
+
+        function renderDashboard(res) {
+            const usData = res.us;
+            const twData = res.tw;
+
+            // 1. 整理台灣 M1B, M2, CPI
+            const twM1B = twData.filter(d => d.metric === 'M1B_YOY');
+            const twM2 = twData.filter(d => d.metric === 'M2_YOY');
+            const twCPI = twData.filter(d => d.metric === 'CPI_YOY');
+
+            // 2. 整理美國數據
+            const usCPI = usData.filter(d => d.metric === 'US_CPI_YOY');
+            const usFed = usData.filter(d => d.metric === 'FEDFUNDS');
+            const usUnrate = usData.filter(d => d.metric === 'UNRATE');
+            const usNfp = usData.filter(d => d.metric === 'NFP_CHANGE');
+
+            // 渲染 Info Cards (顯示最新一筆)
+            if (twM1B.length > 0) {
+                const latest = twM1B[twM1B.length - 1];
+                document.getElementById('tw-m1b-val').innerText = latest.value.toFixed(2) + '%';
+                document.getElementById('tw-m1b-date').innerText = '最後更新日期: ' + latest.date;
+            }
+            if (twM2.length > 0) {
+                const latest = twM2[twM2.length - 1];
+                document.getElementById('tw-m2-val').innerText = latest.value.toFixed(2) + '%';
+                document.getElementById('tw-m2-date').innerText = '最後更新日期: ' + latest.date;
+            }
+            if (usCPI.length > 0) {
+                const latest = usCPI[usCPI.length - 1];
+                document.getElementById('us-cpi-val').innerText = latest.value.toFixed(2) + '%';
+                document.getElementById('us-cpi-date').innerText = '最後更新日期: ' + latest.date;
+            }
+            if (usFed.length > 0) {
+                const latest = usFed[usFed.length - 1];
+                document.getElementById('us-fed-val').innerText = latest.value.toFixed(2) + '%';
+                document.getElementById('us-fed-date').innerText = '最後更新日期: ' + latest.date;
+            }
+
+            // 判斷台灣黃金交叉或死亡交叉狀態
+            if (twM1B.length > 0 && twM2.length > 0) {
+                const latestM1B = twM1B[twM1B.length - 1].value;
+                const latestM2 = twM2[twM2.length - 1].value;
+                const el = document.getElementById('tw-gold-status');
+                if (latestM1B > latestM2) {
+                    el.innerText = '📈 當前狀態：資金黃金交叉 (M1B > M2)';
+                    el.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                } else {
+                    el.innerText = '📉 當前狀態：資金死亡交叉 (M1B < M2)';
+                    el.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
+                }
+            }
+
+            // 限制圖表時間跨度 (近 15 年，大約 180 個月)
+            const limit = 180;
+            const sliceData = (data) => data.slice(-limit);
+
+            // A. 台灣流動性圖表
+            const twM1B_series = sliceData(twM1B).map(d => ({ x: d.date, y: d.value }));
+            const twM2_series = sliceData(twM2).map(d => ({ x: d.date, y: d.value }));
+            const twCPI_series = sliceData(twCPI).map(d => ({ x: d.date, y: d.value }));
+
+            const twOptions = {
+                series: [
+                    { name: 'M1B 年增率', data: twM1B_series },
+                    { name: 'M2 年增率', data: twM2_series },
+                    { name: '消費者物價指數 (CPI) YoY', data: twCPI_series }
+                ],
+                chart: {
+                    type: 'line',
+                    height: 380,
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: [3, 3, 2], curve: 'smooth', dashArray: [0, 0, 4] },
+                colors: ['#3b82f6', '#10b981', '#f59e0b'],
+                grid: { borderColor: '#1f2937' },
+                xaxis: { type: 'datetime' },
+                yaxis: { title: { text: '%' } },
+                theme: { mode: 'dark' },
+                legend: { position: 'top' }
+            };
+            new ApexCharts(document.querySelector("#chart-tw-liquidity"), twOptions).render();
+
+            // B. 美國通膨與基準利率圖表
+            const usFed_series = sliceData(usFed).map(d => ({ x: d.date, y: d.value }));
+            const usCPI_series = sliceData(usCPI).map(d => ({ x: d.date, y: d.value }));
+
+            const usInfOptions = {
+                series: [
+                    { name: '聯邦基金有效利率 (Fed Funds Rate)', data: usFed_series },
+                    { name: '美國 CPI 年增率 (YoY)', data: usCPI_series }
+                ],
+                chart: {
+                    type: 'line',
+                    height: 380,
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: 3, curve: 'smooth' },
+                colors: ['#ec4899', '#f59e0b'],
+                grid: { borderColor: '#1f2937' },
+                xaxis: { type: 'datetime' },
+                yaxis: { title: { text: '%' } },
+                theme: { mode: 'dark' },
+                legend: { position: 'top' }
+            };
+            new ApexCharts(document.querySelector("#chart-us-inflation"), usInfOptions).render();
+
+            // C. 美國就業市場 (雙 Y 軸：失業率 & 新增非農)
+            const usUnrate_series = sliceData(usUnrate).map(d => ({ x: d.date, y: d.value }));
+            const usNfp_series = sliceData(usNfp).map(d => ({ x: d.date, y: d.value }));
+
+            const usEmpOptions = {
+                series: [
+                    { name: '新增非農就業人數 (NFP)', type: 'column', data: usNfp_series },
+                    { name: '失業率 (Unemployment Rate)', type: 'line', data: usUnrate_series }
+                ],
+                chart: {
+                    height: 380,
+                    type: 'line',
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: [0, 3], curve: 'smooth' },
+                colors: ['#3b82f6', '#ef4444'],
+                grid: { borderColor: '#1f2937' },
+                xaxis: { type: 'datetime' },
+                yaxis: [
+                    {
+                        title: { text: '新增非農就業 (人)', style: { color: '#3b82f6' } },
+                        labels: { style: { colors: '#3b82f6' } }
+                    },
+                    {
+                        opposite: true,
+                        title: { text: '失業率 (%)', style: { color: '#ef4444' } },
+                        labels: { style: { colors: '#ef4444' } }
+                    }
+                ],
+                theme: { mode: 'dark' },
+                legend: { position: 'top' }
+            };
+            new ApexCharts(document.querySelector("#chart-us-employment"), usEmpOptions).render();
+        }
+    </script>
+</body>
+</html>

@@ -65,3 +65,29 @@ class DailyPriceUS(models.Model):
         verbose_name = 'US Daily Price'
         verbose_name_plural = 'US Daily Prices'
         unique_together = (('number', 'date'),)
+
+class MacroUS(models.Model):
+    date = models.DateField(db_index=True)
+    metric = models.CharField(max_length=50) # FEDFUNDS, CPIAUCSL, UNRATE, PAYEMS
+    value = models.DecimalField(max_digits=18, decimal_places=4)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        managed = True
+        db_table = 'macro_data_us'
+        unique_together = ('date', 'metric')
+        verbose_name = 'US Macro Data'
+        verbose_name_plural = 'US Macro Data'
+
+class MacroTW(models.Model):
+    date = models.DateField(db_index=True)
+    metric = models.CharField(max_length=50) # M1B_YOY, M2_YOY, CPI_YOY
+    value = models.DecimalField(max_digits=18, decimal_places=4)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        managed = True
+        db_table = 'macro_data_tw'
+        unique_together = ('date', 'metric')
+        verbose_name = 'TW Macro Data'
+        verbose_name_plural = 'TW Macro Data'

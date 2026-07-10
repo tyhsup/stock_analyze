@@ -22,7 +22,8 @@ from django.urls import path, include
 from stock_Django.views import (
     home, News_display, refresh_status_api, news_refresh_api, 
     smart_advisor_analysis, gemini_advisor_analysis,
-    macrotrends_financials_api, macrotrends_ratios_api
+    macrotrends_financials_api, macrotrends_ratios_api,
+    macro_dashboard, macro_data_api
 )
 from stock_Django.scheduler_views import (
     scheduler_home, jobs_list_or_create, trigger_job_immediately,
@@ -53,5 +54,7 @@ urlpatterns = [
     path('scheduler/api/llm/usage', get_llm_usage, name='scheduler_llm_usage'),
     path('sec-edgar/', include('sec_edgar.urls')),
     path('wiki/', include('llm_wiki.urls')),
+    path('macro/', macro_dashboard, name='macro_dashboard'),
+    path('api/macro/data', macro_data_api, name='macro_data_api'),
     path('agents/', include('agents.urls')),
 ]

@@ -450,6 +450,21 @@ def execute_sync_notebooklm(remarks: str = None):
         
     return "無須同步。"
 
+def execute_update_macro_data(remarks: str = None):
+    """
+    宏觀總體經濟數據 (FRED & 台灣央行) 更新任務執行器
+    remarks 可以為 "us", "tw" 或空 (代表兩者都更新)。
+    """
+    def _task():
+        country = (remarks or "").strip().lower()
+        from django.core.management import call_command
+        logger.info(f"開始更新總體經濟數據，國家篩選: {country or '全部'}")
+        if country in ["us", "tw"]:
+            call_command('update_macro_data', country=country)
+        else:
+            call_command('update_macro_data')
+    _healing_scheduler.execute_with_healing(_task)
+
 # 任務執行器對照表
 EXECUTORS = {
     "tw_stock_cost": execute_tw_stock_cost,
@@ -462,5 +477,6 @@ EXECUTORS = {
     "tw_listed_list_update": execute_tw_listed_list_update,
     "tw_otc_list_update": execute_tw_otc_list_update,
     "us_stock_list_update": execute_us_stock_list_update,
-    "sync_notebooklm": execute_sync_notebooklm
+    "sync_notebooklm": execute_sync_notebooklm,
+    "update_macro_data": execute_update_macro_data
 }
