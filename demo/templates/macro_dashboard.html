@@ -424,7 +424,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -468,7 +473,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -511,7 +521,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -555,7 +570,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -601,12 +621,22 @@
                 yaxis: [
                     {
                         title: { text: '股價指數 (點)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { style: { fontSize: '14px', colors: '#3b82f6' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#3b82f6' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? Math.round(val).toLocaleString() : '';
+                            }
+                        }
                     },
                     {
                         opposite: true,
                         title: { text: '外匯存底 (十億美元)', style: { fontSize: '14px', color: '#10b981' } },
-                        labels: { style: { fontSize: '14px', colors: '#10b981' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#10b981' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) + ' B' : '';
+                            }
+                        }
                     }
                 ],
                 theme: { mode: 'dark' },
@@ -652,12 +682,22 @@
                 yaxis: [
                     {
                         title: { text: '政策利率 (%)', style: { fontSize: '14px', color: '#ec4899' } },
-                        labels: { style: { fontSize: '14px', colors: '#ec4899' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#ec4899' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                            }
+                        }
                     },
                     {
                         opposite: true,
                         title: { text: '10Y-2Y 美債利差 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { style: { fontSize: '14px', colors: '#3b82f6' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#3b82f6' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                            }
+                        }
                     }
                 ],
                 theme: { mode: 'dark' },
@@ -704,12 +744,22 @@
                 yaxis: [
                     {
                         title: { text: '新增非農就業 (人)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { style: { fontSize: '14px', colors: '#3b82f6' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#3b82f6' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? Math.round(val).toLocaleString() : '';
+                            }
+                        }
                     },
                     {
                         opposite: true,
                         title: { text: '失業率 (%)', style: { fontSize: '14px', color: '#ef4444' } },
-                        labels: { style: { fontSize: '14px', colors: '#ef4444' } }
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#ef4444' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : '';
+                            }
+                        }
                     }
                 ],
                 theme: { mode: 'dark' },

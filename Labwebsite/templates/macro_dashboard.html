@@ -424,7 +424,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -468,7 +473,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -511,7 +521,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
@@ -555,7 +570,12 @@
                 },
                 yaxis: { 
                     title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { style: { fontSize: '14px' } }
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
                 },
                 theme: { mode: 'dark' },
                 legend: { position: 'top', fontSize: '14px' }
