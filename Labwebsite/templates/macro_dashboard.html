@@ -407,16 +407,18 @@
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -449,16 +451,18 @@
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -490,16 +494,18 @@
                 colors: ['#f59e0b'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -532,16 +538,18 @@
                 colors: ['#f59e0b', '#ef4444'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -575,16 +583,18 @@
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 45, right: 55 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -624,16 +634,18 @@
                 colors: ['#ec4899', '#3b82f6'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
@@ -674,16 +686,18 @@
                 colors: ['#3b82f6', '#ef4444'],
                 grid: { 
                     borderColor: '#1f2937',
-                    padding: { left: 15, right: 20 }
+                    padding: { left: 55, right: 45 }
                 },
                 xaxis: { 
                     type: 'datetime',
                     labels: { 
                         style: { fontSize: '14px' },
-                        datetimeFormatter: {
-                            year: 'yyyy',
-                            month: 'yyyy-MM',
-                            day: 'MM/dd'
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
                         }
                     }
                 },
