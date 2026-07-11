@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
@@ -117,7 +117,7 @@
         </div>
 
         <!-- 對稱分組 1: 資金供給與流動性 (M1 & M2) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
             <div class="glass-card p-6 tw-section country-section">
                 <div class="flex justify-between items-center mb-6">
                     <div>
@@ -128,43 +128,43 @@
                         檢索中...
                     </div>
                 </div>
-                <div id="chart-tw-liquidity" class="h-96 w-full"></div>
+                <div id="chart-tw-liquidity" class="h-96 w-full macro-chart"></div>
             </div>
 
             <div class="glass-card p-6 us-section country-section">
                 <h2 class="text-2xl font-bold text-white mb-2">美國貨幣供給與流動性 (M1 & M2)</h2>
                 <p class="text-gray-400 text-xs mb-6">美國狹義貨幣 (M1) 與廣義貨幣 (M2) 供給年增率走勢，觀察聯準會印鈔流動性環境</p>
-                <div id="chart-us-liquidity" class="h-96 w-full"></div>
+                <div id="chart-us-liquidity" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
 
         <!-- 對稱分組 2: 通貨膨脹與物價監控 (CPI YoY) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
             <div class="glass-card p-6 tw-section country-section">
                 <h2 class="text-2xl font-bold text-white mb-2">台灣消費者物價指數 (CPI) 年增率</h2>
                 <p class="text-gray-400 text-xs mb-6">台灣 CPI 年增率 (YoY) 變動趨勢，監控國內實質購買力與通膨風險</p>
-                <div id="chart-tw-inflation" class="h-96 w-full"></div>
+                <div id="chart-tw-inflation" class="h-96 w-full macro-chart"></div>
             </div>
 
             <div class="glass-card p-6 us-section country-section">
                 <h2 class="text-2xl font-bold text-white mb-2">美國物價年增率監控 (CPI vs 核心 CPI)</h2>
                 <p class="text-gray-400 text-xs mb-6">美國整體 CPI 年增率與排除食品及能源的核心 CPI 年增率對照走勢</p>
-                <div id="chart-us-inflation" class="h-96 w-full"></div>
+                <div id="chart-us-inflation" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
 
         <!-- 對稱分組 3: 金融政策與環境風險 (Policy & Risk) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
             <div class="glass-card p-6 tw-section country-section">
                 <h2 class="text-2xl font-bold text-white mb-2">台灣金融環境與後盾 (股價指數 vs 外匯存底)</h2>
                 <p class="text-gray-400 text-xs mb-6">台灣加權股價指數與央行防禦性外匯存底 (十億美元) 走勢對照</p>
-                <div id="chart-tw-policy" class="h-96 w-full"></div>
+                <div id="chart-tw-policy" class="h-96 w-full macro-chart"></div>
             </div>
 
             <div class="glass-card p-6 us-section country-section">
                 <h2 class="text-2xl font-bold text-white mb-2">美國政策利率與衰退風險利差</h2>
                 <p class="text-gray-400 text-xs mb-6">美國聯邦基金有效利率與 10Y-2Y 美債殖利率利差 (利差倒掛代表衰退訊號)</p>
-                <div id="chart-us-policy" class="h-96 w-full"></div>
+                <div id="chart-us-policy" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
 
@@ -172,7 +172,7 @@
         <div class="glass-card p-6 us-section country-section">
             <h2 class="text-2xl font-bold text-white mb-2">美國就業狀況 (失業率與新增非農人數)</h2>
             <p class="text-gray-400 text-xs mb-6">失業率與新增非農就業人口的變動趨勢，聯準會雙重使命之一的就業市場強韌度指標</p>
-            <div id="chart-us-employment" class="h-96 w-full"></div>
+            <div id="chart-us-employment" class="h-96 w-full macro-chart"></div>
         </div>
 
     </div>
@@ -200,17 +200,38 @@
 
             const twElements = document.querySelectorAll('.tw-section');
             const usElements = document.querySelectorAll('.us-section');
+            const symmetricGrids = document.querySelectorAll('.symmetric-grid');
+            const charts = document.querySelectorAll('.macro-chart');
 
             if (country === 'all') {
                 twElements.forEach(el => el.style.display = '');
                 usElements.forEach(el => el.style.display = '');
-            } else if (country === 'tw') {
-                twElements.forEach(el => el.style.display = '');
-                usElements.forEach(el => el.style.display = 'none');
-            } else if (country === 'us') {
-                twElements.forEach(el => el.style.display = 'none');
-                usElements.forEach(el => el.style.display = '');
+                symmetricGrids.forEach(el => {
+                    el.classList.add('md:grid-cols-2');
+                });
+                charts.forEach(el => {
+                    el.style.height = '384px'; // 相當於 h-96
+                });
+            } else {
+                if (country === 'tw') {
+                    twElements.forEach(el => el.style.display = '');
+                    usElements.forEach(el => el.style.display = 'none');
+                } else if (country === 'us') {
+                    twElements.forEach(el => el.style.display = 'none');
+                    usElements.forEach(el => el.style.display = '');
+                }
+                symmetricGrids.forEach(el => {
+                    el.classList.remove('md:grid-cols-2');
+                });
+                charts.forEach(el => {
+                    el.style.height = '500px'; // 放大高度
+                });
             }
+
+            // 觸發 resize 讓 ApexCharts 自適應高度
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 100);
         }
 
         function fetchMacroData() {
@@ -351,7 +372,7 @@
                 ],
                 chart: {
                     type: 'line',
-                    height: 380,
+                    height: '100%',
                     foreColor: '#9ca3af',
                     background: 'transparent',
                     toolbar: { show: false }
@@ -382,7 +403,7 @@
                 ],
                 chart: {
                     type: 'line',
-                    height: 380,
+                    height: '100%',
                     foreColor: '#9ca3af',
                     background: 'transparent',
                     toolbar: { show: false }
@@ -412,7 +433,7 @@
                 ],
                 chart: {
                     type: 'line',
-                    height: 380,
+                    height: '100%',
                     foreColor: '#9ca3af',
                     background: 'transparent',
                     toolbar: { show: false }
@@ -443,7 +464,7 @@
                 ],
                 chart: {
                     type: 'line',
-                    height: 380,
+                    height: '100%',
                     foreColor: '#9ca3af',
                     background: 'transparent',
                     toolbar: { show: false }
@@ -474,7 +495,7 @@
                     { name: '台灣外匯存底 (十億美元)', type: 'line', data: twForex_series }
                 ],
                 chart: {
-                    height: 380,
+                    height: '100%',
                     type: 'line',
                     foreColor: '#9ca3af',
                     background: 'transparent',
@@ -512,7 +533,7 @@
                     { name: '美國 10Y-2Y 美債利差', type: 'line', data: usYield_series }
                 ],
                 chart: {
-                    height: 380,
+                    height: '100%',
                     type: 'line',
                     foreColor: '#9ca3af',
                     background: 'transparent',
@@ -551,7 +572,7 @@
                     { name: '失業率 (Unemployment Rate)', type: 'line', data: usUnrate_series }
                 ],
                 chart: {
-                    height: 380,
+                    height: '100%',
                     type: 'line',
                     foreColor: '#9ca3af',
                     background: 'transparent',
