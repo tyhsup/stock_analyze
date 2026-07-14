@@ -168,6 +168,36 @@
             </div>
         </div>
 
+        <!-- 對稱分組 4: 實質產出與消費儲蓄 (GDP & Saving) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
+            <div class="glass-card p-6 tw-section country-section">
+                <h2 class="text-2xl font-bold text-white mb-2">台灣主要金融信用擴張 (準備貨幣 vs 放款年增率)</h2>
+                <p class="text-gray-400 text-xs mb-6">央行準備貨幣年增率與主要金融機構放款投資年增率走勢，觀察信用擴張與資金動能</p>
+                <div id="chart-tw-credit" class="h-96 w-full macro-chart"></div>
+            </div>
+
+            <div class="glass-card p-6 us-section country-section">
+                <h2 class="text-2xl font-bold text-white mb-2">美國實質經濟增長與消費儲蓄 (GDP & Saving)</h2>
+                <p class="text-gray-400 text-xs mb-6">美國實質 GDP 年增率與個人儲蓄率走勢，觀察景氣擴張與消費儲蓄後盾之平衡</p>
+                <div id="chart-us-gdp-saving" class="h-96 w-full macro-chart"></div>
+            </div>
+        </div>
+
+        <!-- 對稱分組 5: 政策利率與市場資金成本 (Interest Rates) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
+            <div class="glass-card p-6 tw-section country-section">
+                <h2 class="text-2xl font-bold text-white mb-2">台灣基準利率與市場資金調借 (重貼現率 vs 隔夜拆款)</h2>
+                <p class="text-gray-400 text-xs mb-6">央行宣示性重貼現率與銀行間隔夜拆款利率對照走勢，監控貨幣政策緊縮程度</p>
+                <div id="chart-tw-interest" class="h-96 w-full macro-chart"></div>
+            </div>
+
+            <div class="glass-card p-6 us-section country-section">
+                <h2 class="text-2xl font-bold text-white mb-2">全球要素成本與消費能力 (原油價格 vs 個人可支配)</h2>
+                <p class="text-gray-400 text-xs mb-6">國際原油價格與美國 PCE 通膨年增率、個人收入年增率之對比，觀察要素與所得關係</p>
+                <div id="chart-us-cost-income" class="h-96 w-full macro-chart"></div>
+            </div>
+        </div>
+
         <!-- 非對稱專有分組: 就業市場監控 (美國專有，台灣隱藏) -->
         <div class="glass-card p-6 us-section country-section">
             <h2 class="text-2xl font-bold text-white mb-2">美國就業狀況 (失業率與新增非農人數)</h2>
@@ -316,6 +346,11 @@
             const twCPI = twData.filter(d => d.metric === 'CPI_YOY');
             const twStock = twData.filter(d => d.metric === 'TW_STOCK_INDEX');
             const twForex = twData.filter(d => d.metric === 'TW_FOREX_RESERVE');
+            const twReserve = twData.filter(d => d.metric === 'TW_RESERVE_MONEY_YOY');
+            const twExchange = twData.filter(d => d.metric === 'TW_EXCHANGE_RATE');
+            const twLoan = twData.filter(d => d.metric === 'TW_LOAN_YOY');
+            const twDiscount = twData.filter(d => d.metric === 'TW_DISCOUNT_RATE');
+            const twOvernight = twData.filter(d => d.metric === 'TW_OVERNIGHT_RATE');
 
             // 2. 整理美國數據
             const usM1 = usData.filter(d => d.metric === 'US_M1_YOY');
@@ -326,6 +361,11 @@
             const usYield = usData.filter(d => d.metric === 'US_YIELD_SPREAD');
             const usUnrate = usData.filter(d => d.metric === 'UNRATE');
             const usNfp = usData.filter(d => d.metric === 'NFP_CHANGE');
+            const usPce = usData.filter(d => d.metric === 'US_PCE_YOY');
+            const usGdp = usData.filter(d => d.metric === 'US_GDP_YOY');
+            const usSaving = usData.filter(d => d.metric === 'US_SAVING_RATE');
+            const usIncome = usData.filter(d => d.metric === 'US_PERSONAL_INCOME');
+            const globalOil = usData.filter(d => d.metric === 'GLOBAL_OIL_PRICE');
 
             // 渲染 Info Cards (顯示最新一筆)
             // 台灣
@@ -769,6 +809,246 @@
             };
             window.macroCharts['chart-us-employment'] = new ApexCharts(document.querySelector("#chart-us-employment"), usEmpOptions);
             window.macroCharts['chart-us-employment'].render();
+
+
+            // 3. 台灣信用擴張圖表 (chart-tw-credit)
+            const twReserve_series = sliceData(twReserve).map(d => ({ x: d.date, y: d.value }));
+            const twLoan_series = sliceData(twLoan).map(d => ({ x: d.date, y: d.value }));
+            const twCreditOptions = {
+                series: [
+                    { name: '準備貨幣年增率', data: twReserve_series },
+                    { name: '主要金融機構放款與投資年增率', data: twLoan_series }
+                ],
+                chart: {
+                    type: 'line',
+                    height: 340,
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: 3, curve: 'smooth' },
+                colors: ['#8b5cf6', '#ec4899'],
+                grid: { 
+                    borderColor: '#1f2937',
+                    padding: { left: 40, right: 35 }
+                },
+                xaxis: { 
+                    type: 'datetime',
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
+                        }
+                    }
+                },
+                yaxis: { 
+                    title: { text: '%', style: { fontSize: '14px' } },
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val) {
+                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                        }
+                    }
+                },
+                theme: { mode: 'dark' },
+                legend: { position: 'top', fontSize: '14px' }
+            };
+            window.macroCharts['chart-tw-credit'] = new ApexCharts(document.querySelector("#chart-tw-credit"), twCreditOptions);
+            window.macroCharts['chart-tw-credit'].render();
+
+
+            // 4. 美國 GDP 與儲蓄率圖表 (chart-us-gdp-saving)
+            const usGdp_series = sliceData(usGdp).map(d => ({ x: d.date, y: d.value }));
+            const usSaving_series = sliceData(usSaving).map(d => ({ x: d.date, y: d.value }));
+            const usGdpSavingOptions = {
+                series: [
+                    { name: '美國實質 GDP 年增率', type: 'line', data: usGdp_series },
+                    { name: '美國個人儲蓄率', type: 'line', data: usSaving_series }
+                ],
+                chart: {
+                    height: 340,
+                    type: 'line',
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: 3, curve: 'smooth' },
+                colors: ['#3b82f6', '#f59e0b'],
+                grid: { 
+                    borderColor: '#1f2937',
+                    padding: { left: 40, right: 45 }
+                },
+                xaxis: { 
+                    type: 'datetime',
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
+                        }
+                    }
+                },
+                yaxis: [
+                    {
+                        title: { text: 'GDP 年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#3b82f6' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                            }
+                        }
+                    },
+                    {
+                        opposite: true,
+                        title: { text: '儲蓄率 (%)', style: { fontSize: '14px', color: '#f59e0b' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#f59e0b' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : '';
+                            }
+                        }
+                    }
+                ],
+                theme: { mode: 'dark' },
+                legend: { position: 'top', fontSize: '14px' }
+            };
+            window.macroCharts['chart-us-gdp-saving'] = new ApexCharts(document.querySelector("#chart-us-gdp-saving"), usGdpSavingOptions);
+            window.macroCharts['chart-us-gdp-saving'].render();
+
+
+            // 5. 台灣利率與匯率圖表 (chart-tw-interest)
+            const twDiscount_series = sliceData(twDiscount).map(d => ({ x: d.date, y: d.value }));
+            const twOvernight_series = sliceData(twOvernight).map(d => ({ x: d.date, y: d.value }));
+            const twExchange_series = sliceData(twExchange).map(d => ({ x: d.date, y: d.value }));
+            const twInterestOptions = {
+                series: [
+                    { name: '台灣重貼現率', type: 'line', data: twDiscount_series },
+                    { name: '金融業隔夜拆款利率', type: 'line', data: twOvernight_series },
+                    { name: '新台幣兌美元匯率', type: 'line', data: twExchange_series }
+                ],
+                chart: {
+                    height: 340,
+                    type: 'line',
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: [3, 2, 3], curve: 'smooth', dashArray: [0, 4, 0] },
+                colors: ['#ef4444', '#f59e0b', '#10b981'],
+                grid: { 
+                    borderColor: '#1f2937',
+                    padding: { left: 40, right: 45 }
+                },
+                xaxis: { 
+                    type: 'datetime',
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
+                        }
+                    }
+                },
+                yaxis: [
+                    {
+                        title: { text: '利率 (%)', style: { fontSize: '14px', color: '#ef4444' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#ef4444' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(3) + '%' : '';
+                            }
+                        }
+                    },
+                    {
+                        opposite: true,
+                        title: { text: '匯率 (NTD/USD)', style: { fontSize: '14px', color: '#10b981' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#10b981' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) : '';
+                            }
+                        }
+                    }
+                ],
+                theme: { mode: 'dark' },
+                legend: { position: 'top', fontSize: '14px' }
+            };
+            window.macroCharts['chart-tw-interest'] = new ApexCharts(document.querySelector("#chart-tw-interest"), twInterestOptions);
+            window.macroCharts['chart-tw-interest'].render();
+
+
+            // 6. 全球成本與收入圖表 (chart-us-cost-income)
+            const globalOil_series = sliceData(globalOil).map(d => ({ x: d.date, y: d.value }));
+            const usPce_series = sliceData(usPce).map(d => ({ x: d.date, y: d.value }));
+            const usIncome_series = sliceData(usIncome).map(d => ({ x: d.date, y: d.value }));
+            const usCostIncomeOptions = {
+                series: [
+                    { name: '國際原油價格 (美元/桶)', type: 'line', data: globalOil_series },
+                    { name: '美國 PCE 通膨年增率', type: 'line', data: usPce_series },
+                    { name: '美國個人收入年增率', type: 'line', data: usIncome_series }
+                ],
+                chart: {
+                    height: 340,
+                    type: 'line',
+                    foreColor: '#9ca3af',
+                    background: 'transparent',
+                    toolbar: { show: false }
+                },
+                stroke: { width: [3, 2, 2], curve: 'smooth' },
+                colors: ['#ec4899', '#f59e0b', '#3b82f6'],
+                grid: { 
+                    borderColor: '#1f2937',
+                    padding: { left: 40, right: 45 }
+                },
+                xaxis: { 
+                    type: 'datetime',
+                    labels: { 
+                        style: { fontSize: '14px' },
+                        formatter: function(val, timestamp) {
+                            if (!val) return '';
+                            const date = new Date(timestamp);
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            return `${y}-${m}`;
+                        }
+                    }
+                },
+                yaxis: [
+                    {
+                        title: { text: '原油價格 (美元)', style: { fontSize: '14px', color: '#ec4899' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#ec4899' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) : '';
+                            }
+                        }
+                    },
+                    {
+                        opposite: true,
+                        title: { text: '年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
+                        labels: { 
+                            style: { fontSize: '14px', colors: '#3b82f6' },
+                            formatter: function(val) {
+                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
+                            }
+                        }
+                    }
+                ],
+                theme: { mode: 'dark' },
+                legend: { position: 'top', fontSize: '14px' }
+            };
+            window.macroCharts['chart-us-cost-income'] = new ApexCharts(document.querySelector("#chart-us-cost-income"), usCostIncomeOptions);
+            window.macroCharts['chart-us-cost-income'].render();
         }
     </script>
 </body>
