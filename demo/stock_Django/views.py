@@ -549,11 +549,15 @@ def macro_data_api(request):
             'value': float(item.value) if item.value is not None else None
         })
         
+
     return JsonResponse({
         'status': 'success',
         'us': us_data,
         'tw': tw_data
     })
+
+
+
 
 
 

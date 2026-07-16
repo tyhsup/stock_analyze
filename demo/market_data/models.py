@@ -81,7 +81,7 @@ class MacroUS(models.Model):
 
 class MacroTW(models.Model):
     date = models.DateField(db_index=True)
-    metric = models.CharField(max_length=50) # M1B_YOY, M2_YOY, CPI_YOY
+    metric = models.CharField(max_length=50) # M1B_YOY, M2_YOY, CPI_YOY, TW_DISCOUNT_RATE, TW_OVERNIGHT_RATE, TW_CORE_CPI_YOY, TW_GDP_YOY, TW_UNRATE
     value = models.DecimalField(max_digits=18, decimal_places=4)
     last_updated = models.DateTimeField(auto_now=True)
 
