@@ -888,6 +888,73 @@
         return result;
     }
 
+    function computeMAReversalPoints(closes, candleData, timestamps) {
+        const points = [];
+        if (closes.length < 20) return points;
+        
+        const ma20 = simpleMA(closes, 20);
+        const ma5 = simpleMA(closes, 5);
+        
+        for (let i = 2; i < closes.length; i++) {
+            if (ma20[i] === null || ma20[i-1] === null || ma20[i-2] === null) continue;
+            
+            // 1. 斜率反轉判斷
+            const slopeCurr = ma20[i] - ma20[i-1];
+            const slopePrev = ma20[i-1] - ma20[i-2];
+            
+            let isUp = false;
+            let isDown = false;
+            let reason = "";
+            
+            if (slopePrev <= 0 && slopeCurr > 0) {
+                isUp = true;
+                reason = "MA翻揚";
+            } else if (slopePrev >= 0 && slopeCurr < 0) {
+                isDown = true;
+                reason = "MA下彎";
+            }
+            
+            // 2. 交叉反轉判斷
+            if (ma5[i] !== null && ma5[i-1] !== null) {
+                if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i]) {
+                    isUp = true;
+                    reason = "黃金交叉";
+                } else if (ma5[i-1] >= ma20[i-1] && ma5[i] < ma20[i]) {
+                    isDown = true;
+                    reason = "死亡交叉";
+                }
+            }
+            
+            // 3. 乖離率反轉判斷
+            const bias20 = ((closes[i] - ma20[i]) / ma20[i]) * 100;
+            if (bias20 <= -7) {
+                isUp = true;
+                reason = "超跌反彈";
+            } else if (bias20 >= 8) {
+                isDown = true;
+                reason = "超買回檔";
+            }
+            
+            // 標記轉折點為 annotations point
+            if (isUp) {
+                points.push({
+                    x: timestamps[i],
+                    y: candleData[i].y[2] * 0.98, // 最低價下方 2%
+                    marker: { size: 6, fillColor: '#00e676', strokeColor: '#fff', shape: 'circle' },
+                    label: { text: reason, style: { color: '#fff', background: '#00c853' } }
+                });
+            } else if (isDown) {
+                points.push({
+                    x: timestamps[i],
+                    y: candleData[i].y[1] * 1.02, // 最高價上方 2%
+                    marker: { size: 6, fillColor: '#ff1744', strokeColor: '#fff', shape: 'circle' },
+                    label: { text: reason, style: { color: '#fff', background: '#d50000' } }
+                });
+            }
+        }
+        return points;
+    }
+
     // ============================================================
     // RENDER CHARTS
     // ============================================================
@@ -1107,6 +1174,15 @@
                         });
                     }
                 });
+            });
+        }
+
+        // MA Reversal Points (均線趨勢轉折點)
+        const maReversalChecked = document.getElementById('ind-ma-reversal') && document.getElementById('ind-ma-reversal').checked;
+        if (maReversalChecked) {
+            const revPoints = computeMAReversalPoints(closes, candleData, timestamps);
+            revPoints.forEach(pt => {
+                mainOptions.annotations.points.push(pt);
             });
         }
 
@@ -1896,7 +1972,8 @@
                 { id: 'ind-ma240', name: 'SMA 240', checked: false, color: '#00e676' },
                 { id: 'ind-bb', name: 'Bollinger Bands', checked: true, color: '' },
                 { id: 'ind-rsi', name: 'RSI (14)', checked: true, color: '' },
-                { id: 'ind-macd', name: 'MACD', checked: true, color: '' }
+                { id: 'ind-macd', name: 'MACD', checked: true, color: '' },
+                { id: 'ind-ma-reversal', name: 'MA Reversal Points (均線趨勢轉折點)', checked: false, color: '#ffeb3b' }
             ];
 
             const createItem = (id, name, checked, color) => {
