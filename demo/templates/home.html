@@ -303,28 +303,34 @@
                         <p class="text-muted" id="gemini-rec-reason" style="font-size: 15px; line-height: 1.6;">正在讀取數據，準備呼叫雲端 Gemini 進行綜合推理...</p>
                         
                         <div class="row g-3 mt-2">
-                            <div class="col-6 col-md-3">
+                            <div class="col-12 col-sm-6 col-md">
                                 <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-primary">
                                     <div class="text-muted small mb-1">技術面 (LSTM)</div>
                                     <div class="small fw-semibold text-dark" id="gemini-detail-tech">--</div>
                                 </div>
                             </div>
-                            <div class="col-6 col-md-3">
+                            <div class="col-12 col-sm-6 col-md">
                                 <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-info">
                                     <div class="text-muted small mb-1">籌碼面 (法人)</div>
                                     <div class="small fw-semibold text-dark" id="gemini-detail-chips">--</div>
                                 </div>
                             </div>
-                            <div class="col-6 col-md-3">
+                            <div class="col-12 col-sm-6 col-md">
                                 <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-success">
                                     <div class="text-muted small mb-1">情緒面 (輿情)</div>
                                     <div class="small fw-semibold text-dark" id="gemini-detail-senti">--</div>
                                 </div>
                             </div>
-                            <div class="col-6 col-md-3">
+                            <div class="col-12 col-sm-6 col-md">
                                 <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-warning">
                                     <div class="text-muted small mb-1">基本面 (估值)</div>
                                     <div class="small fw-semibold text-dark" id="gemini-detail-val">--</div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md">
+                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-purple" style="border-top-color: #6f42c1 !important;">
+                                    <div class="text-muted small mb-1">總經分析 (子 Agent)</div>
+                                    <div class="small fw-semibold text-dark" id="gemini-detail-macro">--</div>
                                 </div>
                             </div>
                         </div>
@@ -385,6 +391,7 @@
                         document.getElementById('gemini-detail-chips').textContent = report.details.chips || "暫無籌碼評語";
                         document.getElementById('gemini-detail-senti').textContent = report.details.sentiment || "暫無情緒評語";
                         document.getElementById('gemini-detail-val').textContent = report.details.valuation || "暫無基本評語";
+                        document.getElementById('gemini-detail-macro').textContent = report.details.macro || "暫無總經評語";
                         
                         badge.textContent = data.cached ? "已載入快取" : "最新分析";
                         badge.className = data.cached ? "badge bg-secondary px-3 py-1" : "badge bg-success px-3 py-1";

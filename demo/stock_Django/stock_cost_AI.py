@@ -367,13 +367,84 @@ class IntegratedStockPredModel:
             'latest_feature_date': target_df.index[-1].strftime('%Y-%m-%d')
         }
 
+    def generate_macro_perspective(
+        self, 
+        is_tw: bool, 
+        industry: str, 
+        latest_macro_data: dict
+    ) -> str:
+        """
+        總經分析子 Agent：
+        根據股票市場別、產業別與最新總經指標數值，呼叫 LLM 進行總體經濟觀點分析。
+        """
+        import subprocess
+        import shutil
+        
+        macro_data_str = json.dumps(latest_macro_data, ensure_ascii=False) if latest_macro_data else "{}"
+        market_str = "台灣股市" if is_tw else "美國股市"
+        
+        prompt = (
+            f"您是總體經濟專家 Agent。目前要針對一檔在{market_str}上市、所屬產業為「{industry}」的股票（代號：{self.stock_number}），"
+            f"結合以下最新總體經濟核心指標進行宏觀與產業連動分析：\n\n"
+            f"最新總經指標數值: {macro_data_str}\n\n"
+            f"任務：\n"
+            f"請分析當前的利率、通膨、經濟成長或利差等總經環境，對於該股票所屬的「{industry}」產業，是利多還是利空？"
+            f"並用 80 字以內的一段精煉中文給出具體的總體經濟觀點評語，不要有任何多餘的引言或格式標記。"
+        )
+        
+        # 換行轉換以防 Windows 參數問題
+        full_prompt = prompt.replace("\n", " ").replace("\r", " ").strip()
+        
+        gemini_path = shutil.which("gemini")
+        if not gemini_path:
+            return "暫時無法使用 Gemini CLI 進行總經分析。"
+            
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            from dotenv import load_dotenv
+            dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
+            load_dotenv(dotenv_path)
+            gemini_api_key = os.getenv("GEMINI_API_KEY")
+            
+        env = os.environ.copy()
+        if gemini_api_key:
+            env["GEMINI_API_KEY"] = gemini_api_key
+            
+        custom_model = os.getenv("GEMINI_ADVISOR_MODEL")
+        if custom_model:
+            models_to_try = [custom_model]
+        else:
+            models_to_try = ["gemini-3.1-pro-preview", "gemma-4-31b-it"]
+            
+        for model in models_to_try:
+            try:
+                args = [gemini_path, "-m", model, "--skip-trust", "-p", full_prompt]
+                result = subprocess.run(args, capture_output=True, env=env, shell=False)
+                if result.returncode == 0:
+                    res_text = result.stdout.decode("utf-8", errors="replace").strip()
+                    if res_text:
+                        if "{" in res_text and "response" in res_text:
+                            try:
+                                json_start = res_text.index("{")
+                                json_data = json.loads(res_text[json_start:])
+                                res_text = json_data.get("response", "").strip()
+                            except:
+                                pass
+                        return res_text[:120]
+            except Exception as e:
+                logger.error(f"[MacroAgent] 呼叫 {model} 總經分析異常: {e}")
+                
+        return "總體經濟與產業關聯度尚屬平穩，建議密切關注後續利率政策與產業需求變動。"
+
     def generate_gemini_advice(
         self, 
         lstm_pred: dict, 
         chips_features: dict, 
         sentiment_summary: dict, 
         valuation_features: dict, 
-        latest_price: float
+        latest_price: float,
+        industry: str = "其他/未知",
+        latest_macro_data: dict = None
     ) -> dict:
         """
         綜合分析技術面(LSTM)、籌碼面(法人)、情緒面(新聞)、基本面(估值)與最新股價，
@@ -390,6 +461,13 @@ class IntegratedStockPredModel:
             sentiment_summary = {}
         if valuation_features is None:
             valuation_features = {}
+            
+        # 總經分析子 Agent 預先推理
+        macro_view = self.generate_macro_perspective(
+            is_tw=(self.market == 'tw'),
+            industry=industry,
+            latest_macro_data=latest_macro_data
+        )
             
         # 準備資料
         pred_list = lstm_pred.get('predictions', [])
@@ -427,12 +505,14 @@ class IntegratedStockPredModel:
             f"- 公允估值: {fair_val}\n"
             f"- 目前股價與公允值差距 (Upside): {upside}%\n"
             f"- 估值評級: {val_rating}\n\n"
+            f"[總體經濟與產業分析 (子 Agent 觀點)]\n"
+            f"- 總體宏觀觀點: {macro_view}\n\n"
             f"任務：\n"
             f"1. 綜合上述數據，分析該股票的最新投資前景。\n"
             f"2. 給予買進或賣出的建議，評等必須嚴格限制為以下五個項目之一：'強力賣出', '賣出', '觀望', '買進', '強力買進'。\n"
             f"3. 給予一個推薦分數 (score)，範圍為 0 至 100 之間（0-20: 強力賣出, 21-40: 賣出, 41-60: 觀望, 61-80: 買進, 81-100: 強力買進）。\n"
             f"4. 提供 150 字以內的簡短中文推薦理由。\n\n"
-            f"請嚴格以下列 JSON 格式輸出，不要包含任何 markdown 標記（如 ```json）或額外的說明文字：\n"
+            f"請嚴格以下列 JSON 格式輸出，不要包含 any markdown 標記（如 ```json）或額外的說明文字：\n"
             f"{{\n"
             f"  \"recommendation\": \"觀望\",\n"
             f"  \"score\": 50,\n"
@@ -441,7 +521,8 @@ class IntegratedStockPredModel:
             f"    \"technical\": \"技術分析簡短評語\",\n"
             f"    \"chips\": \"籌碼分析簡短評語\",\n"
             f"    \"sentiment\": \"輿情分析簡短評語\",\n"
-            f"    \"valuation\": \"基本估值簡短評語\"\n"
+            f"    \"valuation\": \"基本估值簡短評語\",\n"
+            f"    \"macro\": \"總經分析簡短評語\"\n"
             f"  }}\n"
             f"}}"
         )

@@ -462,6 +462,47 @@ def gemini_advisor_analysis(request, ticker):
     except Exception as e_val:
         logger.warning(f"Failed to fetch valuation for Gemini advice: {e_val}")
         
+    # 6. 新增：總經數據與產業別加載 (子 Agent 觀點)
+    industry = "其他/未知"
+    latest_macro_data = {}
+    try:
+        from market_data.models import MacroUS, MacroTW
+        
+        # 產業別獲取
+        if is_tw:
+            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+            with service.sql_op.engine.connect() as conn:
+                row_ind = conn.execute(
+                    text("SELECT 產業別 FROM stock_table_tw WHERE 有價證卷代號 = :sym"),
+                    {"sym": clean_sym}
+                ).fetchone()
+                if row_ind and row_ind[0]:
+                    industry = row_ind[0].strip()
+                    
+            # 台灣總經最新數據
+            metrics = ['M1B_YOY', 'M2_YOY', 'CPI_YOY', 'TW_DISCOUNT_RATE', 'TW_OVERNIGHT_RATE', 'TW_CORE_CPI_YOY', 'TW_GDP_YOY', 'TW_UNRATE']
+            for m in metrics:
+                obj = MacroTW.objects.filter(metric=m).order_by('-date').first()
+                if obj and obj.value is not None:
+                    latest_macro_data[m] = float(obj.value)
+        else:
+            with service.sql_op.engine.connect() as conn:
+                row_ind = conn.execute(
+                    text("SELECT sector FROM stock_metadata WHERE symbol = :sym"),
+                    {"sym": valuation_symbol}
+                ).fetchone()
+                if row_ind and row_ind[0]:
+                    industry = row_ind[0].strip()
+                    
+            # 美國總經最新數據
+            metrics = ['FEDFUNDS', 'US_YIELD_SPREAD', 'US_CREDIT_SPREAD', 'US_CORE_PCE_YOY', 'US_EXPORT_PRICE_YOY', 'US_MANUFACTURING_ORDERS_YOY']
+            for m in metrics:
+                obj = MacroUS.objects.filter(metric=m).order_by('-date').first()
+                if obj and obj.value is not None:
+                    latest_macro_data[m] = float(obj.value)
+    except Exception as e_macro_load:
+        logger.warning(f"Failed to fetch industry or macro data for advice: {e_macro_load}")
+
     # 呼叫 Gemini 進行綜合預測與推薦
     try:
         from .stock_cost_AI import IntegratedStockPredModel
@@ -471,7 +512,9 @@ def gemini_advisor_analysis(request, ticker):
             chips_features=chips_features,
             sentiment_summary=sentiment_summary,
             valuation_features=valuation_features,
-            latest_price=latest_price
+            latest_price=latest_price,
+            industry=industry,
+            latest_macro_data=latest_macro_data
         )
         
         # 快取 24 小時 (86400 秒)
@@ -519,10 +562,14 @@ def macrotrends_ratios_api(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+
 def macro_dashboard(request):
     """渲染總體經濟 Dashboard 頁面"""
     from django.shortcuts import render
     return render(request, 'macro_dashboard.html')
+
+
+
 
 
 def macro_data_api(request):
