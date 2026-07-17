@@ -1,44 +1,96 @@
-這是一個典型的金融圖表視覺化問題，當一個圖表需要同時呈現兩個或多個具有不同單位、不同量級的指標（例如：價格指數與交易量/CPI），若不進行軸向同步處理，將會導致視覺失真和誤判。
+這是一個涉及資料工程、後端邏輯重構與前端介面擴充的複雜任務。由於您要求新增多個關鍵宏觀經濟指標，我們必須採取分階段、高隔離度的開發策略，以確保核心功能（K線圖與 Blended Valuation）不受影響。
 
-由於您提到的是「Y軸雙端同步」，我們必須從**資料層 (Data Layer)** 和 **呈現層 (Presentation Layer)** 兩個角度進行結構性修正。這不是單純的程式碼調整，而是需要確保數據傳輸與圖表配置邏輯都符合金融分析的最佳實踐。
-
----
-
-### 📊 架構分析與修正建議
-
-#### I. 資料處理層 (Data Preparation / Backend)
-**核心問題：** 圖表呈現的兩個指標（Metric A 和 Metric B）在資料庫查詢時，其量級差異過大或單位不一致，導致前端接收到的原始數據無法直接用於繪製。
-
-**修正要點：** 在將數據從 MySQL 提取並準備傳輸給 API 之前，必須執行標準化和正規化處理。
-
-1.  **單一時間軸對齊 (Time Alignment):** 確認所有指標的資料點都以統一的時間戳記（Timestamp）作為鍵值進行對齊。
-2.  **單位轉換與歸一化 (Normalization/Scaling):** 如果兩個指標量級差異極大（例如：價格在 100-500，交易量在 $10^6$ 到 $10^9$），建議考慮將其中一個或兩個指標進行 **Z-Score 標準化** 或 **對數轉換 (Log Transformation)**，以確保它們的視覺權重不會被單純的絕對值主導。
-3.  **【JSON 序列化保護】執行：** 在此階段必須嚴格遵守 JSON 序列化的規則。所有從 MySQL 查詢返回給 API 的 `datetime`、`decimal.Decimal` 等類型，都必須在傳輸前轉換為標準的 **ISO 8601 字串格式 (String)** 或 **浮點數 (Float)**。
-
-#### II. 前端呈現層 (Visualization / Frontend)
-**核心問題：** 如何讓圖表庫（如 ApexCharts）知道這兩個 Y 軸是相關聯的，並且在極值發生時保持視覺上的連貫性。
-
-**修正要點：** 利用圖表庫提供的多 Y 軸配置功能，並手動控制其範圍 (Range)。
-
-1.  **Y-Axis 配置 (Multi-Axis Setup):**
-    *   將兩個指標分別定義為 `yaxis` 陣列中的獨立組件。
-    *   如果它們的單位和量級差異極大，應考慮使用 **次座標軸 (Secondary Y-axis)** 的方式來繪製，而不是讓它們共用一個主軸。
-
-2.  **同步範圍邏輯 (Range Synchronization Logic):**
-    *   單純設定 `min` 和 `max` 是不夠的。您需要實作一個計算機制：當數據集發生變化時（例如滾動視窗或時間範圍改變），前端必須重新計算兩個指標在當前時間區間內的 **極小值 (Min)** 與 **極大值 (Max)**。
-    *   **關鍵步驟：** 確保這兩個 `min` 和 `max` 值被傳遞給圖表庫的配置，強制設定兩個 Y 軸的範圍 (`yaxis[0].min`, `yaxis[1].min`, etc.) 為相同的計算結果。
-
-3.  **【零破壞原則】考量：**
-    *   所有新的同步邏輯和輔助介面（如控制軸向比例的滑桿）必須設計為獨立於現有的 K 線圖與 Blended Valuation 計算區塊，確保使用者操作不會意外干擾核心分析功能。
+我將提供一個完整的架構分析與實施計畫，並在每個環節主動嵌入「專案歷史踩坑防禦要點」的檢查機制。
 
 ---
 
-### 🛠️ 實作流程總結 (Checklist)
+## 📈 MacroUS 資料擴充開發計畫 (Phase I)
 
-| 層級 | 任務描述 | 技術重點 / 需注意的防禦要點 |
-| :--- | :--- | :--- |
-| **資料層** | 數據清洗與標準化 | 1. 統一時間戳記格式。2. 對量級差異大的指標進行正規化處理 (Log/Z-Score)。3. **【JSON 序列化保護】**：確保所有日期和 Decimal 類型已轉為 String/Float。 |
-| **API 層** | 數據傳輸介面設計 | 建立一個專門的 `get_synchronized_data(start_date, end_date)` 端點，該端點負責執行上述所有清洗與計算邏輯。 |
-| **前端層** | 圖表渲染與互動邏輯 | 1. 使用圖表庫的 Multi-Axis 功能。2. 在時間範圍改變時（`onZoom`/`onChange` 事件），觸發一個重新計算 `min/max` 的函式。3. 將計算出的同步範圍強制設定給所有相關聯的 Y 軸組件。 |
+### 一、 架構規劃總覽
 
-**總結：** 「Y軸雙端同步」的核心不在於繪圖，而在於 **數據傳輸前的預處理 (Data Pre-processing)** 和 **前端事件觸發時的動態範圍重設 (Dynamic Range Reset)**。請務必在資料層級執行嚴格的類型轉換和正規化，以避免後續的視覺錯誤。
+本次擴充將分為三個主要模組：
+1.  **Data Ingestion Layer (FRED Crawler)**：負責新增資料源與清洗。
+2.  **Core Logic & Data Model Layer (Backend API/DB)**：負責數據儲存結構更新、衍生指標計算，並確保數據傳輸的穩定性。
+3.  **Presentation Layer (Frontend UI)**：負責新的圖表組件開發，遵循零破壞原則。
+
+### 二、 🛠️ Backend 開發與資料工程（Data Ingestion & Model）
+
+#### 1. FRED Crawler 更新 (`data_ingestion/fred_crawler.py`)
+我們需要為每個新指標定義其對應的 FRED Series ID，並更新爬取邏輯。
+
+**新增指標及預計處理：**
+
+| 指標名稱 | 數據類型 | 建議 FRED Series ID (範例) | 備註 |
+| :--- | :--- | :--- | :--- |
+| 公債殖利率 | Time Series | `DGS10` (或特定期限) | 需處理每日/月度頻率差異。 |
+| AAA債券收益率 | Time Series | *待確認* | 可能需要使用指數化數據源。 |
+| 信用利差 | Calculated | N/A | **衍生指標**：(公債殖利率 - AAA債券收益率)。 |
+| 核心PCE | Index | `PCEUSCPI` (或相關) | 需處理同比增長率計算。 |
+| 出口物價指數 | Index | *待確認* | 通常是 PPI 或特定貿易數據。 |
+| 3M CD利率 | Rate | `CD3M` | 應作為短期資金成本指標納入。 |
+| 製造業訂單 | Count/Index | `MOSI` (或相關) | 需處理季節性調整與同比變化。 |
+
+**【專案防禦要點執行】**
+
+*   **Unicode 防禦：** 在讀取 FRED API 返回的 JSON 或本地儲存 CSV 時，必須在所有檔案 I/O 操作中加入編碼保護。
+    ```python
+    # 範例：寫入本地數據時
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(data)
+    # 如果是讀取包含非標準字元的配置檔，必須使用 errors='ignore' 或 errors='replace'
+    ```
+
+#### 2. 資料模型與 API 層更新 (`models/macro_us.py` & `api/v1/macro_service.py`)
+我們需要擴充資料庫的欄位結構，並新增計算邏輯。
+
+**A. 資料庫 Schema 更新 (MySQL):**
+在 `macro_us` 表中加入新的欄位（例如：`treasury_yield`, `aaa_bond_rate`, `core_pce`, etc.）。
+
+**B. 數據傳輸保護 (JSON Serialization Protection)：**
+當從 MySQL 查詢資料集並準備回傳給 API 層時，必須確保所有非標準 Python 類型（如 `datetime` 或 `Decimal`）都被轉換為 JSON 可接受的格式。
+
+```python
+# 【專案防禦要點：JSON 序列化保護】實作範例
+def serialize_macro_data(db_record):
+    """將包含日期和精確數值的資料記錄，安全地轉成字典結構。"""
+    safe_data = {}
+    for key, value in db_record.items():
+        if isinstance(value, (datetime.date, datetime.datetime)):
+            # 轉換為標準 ISO 格式字串
+            safe_data[key] = value.isoformat()
+        elif isinstance(value, decimal.Decimal):
+            # 轉換為浮點數字串，避免 JSON 庫無法處理 Decimal 物件
+            safe_data[key] = float(value)
+        else:
+            safe_data[key] = value
+    return safe_data
+
+# API 層呼叫時必須使用此函數進行包裹。
+```
+
+**C. 衍生指標計算邏輯：**
+在 `MacroService` 中，新增一個方法來計算信用利差等指標，確保數據的原子性計算，而非依賴前端計算。
+
+### 三、 🖥️ Frontend 開發與介面擴充（Presentation Layer）
+
+#### 1. 遵循零破壞原則 (Zero Destruction Principle)
+所有新的圖表組件必須作為一個獨立的、可切換的模塊開發。我們不應直接修改現有的 K 線圖或 Blended Valuation 計算區塊的 JSX/HTML 結構。
+
+**實施建議：** 在主儀表板（Dashboard）上新增一個標籤頁 (Tab) 或側邊導航 (Sidebar)，命名為「Macro Indicators」或「宏觀指標分析」。
+
+#### 2. 圖表組件開發 (`components/macro_charts.jsx`)
+使用 ApexCharts 繪製新的時間序列圖。由於數據源已在後端處理，前端只需負責接收和渲染資料陣列即可。
+
+**【專案防禦要點：Unicode 防禦】提醒：**
+如果我們需要從本地載入任何配置檔（例如圖表顏色主題、API Key），請務必確保讀取時使用 `encoding='utf-8'`，以避免系統預設編碼導致的亂碼或崩潰。
+
+### 四、 🚀 開發總結與檢查清單 (Checklist)
+
+| 階段 | 任務內容 | 執行重點/防禦要點 | 完成狀態 |
+| :--- | :--- | :--- | :--- |
+| **數據層** | 更新 FRED Crawler，新增所有指標的爬取邏輯。 | 【Unicode 防禦】確保 I/O 操作編碼正確。 | $\square$ |
+| **模型層** | 擴充 `macro_us` 資料表結構；實作衍生指標計算（如信用利差）。 | 【JSON 序列化保護】在 API 層強制執行數據類型轉換。 | $\square$ |
+| **API 層** | 更新 `/api/v1/macro-data` 端點，確保回傳的資料集包含所有新欄位。 | 測試邊界條件：空值、缺失日期處理。 | $\square$ |
+| **前端層** | 開發獨立的「宏觀指標」圖表組件。 | 【零破壞原則】新增模塊必須隔離，不干擾既有 K 線/Valuation 計算區。 | $\square$ |
+
+請確認上述架構分析是否符合您的預期。若您需要我針對特定語言（如 Python, JavaScript）生成某個服務層的骨架代碼，請明確指示。

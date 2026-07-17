@@ -80,12 +80,19 @@ class Command(BaseCommand):
             'PAYEMS': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PAYEMS',      # 非農就業人口
             'M1SL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=M1SL',          # M1 貨幣供給
             'M2SL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=M2SL',          # M2 貨幣供給
-            'CPILFESL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPILFESL',            # 新增美國指標
+            'CPILFESL': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPILFESL',  # 核心 CPI
             'PCE': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCE',            # 個人消費支出
             'GDPC1': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GDPC1',        # 實質國內生產毛額 GDP
             'PSAVERT': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PSAVERT',    # 個人儲蓄率
             'PI': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PI',              # 個人收入
-            'MCOILWTICO': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=MCOILWTICO' # 國際原油價格 WTI
+            'MCOILWTICO': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=MCOILWTICO', # 國際原油價格 WTI
+            'T10Y2Y': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10Y2Y',      # 10Y-2Y 美債利差
+            'GS10': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GS10',          # 十年期公債殖利率
+            'AAA': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=AAA',            # AAA 公司債殖利率
+            'PCEPILFE': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCEPILFE',  # 核心 PCE 物價指數
+            'IQ00000': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=IQ00000',    # 出口物價指數
+            'CD3M': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=CD3M',          # 3M CD 利率
+            'AMTMNO': 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=AMTMNO'        # 製造業新增訂單
         }
 
         # 限定 15 年時間跨度
@@ -154,6 +161,37 @@ class Command(BaseCommand):
             gdp_df = data_dict['GDPC1'].copy()
             gdp_df['YoY'] = (gdp_df['VALUE'] - gdp_df['VALUE'].shift(4)) / gdp_df['VALUE'].shift(4) * 100
             gdp_df.dropna(subset=['YoY'], inplace=True)
+
+        # 8. 美國核心 PCE YoY 年增率計算
+        core_pce_df = pd.DataFrame()
+        if 'PCEPILFE' in data_dict and not data_dict['PCEPILFE'].empty:
+            core_pce_df = data_dict['PCEPILFE'].copy()
+            core_pce_df['YoY'] = (core_pce_df['VALUE'] - core_pce_df['VALUE'].shift(12)) / core_pce_df['VALUE'].shift(12) * 100
+            core_pce_df.dropna(subset=['YoY'], inplace=True)
+
+        # 9. 美國出口物價 YoY 年增率計算
+        export_price_df = pd.DataFrame()
+        if 'IQ00000' in data_dict and not data_dict['IQ00000'].empty:
+            export_price_df = data_dict['IQ00000'].copy()
+            export_price_df['YoY'] = (export_price_df['VALUE'] - export_price_df['VALUE'].shift(12)) / export_price_df['VALUE'].shift(12) * 100
+            export_price_df.dropna(subset=['YoY'], inplace=True)
+
+        # 10. 美國製造業新增訂單 YoY 年增率計算
+        mfg_orders_df = pd.DataFrame()
+        if 'AMTMNO' in data_dict and not data_dict['AMTMNO'].empty:
+            mfg_orders_df = data_dict['AMTMNO'].copy()
+            mfg_orders_df['YoY'] = (mfg_orders_df['VALUE'] - mfg_orders_df['VALUE'].shift(12)) / mfg_orders_df['VALUE'].shift(12) * 100
+            mfg_orders_df.dropna(subset=['YoY'], inplace=True)
+
+        # 11. 美國信用利差 (AAA公司債 - 10Y公債) 計算
+        credit_spread_df = pd.DataFrame()
+        if 'AAA' in data_dict and not data_dict['AAA'].empty and 'GS10' in data_dict and not data_dict['GS10'].empty:
+            aaa_df = data_dict['AAA'].copy()
+            gs10_df = data_dict['GS10'].copy()
+            merged_spread = pd.merge(aaa_df, gs10_df, on='DATE', suffixes=('_AAA', '_GS10'))
+            merged_spread['Spread'] = merged_spread['VALUE_AAA'] - merged_spread['VALUE_GS10']
+            credit_spread_df = merged_spread[['DATE', 'Spread']].copy()
+            credit_spread_df.dropna(subset=['Spread'], inplace=True)
 
         total_updated = 0
 
@@ -285,6 +323,86 @@ class Command(BaseCommand):
                     date=row['DATE'].date(),
                     metric='GLOBAL_OIL_PRICE',
                     defaults={'value': row['VALUE']}
+                )
+                total_updated += 1
+
+        # N. US_YIELD_SPREAD (美債利差，修復 bug 寫入)
+        if 'T10Y2Y' in data_dict and not data_dict['T10Y2Y'].empty:
+            for _, row in data_dict['T10Y2Y'].iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_YIELD_SPREAD',
+                    defaults={'value': row['VALUE']}
+                )
+                total_updated += 1
+
+        # O. US_10Y_BOND (10年公債殖利率)
+        if 'GS10' in data_dict and not data_dict['GS10'].empty:
+            for _, row in data_dict['GS10'].iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_10Y_BOND',
+                    defaults={'value': row['VALUE']}
+                )
+                total_updated += 1
+
+        # P. US_AAA_BOND (AAA 公司債殖利率)
+        if 'AAA' in data_dict and not data_dict['AAA'].empty:
+            for _, row in data_dict['AAA'].iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_AAA_BOND',
+                    defaults={'value': row['VALUE']}
+                )
+                total_updated += 1
+
+        # Q. US_CREDIT_SPREAD (信用利差)
+        if not credit_spread_df.empty:
+            for _, row in credit_spread_df.iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_CREDIT_SPREAD',
+                    defaults={'value': row['Spread']}
+                )
+                total_updated += 1
+
+        # R. US_CORE_PCE_YOY (核心 PCE 物價指數年增率)
+        if not core_pce_df.empty:
+            for _, row in core_pce_df.iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_CORE_PCE_YOY',
+                    defaults={'value': row['YoY']}
+                )
+                total_updated += 1
+
+        # S. US_EXPORT_PRICE_YOY (出口物價指數年增率)
+        if not export_price_df.empty:
+            for _, row in export_price_df.iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_EXPORT_PRICE_YOY',
+                    defaults={'value': row['YoY']}
+                )
+                total_updated += 1
+
+        # T. US_CD_3M (3M CD 利率)
+        if 'CD3M' in data_dict and not data_dict['CD3M'].empty:
+            for _, row in data_dict['CD3M'].iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_CD_3M',
+                    defaults={'value': row['VALUE']}
+                )
+                total_updated += 1
+
+        # U. US_MANUFACTURING_ORDERS_YOY (製造業新增訂單年增率)
+        if not mfg_orders_df.empty:
+            for _, row in mfg_orders_df.iterrows():
+                _, created = MacroUS.objects.update_or_create(
+                    date=row['DATE'].date(),
+                    metric='US_MANUFACTURING_ORDERS_YOY',
+                    defaults={'value': row['YoY']}
                 )
                 total_updated += 1
 

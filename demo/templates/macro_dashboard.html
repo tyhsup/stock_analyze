@@ -194,8 +194,8 @@
             </div>
 
             <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國物價年增率監控 (CPI vs 核心 CPI)</h2>
-                <p class="text-gray-400 text-xs mb-6">美國整體 CPI 年增率與排除食品及能源的核心 CPI 年增率對照走勢</p>
+                <h2 class="text-2xl font-bold text-white mb-2">美國物價年增率監控 (CPI vs 核心 CPI vs 核心 PCE)</h2>
+                <p class="text-gray-400 text-xs mb-6">美國整體 CPI 年增率、核心 CPI 年增率與聯準會最看重之核心 PCE 物價年增率走勢</p>
                 <div id="chart-us-inflation" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
@@ -209,8 +209,8 @@
             </div>
 
             <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國政策利率與衰退風險利差</h2>
-                <p class="text-gray-400 text-xs mb-6">美國聯邦基金有效利率與 10Y-2Y 美債殖利率利差 (利差倒掛代表衰退訊號)</p>
+                <h2 class="text-2xl font-bold text-white mb-2">美國政策利率與衰退及信用利差</h2>
+                <p class="text-gray-400 text-xs mb-6">有效聯邦基金利率、10Y-2Y 國債期限利差與新版 Moody's AAA 信用利差對照走勢</p>
                 <div id="chart-us-policy" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
@@ -224,8 +224,8 @@
             </div>
 
             <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國實質經濟增長與消費儲蓄 (GDP & Saving)</h2>
-                <p class="text-gray-400 text-xs mb-6">美國實質 GDP 年增率與個人儲蓄率走勢，觀察景氣擴張與消費儲蓄後盾之平衡</p>
+                <h2 class="text-2xl font-bold text-white mb-2">美國實質增長與消費儲蓄及製造業新增訂單</h2>
+                <p class="text-gray-400 text-xs mb-6">實質 GDP 年增率、個人儲蓄率與製造業新增訂單年增率 (景氣領先指標) 之對照</p>
                 <div id="chart-us-gdp-saving" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
@@ -239,8 +239,8 @@
             </div>
 
             <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">全球要素成本與消費能力 (原油價格 vs 個人可支配)</h2>
-                <p class="text-gray-400 text-xs mb-6">國際原油價格與美國 PCE 通膨年增率、個人收入年增率之對比，觀察要素與所得關係</p>
+                <h2 class="text-2xl font-bold text-white mb-2">全球要素與短期資金成本 (原油價格 vs 出口物價 vs 3M CD 利率)</h2>
+                <p class="text-gray-400 text-xs mb-6">國際原油價格 (WTI)、美國出口物價指數年增率與三個月期大額存單利率之對照</p>
                 <div id="chart-us-cost-income" class="h-96 w-full macro-chart"></div>
             </div>
         </div>
@@ -425,6 +425,13 @@
             const usSaving = usData.filter(d => d.metric === 'US_SAVING_RATE');
             const usIncome = usData.filter(d => d.metric === 'US_PERSONAL_INCOME');
             const globalOil = usData.filter(d => d.metric === 'GLOBAL_OIL_PRICE');
+            const us10YBond = usData.filter(d => d.metric === 'US_10Y_BOND');
+            const usAAABond = usData.filter(d => d.metric === 'US_AAA_BOND');
+            const usCreditSpread = usData.filter(d => d.metric === 'US_CREDIT_SPREAD');
+            const usCorePce = usData.filter(d => d.metric === 'US_CORE_PCE_YOY');
+            const usExportPrice = usData.filter(d => d.metric === 'US_EXPORT_PRICE_YOY');
+            const usCD3M = usData.filter(d => d.metric === 'US_CD_3M');
+            const usMfgOrders = usData.filter(d => d.metric === 'US_MANUFACTURING_ORDERS_YOY');
 
             // 渲染 Info Cards (顯示最新一筆)
             // 台灣
@@ -717,10 +724,12 @@
             // B2. 美國通膨圖表
             const usCPI_series = sliceData(usCPI).map(d => ({ x: d.date, y: d.value }));
             const usCoreCPI_series = sliceData(usCoreCPI).map(d => ({ x: d.date, y: d.value }));
+            const usCorePCE_series = sliceData(usCorePce).map(d => ({ x: d.date, y: d.value }));
             const usCpiOptions = {
                 series: [
                     { name: '美國 CPI 年增率 (YoY)', data: usCPI_series },
-                    { name: '美國核心 CPI 年增率 (Core CPI YoY)', data: usCoreCPI_series }
+                    { name: '美國核心 CPI 年增率 (Core CPI YoY)', data: usCoreCPI_series },
+                    { name: '美國核心 PCE 物價年增率 (Core PCE YoY)', data: usCorePCE_series }
                 ],
                 chart: {
                     type: 'line',
@@ -730,7 +739,7 @@
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
-                colors: ['#f59e0b', '#ef4444'],
+                colors: ['#f59e0b', '#ef4444', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
                     padding: { left: 40, right: 35 }
@@ -828,10 +837,12 @@
             // C2. 美國政策利率與美債利差 (雙 Y 軸)
             const usFed_series = sliceData(usFed).map(d => ({ x: d.date, y: d.value }));
             const usYield_series = sliceData(usYield).map(d => ({ x: d.date, y: d.value }));
+            const usCreditSpread_series = sliceData(usCreditSpread).map(d => ({ x: d.date, y: d.value }));
             const usPolicyOptions = {
                 series: [
                     { name: '美國聯邦基金利率', type: 'line', data: usFed_series },
-                    { name: '美國 10Y-2Y 美債利差', type: 'line', data: usYield_series }
+                    { name: '美國 10Y-2Y 美債利差', type: 'line', data: usYield_series },
+                    { name: '美國 Moody\'s AAA 信用利差', type: 'line', data: usCreditSpread_series }
                 ],
                 chart: {
                     height: 340,
@@ -841,7 +852,7 @@
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
-                colors: ['#ec4899', '#3b82f6'],
+                colors: ['#ec4899', '#3b82f6', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
                     padding: { left: 40, right: 45 }
@@ -861,7 +872,7 @@
                 },
                 yaxis: [
                     {
-                        title: { text: '政策利率 (%)', style: { fontSize: '14px', color: '#ec4899' } },
+                        title: { text: '政策與信用利率 (%)', style: { fontSize: '14px', color: '#ec4899' } },
                         labels: { 
                             style: { fontSize: '14px', colors: '#ec4899' },
                             formatter: function(val) {
@@ -1002,10 +1013,12 @@
             // 4. 美國 GDP 與儲蓄率圖表 (chart-us-gdp-saving)
             const usGdp_series = sliceData(usGdp).map(d => ({ x: d.date, y: d.value }));
             const usSaving_series = sliceData(usSaving).map(d => ({ x: d.date, y: d.value }));
+            const usMfgOrders_series = sliceData(usMfgOrders).map(d => ({ x: d.date, y: d.value }));
             const usGdpSavingOptions = {
                 series: [
                     { name: '美國實質 GDP 年增率', type: 'line', data: usGdp_series },
-                    { name: '美國個人儲蓄率', type: 'line', data: usSaving_series }
+                    { name: '美國個人儲蓄率', type: 'line', data: usSaving_series },
+                    { name: '美國製造業新增訂單年增率', type: 'line', data: usMfgOrders_series }
                 ],
                 chart: {
                     height: 340,
@@ -1015,7 +1028,7 @@
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
-                colors: ['#3b82f6', '#f59e0b'],
+                colors: ['#3b82f6', '#f59e0b', '#10b981'],
                 grid: { 
                     borderColor: '#1f2937',
                     padding: { left: 40, right: 45 }
@@ -1035,7 +1048,7 @@
                 },
                 yaxis: [
                     {
-                        title: { text: 'GDP 年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
+                        title: { text: 'GDP 與製造業訂單年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
                         labels: { 
                             style: { fontSize: '14px', colors: '#3b82f6' },
                             formatter: function(val) {
@@ -1127,13 +1140,13 @@
 
             // 6. 全球成本與收入圖表 (chart-us-cost-income)
             const globalOil_series = sliceData(globalOil).map(d => ({ x: d.date, y: d.value }));
-            const usPce_series = sliceData(usPce).map(d => ({ x: d.date, y: d.value }));
-            const usIncome_series = sliceData(usIncome).map(d => ({ x: d.date, y: d.value }));
+            const usExportPrice_series = sliceData(usExportPrice).map(d => ({ x: d.date, y: d.value }));
+            const usCD3M_series = sliceData(usCD3M).map(d => ({ x: d.date, y: d.value }));
             const usCostIncomeOptions = {
                 series: [
-                    { name: '國際原油價格 (美元/桶)', type: 'line', data: globalOil_series },
-                    { name: '美國 PCE 通膨年增率', type: 'line', data: usPce_series },
-                    { name: '美國個人收入年增率', type: 'line', data: usIncome_series }
+                    { name: '國際原油價格 (WTI, 美元/桶)', type: 'line', data: globalOil_series },
+                    { name: '美國出口物價指數年增率', type: 'line', data: usExportPrice_series },
+                    { name: '美國 3M 大額存單利率 (CD 3M)', type: 'line', data: usCD3M_series }
                 ],
                 chart: {
                     height: 340,
@@ -1173,7 +1186,7 @@
                     },
                     {
                         opposite: true,
-                        title: { text: '年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
+                        title: { text: '年增率與利率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
                         labels: { 
                             style: { fontSize: '14px', colors: '#3b82f6' },
                             formatter: function(val) {

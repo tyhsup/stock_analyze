@@ -550,11 +550,15 @@ def macro_data_api(request):
         })
         
 
+
     return JsonResponse({
         'status': 'success',
         'us': us_data,
         'tw': tw_data
     })
+
+
+
 
 
 
