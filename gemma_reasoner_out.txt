@@ -1,72 +1,52 @@
-這是一個結構明確且必要的擴展。總經分析（Macroeconomic Analysis）的加入，能將單純的技術面與基本面評估提升至更宏觀的投資週期判斷層級，極大地增強了系統的深度和可信度。
+這是一個典型的主題切換（Theme Switching）時，CSS 樣式層級或顏色定義不夠全面的邊界渲染問題。當系統進入暗色模式 (`dark-theme`) 時，預設的 `border-top` 或容器背景與邊框之間的對比度過高，導致視覺上出現了突兀的黑色線條。
 
-根據您的需求，我已從架構、數據流、以及核心防禦機制三個面向進行分析，並提出以下模組化設計方案。
+根據您的描述，我們需要在 `base.html` 的 CSS 覆蓋規則中，為暗色主題下的建議卡片（Smart Suggestion Cards）提供更柔和、符合整體 UI 設計風格的邊框顏色定義。
 
 ---
 
-## 📈 總經分析子 Agent 架構規劃 (MacroAgent)
+### 【代碼審查與修復方案】
 
-### I. 系統流程圖與職責劃分
+**目標檔案：** `base.html` (或相關的主題樣式表)
+**問題點：** 暗色主題下，建議卡片頂部邊框 (`border-top`) 顏色未被正確覆蓋。
+**修復策略：** 在 `.dark-theme` 類別範圍內，提高目標元素的 CSS 特異性（Specificity），並將 `border-top` 的顏色定義為與暗色背景更協調的淺灰色或低飽和度的藍灰色。
 
-新的 `MacroAgent` 將作為一個獨立的「觀點生成層」（View Generation Layer），其輸出是高度結構化的、可供後續整合的文本摘要，而非原始數據。
+#### 🛠️ 建議新增/修改的 CSS 代碼區塊
 
-**【新增工作流】**
-1. **輸入 (Input):** 股票代碼 $\rightarrow$ 所屬產業別 $\rightarrow$ 市場類型 (TW/US) $\rightarrow$ 分析時間週期 (e.g., Q3 2024)。
-2. **MacroAgent 執行:**
-    *   A. 數據擷取：獲取全球關鍵指標（如 CPI, PMI, Fed Rate, 貿易指數等）。
-    *   B. 指標分析：判斷當前宏觀環境處於哪個週期階段 (e.g., 通縮、滯脹、復甦)。
-    *   C. 產業/市場映射：根據 A 和 B 的結果，對所屬的產業別和市場類型進行風險評級與趨勢預測。
-3. **輸出 (Output):** 一份結構化的 JSON 或 Markdown 格式的「宏觀總結報告」，傳遞給綜合分析 Agent。
+請在 `base.html` 中，找到處理主題樣式的 `<style>` 或外部 CSS 文件中，加入以下覆蓋規則：
 
-### II. 模組化設計細節與數據流管理
+```css
+/* ================================================== */
+/* [FIX] Smart Suggestion Card - Dark Theme Border Fix */
+/* 確保在暗色模式下，建議卡片的頂部邊框不會變為突兀的黑色。 */
+/* ================================================== */
 
-#### A. `MacroDataFetcher` 模組（資料層）
-此模組負責從多源頭獲取全球經濟指標。
-
-*   **核心功能：** 定時同步 CPI、PMI (購買經理人指數)、利率曲線、主要國家 GDP 增長率等數據。
-*   **技術考量與防禦要點執行：**
-    1.  **【Unicode 防禦】:** 若從本地 CSV 或資料庫讀取歷史指標數據，必須在所有 `open()` 函數中強制加入編碼處理。例如：`pd.read_csv(file_path, encoding='utf-8', errors='ignore')`。
-    2.  **【JSON 序列化保護】:** 當將多個時間序列的宏觀數據（包含日期和浮點數）組合成一個待傳輸的 Python Dictionary 時，必須預先執行格式轉換：
-        *   `datetime.date/datetime.datetime` $\rightarrow$ `str` (ISO Format)。
-        *   `decimal.Decimal` $\rightarrow$ `float` 或 `str`。
-
-#### B. `ViewGeneratorAgent` 模組（推理層）
-這是核心的 LLM 推理環節，負責將原始數據轉化為可讀的投資觀點。
-
-*   **輸入：** 結構化的宏觀指標數據 (JSON)。
-*   **處理邏輯：** 採用 RAG 或 Prompt Engineering 的方式，設計一套決策樹或規則集：
-    *   *IF* CPI 上升 $\text{AND}$ PMI 下降 $\rightarrow$ **可能進入滯脹環境。**
-    *   *IF* 市場為美股 $\text{AND}$ 環境為通縮 $\rightarrow$ 建議關注價值型、抗衰退產業 (Defensive Sector)。
-*   **輸出格式：** 必須是高度結構化的 JSON，包含以下欄位：
-
-```json
-{
-  "macro_summary": "總體經濟環境判斷",
-  "global_outlook": {
-    "cycle_stage": "e.g., Early Recovery / Stagflation",
-    "risk_level": "Medium-High",
-    "key_drivers": ["Inflationary pressure from energy.", "Rate hike cycle nearing end."]
-  },
-  "market_specific_view": {
-    "market_type": "US Stock Market",
-    "sector_recommendation": "Technology (AI Infrastructure)",
-    "rationale": "受惠於全球數位轉型，且利率環境趨穩利於高成長科技股估值。"
-  },
-  "actionable_advice": "建議在短期內關注具有強大現金流和定價能力的領導品牌。",
+/* 1. 定義整個容器的覆蓋規則 (如果卡片是放在一個特定父元素內) */
+body.dark-theme .suggestion-card,
+.dark-theme .smart-suggest-container {
+    /* 確保背景色與暗主題一致，避免邊框產生錯覺 */
+    background-color: var(--bg-secondary-dark); /* 使用系統定義的次級深色背景 */
 }
+
+/* 2. 覆蓋頂部邊框顏色 (核心修復) */
+body.dark-theme .suggestion-card,
+.dark-theme .smart-suggest-container {
+    /* 將 border-top 的顏色從預設值（可能為黑色）強制改為柔和的淺灰或藍灰色 */
+    border-top: 1px solid #3a4762 !important; /* 建議使用此種低飽和度的深藍灰 */
+}
+
+/* 3. 如果卡片本身有 bg-light 的應用，也需要調整其邊框顏色 */
+body.dark-theme .bg-light {
+    border-top: none !important; /* 若不希望在暗色模式下顯示任何頂部線條，則設為 none */
+}
+
+/* 備註：如果您的設計要求保留一個極細的分割線，請使用以下替代值： */
+/* border-top: 1px solid rgba(255, 255, 255, 0.08) !important; */
 ```
 
-### III. 整合與防禦要點總檢核 (Critical Review)
+### 【實施說明與注意事項】
 
-為確保新功能穩定運行，必須嚴格遵守以下專案歷史踩坑防禦要點：
+1.  **CSS 特異性 (Specificity)：** 我們使用了 `body.dark-theme` 這個組合選擇器，確保這些樣式只在應用程式處於暗色模式時生效。同時使用 `!important` 標記是必要的，因為這是在覆蓋現有的、具有高特異性的預設邊框定義。
+2.  **顏色調整：** 我建議的 `#3a4762` 是一個常見且視覺上舒適的深藍灰色，它既能提供結構感，又不會像純黑（`#000000`）那樣刺眼。請根據您平台整體 UI 的色板進行微調。
+3.  **零破壞原則確認：** 此 CSS 調整僅針對視覺邊框的顏色覆蓋，不涉及任何結構性 HTML 或 JavaScript 邏輯修改。因此，不會干擾既有的 ApexCharts K線圖渲染或 Blended Valuation 計算的核心功能區塊。
 
-| 防禦要點 | 發生情境 | 執行機制要求 |
-| :--- | :--- | :--- |
-| **【Unicode 防禦】** | `MacroDataFetcher` 從本地讀取全球指標 CSV 或資料庫。 | 所有檔案 I/O 必須使用 `errors='ignore'` 或 `errors='replace'`，避免編碼衝突導致程式崩潰。 |
-| **【JSON 序列化保護】** | 將 MacroAgent 的分析結果（包含日期、浮點數）傳遞給後續的 API 呼叫或資料庫儲存時。 | 必須在 Python 層面強制將 `datetime` 和 `Decimal` 轉換為標準的 `str` 或 `float`，防止序列化失敗。 |
-| **【Gemini API 400 兼容】** | 當綜合分析 Agent 接收到 MacroAgent 的觀點後，若需要進行二次推理（例如：將宏觀觀點與技術圖表結合），且使用 Function Calling 機制。 | 第二輪 `functionResponse` 必須完整包含第一輪所有傳入的 `parts` (包括原始輸入和任何思維簽名 $\text{thoughtSignature}$)，否則會觸發 HTTP 400 錯誤。 |
-| **【零破壞原則】** | 新增的總經分析面板或報告。 | 此模組必須設計為一個獨立的、可選啟動的「資訊懸浮區」（Information Overlay Panel）。其輸出應僅作為輔助參考，絕不能修改或干擾現有的 ApexCharts K 線圖繪製邏輯或 `blended valuation` 的計算核心函數。 |
-
-### 總結建議
-
-請將 MacroAgent 設計為一個**異步（Asynchronous）**的服務呼叫。當用戶請求分析時，系統應先啟動技術面和基本面分析，同時在背景啟動 MacroAgent。最終結果由主控 Agent 負責協調並以統一、分層次的介面呈現給使用者。
+請將上述代碼片段整合到您的 `base.html` 的樣式定義中，並進行測試驗證。
