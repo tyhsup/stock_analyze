@@ -899,64 +899,173 @@
         const points = [];
         if (closes.length < 20) return points;
         
-        const ma20 = simpleMA(closes, 20);
+        // 1. 計算多週期均線
         const ma5 = simpleMA(closes, 5);
+        const ma10 = simpleMA(closes, 10);
+        const ma20 = simpleMA(closes, 20);
+        const ma60 = simpleMA(closes, 60);
+        const ma240 = simpleMA(closes, 240); // 年線需要防範長度不足
         
+        let lastUpDay = -10;
+        let lastDownDay = -10;
+        const cooldown = 5; // 訊號冷卻時間 (天)
+
         for (let i = 2; i < closes.length; i++) {
-            if (ma20[i] === null || ma20[i-1] === null || ma20[i-2] === null) continue;
+            let activeUpSignal = null;
+            let activeDownSignal = null;
             
-            // 1. 斜率反轉判斷
-            const slopeCurr = ma20[i] - ma20[i-1];
-            const slopePrev = ma20[i-1] - ma20[i-2];
+            const registerUp = (reason, weight) => {
+                if (!activeUpSignal || weight > activeUpSignal.weight) {
+                    activeUpSignal = { reason, weight };
+                }
+            };
             
-            let isUp = false;
-            let isDown = false;
-            let reason = "";
-            
-            if (slopePrev <= 0 && slopeCurr > 0) {
-                isUp = true;
-                reason = "MA翻揚";
-            } else if (slopePrev >= 0 && slopeCurr < 0) {
-                isDown = true;
-                reason = "MA下彎";
-            }
-            
-            // 2. 交叉反轉判斷
-            if (ma5[i] !== null && ma5[i-1] !== null) {
-                if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i]) {
-                    isUp = true;
-                    reason = "黃金交叉";
-                } else if (ma5[i-1] >= ma20[i-1] && ma5[i] < ma20[i]) {
-                    isDown = true;
-                    reason = "死亡交叉";
+            const registerDown = (reason, weight) => {
+                if (!activeDownSignal || weight > activeDownSignal.weight) {
+                    activeDownSignal = { reason, weight };
+                }
+            };
+
+            // --- A. 中長期均線方向與斜率變化 ---
+            // 20 MA 斜率與扣抵值防護
+            if (ma20[i] !== null && ma20[i-1] !== null && ma20[i-2] !== null) {
+                const slopeCurr = ma20[i] - ma20[i-1];
+                const slopePrev = ma20[i-1] - ma20[i-2];
+                
+                if (slopePrev <= 0 && slopeCurr > 0) {
+                    registerUp("MA翻揚", 1);
+                } else if (slopePrev >= 0 && slopeCurr < 0) {
+                    // 扣抵防護：若今日收盤高於20日前收盤，判定為假下彎 (劇烈回檔)
+                    if (i >= 20 && closes[i-20] !== undefined && closes[i] > closes[i-20]) {
+                        // 扣抵防護發揮作用，此處不記為結構性下彎
+                    } else {
+                        registerDown("MA下彎", 1);
+                    }
                 }
             }
-            
-            // 3. 乖離率反轉判斷
-            const bias20 = ((closes[i] - ma20[i]) / ma20[i]) * 100;
-            if (bias20 <= -7) {
-                isUp = true;
-                reason = "超跌反彈";
-            } else if (bias20 >= 8) {
-                isDown = true;
-                reason = "超買回檔";
+
+            // 60 MA (季線) 斜率轉折
+            if (ma60[i] !== null && ma60[i-1] !== null && ma60[i-2] !== null) {
+                const slope60Curr = ma60[i] - ma60[i-1];
+                const slope60Prev = ma60[i-1] - ma60[i-2];
+                if (slope60Prev <= 0 && slope60Curr > 0) {
+                    registerUp("季線翻揚", 3);
+                } else if (slope60Prev >= 0 && slope60Curr < 0) {
+                    registerDown("季線下彎", 3);
+                }
             }
-            
-            // 標記轉折點為 annotations point
-            if (isUp) {
+
+            // 240 MA (年線) 斜率與翻揚/下彎 (需防空保護)
+            if (ma240[i] !== null && ma240[i-1] !== null) {
+                const slope240 = ma240[i] - ma240[i-1];
+                if (closes[i] > ma240[i] && closes[i-1] <= ma240[i-1] && slope240 > 0) {
+                    registerUp("年線翻揚", 7);
+                } else if (closes[i] < ma240[i] && closes[i-1] >= ma240[i-1] && slope240 < 0) {
+                    registerDown("年線下彎", 7);
+                }
+            }
+
+            // --- B. 多週期均線交叉訊號 ---
+            // 5 MA / 20 MA 交叉
+            if (ma5[i] !== null && ma5[i-1] !== null && ma20[i] !== null && ma20[i-1] !== null) {
+                if (ma5[i-1] <= ma20[i-1] && ma5[i] > ma20[i]) {
+                    registerUp("黃金交叉", 4);
+                } else if (ma5[i-1] >= ma20[i-1] && ma5[i] < ma20[i]) {
+                    registerDown("死亡交叉", 4);
+                }
+            }
+
+            // 5 MA / 10 MA 交叉 (短線轉折)
+            if (ma5[i] !== null && ma5[i-1] !== null && ma10[i] !== null && ma10[i-1] !== null) {
+                if (ma5[i-1] <= ma10[i-1] && ma5[i] > ma10[i]) {
+                    registerUp("短線黃金交叉", 4);
+                } else if (ma5[i-1] >= ma10[i-1] && ma5[i] < ma10[i]) {
+                    registerDown("短線死亡交叉", 4);
+                }
+            }
+
+            // 20 MA / 60 MA 交叉 (中線趨勢)
+            if (ma20[i] !== null && ma20[i-1] !== null && ma60[i] !== null && ma60[i-1] !== null) {
+                if (ma20[i-1] <= ma60[i-1] && ma20[i] > ma60[i]) {
+                    registerUp("中線黃金交叉", 5);
+                } else if (ma20[i-1] >= ma60[i-1] && ma20[i] < ma60[i]) {
+                    registerDown("中線死亡交叉", 5);
+                }
+            }
+
+            // 60 MA / 240 MA 交叉 (長線趨勢)
+            if (ma60[i] !== null && ma60[i-1] !== null && ma240[i] !== null && ma240[i-1] !== null) {
+                if (ma60[i-1] <= ma240[i-1] && ma60[i] > ma240[i]) {
+                    registerUp("長線黃金交叉", 6);
+                } else if (ma60[i-1] >= ma240[i-1] && ma60[i] < ma240[i]) {
+                    registerDown("長線死亡交叉", 6);
+                }
+            }
+
+            // --- C. 利用「扣抵值」前瞻預警 ---
+            if (i >= 21 && closes[i-20] !== undefined && closes[i-21] !== undefined) {
+                // 股價向上突破 20 日前的扣抵值，預示 20 MA 即將翻揚
+                if (closes[i] > closes[i-20] && closes[i-1] <= closes[i-21]) {
+                    registerUp("20MA扣抵翻揚預警", 2);
+                }
+                // 股價跌破 20 日前的扣抵值，預示 20 MA 即將下彎
+                else if (closes[i] < closes[i-20] && closes[i-1] >= closes[i-21]) {
+                    registerDown("20MA扣抵下彎預警", 2);
+                }
+            }
+
+            // --- D. 多週期乖離率 (BIAS) 判斷 ---
+            const bias5 = ma5[i] ? ((closes[i] - ma5[i]) / ma5[i]) * 100 : 0;
+            const bias20 = ma20[i] ? ((closes[i] - ma20[i]) / ma20[i]) * 100 : 0;
+            const bias60 = ma60[i] ? ((closes[i] - ma60[i]) / ma60[i]) * 100 : 0;
+
+            // 超跌反彈 (Up)
+            if (ma60[i] !== null && bias60 <= -11.0) {
+                registerUp("季線超跌", 9);
+            } else if (ma20[i] !== null && ma5[i] !== null && bias20 <= -7.0 && bias5 <= -3.0) {
+                registerUp("共振超跌", 9);
+            } else if (ma20[i] !== null && bias20 <= -7.0) {
+                registerUp("超跌反彈", 3);
+            }
+
+            // 超買回檔 (Down)
+            if (ma60[i] !== null && bias60 >= 11.0) {
+                registerDown("季線超買", 9);
+            } else if (ma20[i] !== null && ma5[i] !== null && bias20 >= 8.0 && bias5 >= 3.5) {
+                registerDown("共振超買", 9);
+            } else if (ma20[i] !== null && bias20 >= 8.0) {
+                registerDown("超買回檔", 3);
+            }
+
+            // --- E. 訊號決策與冷卻時間過濾 ---
+            let finalUp = (activeUpSignal && (i - lastUpDay > cooldown)) ? activeUpSignal : null;
+            let finalDown = (activeDownSignal && (i - lastDownDay > cooldown)) ? activeDownSignal : null;
+
+            // 如果同日出現多空訊號，以權重較大者優先
+            if (finalUp && finalDown) {
+                if (finalUp.weight >= finalDown.weight) {
+                    finalDown = null;
+                } else {
+                    finalUp = null;
+                }
+            }
+
+            if (finalUp) {
                 points.push({
                     x: timestamps[i],
                     y: candleData[i].y[2] * 0.98, // 最低價下方 2%
                     marker: { size: 6, fillColor: '#00e676', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: reason, style: { color: '#fff', background: '#00c853' } }
+                    label: { text: finalUp.reason, style: { color: '#fff', background: '#00c853' } }
                 });
-            } else if (isDown) {
+                lastUpDay = i;
+            } else if (finalDown) {
                 points.push({
                     x: timestamps[i],
                     y: candleData[i].y[1] * 1.02, // 最高價上方 2%
                     marker: { size: 6, fillColor: '#ff1744', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: reason, style: { color: '#fff', background: '#d50000' } }
+                    label: { text: finalDown.reason, style: { color: '#fff', background: '#d50000' } }
                 });
+                lastDownDay = i;
             }
         }
         return points;
