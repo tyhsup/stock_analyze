@@ -444,11 +444,12 @@ class IntegratedStockPredModel:
         valuation_features: dict, 
         latest_price: float,
         industry: str = "其他/未知",
-        latest_macro_data: dict = None
+        latest_macro_data: dict = None,
+        ma_features: dict = None
     ) -> dict:
         """
-        綜合分析技術面(LSTM)、籌碼面(法人)、情緒面(新聞)、基本面(估值)與最新股價，
-        調用雲端 Gemini.CLI 31b (gemma-4-31b-it) 取得買賣建議與指針分數。
+        綜合分析技術面(LSTM + 均線量價雙軌)、籌碼面(法人)、情緒面(新聞)、基本面(估值)與最新股價，
+        調用雲端 Gemini 取得買賣建議與指針分數。
         """
         import subprocess
         import shutil
@@ -461,6 +462,8 @@ class IntegratedStockPredModel:
             sentiment_summary = {}
         if valuation_features is None:
             valuation_features = {}
+        if ma_features is None:
+            ma_features = {}
             
         # 總經分析子 Agent 預先推理
         macro_view = self.generate_macro_perspective(
@@ -473,6 +476,21 @@ class IntegratedStockPredModel:
         pred_list = lstm_pred.get('predictions', [])
         pred_str = ", ".join([f"{p:.2f}" for p in pred_list]) if pred_list else "暫無數據"
         trend_prob = lstm_pred.get('trend_probability', 0.5)
+        
+        # 均線量價雙軌與布林通道資料
+        ma_align = ma_features.get('ma_alignment', '多空混沌/無數據')
+        ma_signals = ma_features.get('recent_signals', [])
+        ma_signals_str = ", ".join(ma_signals) if ma_signals else "近 5 日無顯著轉折訊號"
+        bias_20 = ma_features.get('bias_20', 'N/A')
+        vol_conf = ma_features.get('volume_confirmation', '無數據')
+        deg_level = ma_features.get('degradation_level', '標準')
+
+        bb_dict = ma_features.get('bollinger_analysis', {})
+        bb_tri = bb_dict.get('bb_tri_tracks', 'N/A')
+        bb_pb = bb_dict.get('percent_b', 'N/A')
+        bb_bw = bb_dict.get('bandwidth', 'N/A')
+        bb_pat = bb_dict.get('pattern_state', 'N/A')
+        bb_adv = bb_dict.get('strategy_advice', 'N/A')
         
         # 籌碼資料
         chips_str = json.dumps(chips_features, ensure_ascii=False)
@@ -492,10 +510,20 @@ class IntegratedStockPredModel:
         # 構建 Prompt
         prompt = (
             f"您是專業的金融分析師。請綜合分析以下提供的股票（{self.stock_number}）數據，並給出投資建議：\n\n"
-            f"[技術分析與預測]\n"
+            f"[技術分析與預測 (LSTM + 均線 + 布林通道多軌分析)]\n"
             f"- 最新收盤價: {latest_price:.2f}\n"
             f"- LSTM 預測未來 5 日價格走勢: [{pred_str}]\n"
-            f"- LSTM 預估看漲機率: {trend_prob * 100:.1f}%\n\n"
+            f"- LSTM 預估看漲機率: {trend_prob * 100:.1f}%\n"
+            f"- 均線排列型態: {ma_align}\n"
+            f"- 布林通道三軌位置: {bb_tri}\n"
+            f"- 布林 %B 指標與強弱分區: {bb_pb}\n"
+            f"- 布林通道帶寬: {bb_bw}\n"
+            f"- 布林型態狀態: {bb_pat}\n"
+            f"- 布林實戰策略解讀: {bb_adv}\n"
+            f"- 近 5 日關鍵技術與布林轉折訊號: {ma_signals_str}\n"
+            f"- 20日乖離率 (BIAS): {bias_20}\n"
+            f"- 量價動能驗證: {vol_conf}\n"
+            f"- 技術面評估範疇: {deg_level}\n\n"
             f"[法人籌碼面]\n"
             f"- 近期籌碼概況: {chips_str}\n\n"
             f"[輿情情緒面]\n"

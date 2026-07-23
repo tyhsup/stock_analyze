@@ -1,9 +1,22 @@
 import pandas as pd
 import numpy as np
-import talib
+try:
+    import talib
+except ImportError:
+    talib = None
 import datetime, io, urllib, base64, time, os
-from sklearn.preprocessing import MinMaxScaler
-from stock_Django import mySQL_OP
+try:
+    from sklearn.preprocessing import MinMaxScaler
+except ImportError:
+    MinMaxScaler = None
+
+try:
+    from stock_Django import mySQL_OP
+except ImportError:
+    try:
+        from . import mySQL_OP
+    except ImportError:
+        mySQL_OP = None
 
 class StockUtils:
     @staticmethod

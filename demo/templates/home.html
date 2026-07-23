@@ -480,6 +480,7 @@
                 </div>
             </div>
             <div class="card-body p-0">
+                <div id="bb-status-badge" class="px-3 pt-2" style="display:none;"></div>
                 <div id="kline-main" style="min-height: 450px;"></div>
                 <div id="kline-volume" style="min-height: 160px;"></div>
                 <div id="kline-rsi-wrap" style="display:none;">
@@ -1054,21 +1055,192 @@
                 points.push({
                     x: timestamps[i],
                     y: candleData[i].y[2] * 0.98, // 最低價下方 2%
-                    marker: { size: 6, fillColor: '#00e676', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: finalUp.reason, style: { color: '#fff', background: '#00c853' } }
+                    marker: { size: 7, fillColor: '#00e676', strokeColor: '#fff', shape: 'circle' },
+                    label: { text: finalUp.reason, style: { color: '#fff', background: '#00c853', fontSize: '15px', fontWeight: 'bold' } }
                 });
                 lastUpDay = i;
             } else if (finalDown) {
                 points.push({
                     x: timestamps[i],
                     y: candleData[i].y[1] * 1.02, // 最高價上方 2%
-                    marker: { size: 6, fillColor: '#ff1744', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: finalDown.reason, style: { color: '#fff', background: '#d50000' } }
+                    marker: { size: 7, fillColor: '#ff1744', strokeColor: '#fff', shape: 'circle' },
+                    label: { text: finalDown.reason, style: { color: '#fff', background: '#d50000', fontSize: '15px', fontWeight: 'bold' } }
                 });
                 lastDownDay = i;
             }
         }
         return points;
+    }
+
+    function computeBollingerAnnotations(closes, candleData, timestamps, upper, middle, lower) {
+        const result = { points: [], latestInfo: null };
+        if (!closes || closes.length < 20 || !upper || !middle || !lower) return result;
+
+        const n = closes.length;
+        const bandwidths = [];
+        const percentBs = [];
+        for (let i = 0; i < n; i++) {
+            const m = middle[i];
+            const u = upper[i];
+            const l = lower[i];
+            if (m !== null && m !== undefined && m !== 0 && u !== null && l !== null) {
+                const bw = (u - l) / m;
+                bandwidths.push(bw);
+                const pb = (u - l) !== 0 ? (closes[i] - l) / (u - l) : 0.5;
+                percentBs.push(pb);
+            } else {
+                bandwidths.push(null);
+                percentBs.push(null);
+            }
+        }
+
+        let lastSqueezeDay = -10;
+        let lastExpansionDay = -10;
+        let lastWalkDay = -10;
+        let lastReversalDay = -10;
+        const cooldown = 4;
+
+        for (let i = 20; i < n; i++) {
+            if (bandwidths[i] === null || bandwidths[i-1] === null) continue;
+
+            const currClose = closes[i];
+            const prevClose = closes[i-1];
+            const currHigh = candleData[i].y[1];
+            const currLow = candleData[i].y[2];
+            const currBw = bandwidths[i];
+            const prevBw = bandwidths[i-1];
+
+            const slope20 = (middle[i] && middle[i-1]) ? (middle[i] - middle[i-1]) / middle[i-1] : 0;
+            const recentBws = bandwidths.slice(Math.max(0, i-19), i+1).filter(v => v !== null);
+            const minBw20 = Math.min(...recentBws);
+            const avgBw20 = recentBws.reduce((a,b)=>a+b, 0) / (recentBws.length || 1);
+
+            let signalText = null;
+            let signalBg = '#333';
+            let signalPos = 'above';
+
+            // 1. Squeeze 緊縮蓄勢
+            if (currBw <= minBw20 * 1.05 && Math.abs(slope20) < 0.0015 && (i - lastSqueezeDay > cooldown)) {
+                signalText = '布林緊縮 (Squeeze)';
+                signalBg = '#ab47bc';
+                signalPos = 'below';
+                lastSqueezeDay = i;
+            }
+            // 2. Expansion 開口發散 (多頭突破 / 空頭跌破)
+            else if (currBw > prevBw * 1.12 && currBw > avgBw20 * 1.2) {
+                if (currClose > upper[i] && prevClose <= upper[i-1] && (i - lastExpansionDay > cooldown)) {
+                    signalText = '布林突破發散 (多頭)';
+                    signalBg = '#e91e63';
+                    signalPos = 'above';
+                    lastExpansionDay = i;
+                } else if (currClose < lower[i] && prevClose >= lower[i-1] && (i - lastExpansionDay > cooldown)) {
+                    signalText = '布林跌破發散 (空頭)';
+                    signalBg = '#00c853';
+                    signalPos = 'below';
+                    lastExpansionDay = i;
+                }
+            }
+            // 3. Band Walk 貼帶跟隨
+            else if (i >= 21 && (i - lastWalkDay > cooldown)) {
+                const isWalkUpper = closes[i] >= upper[i] * 0.995 && closes[i-1] >= upper[i-1] * 0.995 && slope20 > 0.001;
+                const isWalkLower = closes[i] <= lower[i] * 1.005 && closes[i-1] <= lower[i-1] * 1.005 && slope20 < -0.001;
+                if (isWalkUpper) {
+                    signalText = '貼帶強勢多頭 (Band Walk)';
+                    signalBg = '#ff1744';
+                    signalPos = 'above';
+                    lastWalkDay = i;
+                } else if (isWalkLower) {
+                    signalText = '貼帶弱勢空頭 (Band Walk)';
+                    signalBg = '#00e676';
+                    signalPos = 'below';
+                    lastWalkDay = i;
+                }
+            }
+
+            // 4. 觸軌均值回歸 (均值回歸)
+            if (!signalText && Math.abs(slope20) < 0.002 && (i - lastReversalDay > cooldown)) {
+                if (currHigh >= upper[i] * 0.998 && currClose < upper[i]) {
+                    signalText = '觸及上軌 (均值回歸)';
+                    signalBg = '#ff9100';
+                    signalPos = 'above';
+                    lastReversalDay = i;
+                } else if (currLow <= lower[i] * 1.002 && currClose > lower[i]) {
+                    signalText = '觸及下軌 (均值回歸)';
+                    signalBg = '#29b6f6';
+                    signalPos = 'below';
+                    lastReversalDay = i;
+                }
+            }
+
+            if (signalText) {
+                result.points.push({
+                    x: timestamps[i],
+                    y: signalPos === 'above' ? currHigh * 1.025 : currLow * 0.975,
+                    marker: { size: 7, fillColor: signalBg, strokeColor: '#fff', shape: 'circle' },
+                    label: { text: signalText, style: { color: '#fff', background: signalBg, fontSize: '14px', fontWeight: 'bold' } }
+                });
+            }
+        }
+
+        // 最新狀態 (Index = n - 1)
+        const lastIdx = n - 1;
+        const latestPb = percentBs[lastIdx];
+        const latestBw = bandwidths[lastIdx];
+        const latestClose = closes[lastIdx];
+        const latestUpper = upper[lastIdx];
+        const latestMiddle = middle[lastIdx];
+        const latestLower = lower[lastIdx];
+
+        let zoneText = '';
+        let zoneBadgeClass = '';
+        let strategyAdvice = '';
+
+        if (latestPb !== null) {
+            if (latestPb > 1.0) {
+                zoneText = '極強勢區 (>+2σ)';
+                zoneBadgeClass = 'bg-danger text-white';
+                strategyAdvice = '趨勢極強，已有多單續抱，不宜追高；防範假突破拉回。';
+            } else if (latestPb > 0.8) {
+                zoneText = '強勢區 (+1σ ~ +2σ)';
+                zoneBadgeClass = 'bg-warning text-dark';
+                strategyAdvice = '多方主導行情，最佳買點為拉回回踩中軌 (20MA) 或 +1σ 時順勢進場。';
+            } else if (latestPb >= 0.2) {
+                zoneText = '震盪區 (-1σ ~ +1σ)';
+                zoneBadgeClass = 'bg-secondary text-white';
+                strategyAdvice = '無明確單邊趨勢，隨機性較強，建議區間均值回歸低買高賣或觀望。';
+            } else if (latestPb >= 0.0) {
+                zoneText = '弱勢區 (-2σ ~ -1σ)';
+                zoneBadgeClass = 'bg-info text-dark';
+                strategyAdvice = '空方主導行情，最佳賣點為反彈至中軌 (20MA) 或 -1σ 時順勢做空。';
+            } else {
+                zoneText = '極弱勢區 (<-2σ)';
+                zoneBadgeClass = 'bg-success text-white';
+                strategyAdvice = '嚴重超賣但跌勢強勁，已有空單續抱，切忌急於抄底。';
+            }
+        }
+
+        let patternState = '通道平穩';
+        if (latestBw && latestBw < Math.min(...bandwidths.slice(Math.max(0, lastIdx-19)).filter(v=>v!==null)) * 1.08) {
+            patternState = '布林緊縮蓄勢 (Squeeze)';
+        } else if (latestUpper && latestClose >= latestUpper * 0.995) {
+            patternState = '貼近上軌強勢推進 (Band Walk)';
+        } else if (latestLower && latestClose <= latestLower * 1.005) {
+            patternState = '貼近下軌弱勢推進 (Band Walk)';
+        }
+
+        result.latestInfo = {
+            percentB: (latestPb !== null) ? (latestPb * 100).toFixed(1) + '%' : 'N/A',
+            bandwidth: (latestBw !== null) ? (latestBw * 100).toFixed(1) + '%' : 'N/A',
+            zoneText: zoneText,
+            zoneBadgeClass: zoneBadgeClass,
+            patternState: patternState,
+            strategyAdvice: strategyAdvice,
+            upperPrice: (latestUpper !== null && latestUpper !== undefined) ? latestUpper.toFixed(2) : 'N/A',
+            middlePrice: (latestMiddle !== null && latestMiddle !== undefined) ? latestMiddle.toFixed(2) : 'N/A',
+            lowerPrice: (latestLower !== null && latestLower !== undefined) ? latestLower.toFixed(2) : 'N/A'
+        };
+
+        return result;
     }
 
     // ============================================================
@@ -1121,6 +1293,7 @@
         });
 
         // Bollinger Bands
+        let bbRawUpper = null, bbRawMiddle = null, bbRawLower = null;
         const bbChecked = document.getElementById('ind-bb') && document.getElementById('ind-bb').checked;
         if (bbChecked) {
             // Force re-calculation if not Daily view to ensure alignment
@@ -1133,14 +1306,15 @@
                 const bb = bollingerBands(closes);
                 upper = bb.upper; middle = bb.ma; lower = bb.lower;
             }
+            bbRawUpper = upper; bbRawMiddle = middle; bbRawLower = lower;
             const bbUpper = timestamps.map((ts, i) => ({ x: ts, y: upper[i] !== null ? parseFloat(upper[i].toFixed(2)) : null }));
             const bbMiddle = timestamps.map((ts, i) => ({ x: ts, y: middle[i] !== null ? parseFloat(middle[i].toFixed(2)) : null }));
             const bbLower = timestamps.map((ts, i) => ({ x: ts, y: lower[i] !== null ? parseFloat(lower[i].toFixed(2)) : null }));
             mainSeries.push({ name: 'BB Upper', type: 'line', data: bbUpper });
             mainSeries.push({ name: 'BB Middle', type: 'line', data: bbMiddle });
             mainSeries.push({ name: 'BB Lower', type: 'line', data: bbLower });
-            maWidths.push(1, 1.5, 1);
-            maColors.push('#90caf9', '#64b5f6', '#90caf9');
+            maWidths.push(3, 3.5, 3);
+            maColors.push('#ff5252', '#ffb300', '#00e676');
         }
 
         // Parabolic SAR
@@ -1300,6 +1474,46 @@
             revPoints.forEach(pt => {
                 mainOptions.annotations.points.push(pt);
             });
+        }
+
+        // Bollinger Bands Annotations & Real-time Status Card
+        const bbBadgeEl = document.getElementById('bb-status-badge');
+        if (bbChecked && bbRawUpper && bbRawMiddle && bbRawLower) {
+            const bbAnnoResult = computeBollingerAnnotations(closes, candleData, timestamps, bbRawUpper, bbRawMiddle, bbRawLower);
+            bbAnnoResult.points.forEach(pt => {
+                mainOptions.annotations.points.push(pt);
+            });
+
+            if (bbBadgeEl && bbAnnoResult.latestInfo) {
+                const info = bbAnnoResult.latestInfo;
+                bbBadgeEl.style.display = 'block';
+                bbBadgeEl.innerHTML = `
+                    <div class="card bg-dark border-primary text-light shadow-sm mb-2">
+                        <div class="card-body py-2 px-3">
+                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge bg-primary fs-6"><i class="bi bi-bounding-box me-1"></i>布林通道 (Bollinger Bands)</span>
+                                    <span class="badge ${info.zoneBadgeClass}">${info.zoneText}</span>
+                                    <span class="badge bg-info text-dark fw-bold">${info.patternState}</span>
+                                </div>
+                                <div class="small">
+                                    <span class="me-3"><strong>%B 指標:</strong> <span class="text-warning fw-bold">${info.percentB}</span></span>
+                                    <span class="me-3"><strong>帶寬 (Bandwidth):</strong> <span class="text-info fw-bold">${info.bandwidth}</span></span>
+                                    <span><strong>三軌 (上/中/下):</strong> <span style="color:#ff5252;font-weight:bold;">${info.upperPrice}</span> / <span style="color:#ffb300;font-weight:bold;">${info.middlePrice}</span> / <span style="color:#00e676;font-weight:bold;">${info.lowerPrice}</span></span>
+                                </div>
+                            </div>
+                            <div class="mt-1 pt-1 border-top border-secondary text-light small">
+                                <i class="bi bi-lightbulb-fill text-warning me-1"></i><strong>實戰策略建議：</strong>${info.strategyAdvice}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
+            if (bbBadgeEl) {
+                bbBadgeEl.style.display = 'none';
+                bbBadgeEl.innerHTML = '';
+            }
         }
 
         if (_mainChart) {
@@ -2095,8 +2309,8 @@
             const createItem = (id, name, checked, color) => {
                 const li = document.createElement('li');
                 li.className = 'indicator-item';
-                li.innerHTML = `<label class="form-check-label d-flex gap-2 mb-1" style="cursor: pointer;">
-                    <input class="form-check-input" type="checkbox" id="${id}" ${checked ? 'checked' : ''} onchange="updateIndicators()">
+                li.innerHTML = `<label class="form-check-label d-flex align-items-center gap-2 mb-1" style="cursor: pointer;">
+                    <input class="form-check-input flex-shrink-0" type="checkbox" id="${id}" ${checked ? 'checked' : ''} onchange="updateIndicators()">
                     <span style="${color ? 'color:' + color : ''}">${name}</span>
                 </label>`;
                 return li;

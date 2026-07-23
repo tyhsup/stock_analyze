@@ -240,6 +240,17 @@ def gemini_advisor_analysis(request, ticker):
         
     latest_price = float(hist_data_db['Close'].iloc[-1])
     
+    # 1.5 均線線型與轉折點量價雙軌特徵
+    ma_features = {}
+    try:
+        try:
+            from stock_Django.dataset_builders import MovingAverageTrendExtractor
+        except ImportError:
+            from .dataset_builders import MovingAverageTrendExtractor
+        ma_features = MovingAverageTrendExtractor.extract_ma_features(hist_data_db)
+    except Exception as e_ma:
+        logger.warning(f"Failed to extract MA features for Gemini advice: {e_ma}")
+    
     # 2. LSTM 技術預測 (僅從資料庫讀取快取，避免 Cache Miss 時執行耗時的 TensorFlow 訓練)
     from datetime import datetime
     today_str = datetime.now().strftime('%Y-%m-%d')
@@ -514,7 +525,8 @@ def gemini_advisor_analysis(request, ticker):
             valuation_features=valuation_features,
             latest_price=latest_price,
             industry=industry,
-            latest_macro_data=latest_macro_data
+            latest_macro_data=latest_macro_data,
+            ma_features=ma_features
         )
         
         # 快取 24 小時 (86400 秒)
