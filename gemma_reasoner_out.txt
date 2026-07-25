@@ -1,52 +1,43 @@
-這是一個典型的主題切換（Theme Switching）時，CSS 樣式層級或顏色定義不夠全面的邊界渲染問題。當系統進入暗色模式 (`dark-theme`) 時，預設的 `border-top` 或容器背景與邊框之間的對比度過高，導致視覺上出現了突兀的黑色線條。
+您好。根據您的指示，我已準備就緒進行 `multi-agent-council MCP Server` 的修復與註冊流程分析。
 
-根據您的描述，我們需要在 `base.html` 的 CSS 覆蓋規則中，為暗色主題下的建議卡片（Smart Suggestion Cards）提供更柔和、符合整體 UI 設計風格的邊框顏色定義。
+由於這是一個涉及核心服務層（Service Layer）的架構級任務，為了確保修復的精準性、穩定性，並避免引入新的系統依賴衝突，請您提供以下資訊：
+
+1.  **現有程式碼庫 (Codebase)：** 包含 `multi-agent-council` 的定義文件、伺服器啟動腳本（例如 `run_server.py`）以及相關的配置檔。
+2.  **錯誤日誌 (Error Logs)：** 請提供執行失敗時捕獲到的完整堆疊追蹤 (Stack Trace) 和任何 HTTP 狀態碼回傳訊息，這對於定位故障點至關重要。
+3.  **功能規格書 (Spec Sheet)：** 確認 `multi-agent-council` 的核心職責、預期的 API 端點（Endpoints）以及它與其他模組（例如數據存取層 Data Access Layer）的互動流程圖。
 
 ---
 
-### 【代碼審查與修復方案】
+### 🛠️ 架構分析與修復原則 (Architectural Analysis & Repair Principles)
 
-**目標檔案：** `base.html` (或相關的主題樣式表)
-**問題點：** 暗色主題下，建議卡片頂部邊框 (`border-top`) 顏色未被正確覆蓋。
-**修復策略：** 在 `.dark-theme` 類別範圍內，提高目標元素的 CSS 特異性（Specificity），並將 `border-top` 的顏色定義為與暗色背景更協調的淺灰色或低飽和度的藍灰色。
+在您提供程式碼後，我將會從以下三個維度進行系統性的審查與重構：
 
-#### 🛠️ 建議新增/修改的 CSS 代碼區塊
+#### 1. 服務註冊與依賴管理 (Service Registration & Dependency Management)
+*   **目標：** 確認 `MCP Server` 的啟動流程是否遵循標準的微服務（Microservice）模式，確保其能夠在現有的容器環境中被正確發現和調度。
+*   **檢查重點：** 資源初始化順序、配置變數 (Environment Variables) 的載入機制，以及是否有硬編碼的 IP 或 Port 資訊。
 
-請在 `base.html` 中，找到處理主題樣式的 `<style>` 或外部 CSS 文件中，加入以下覆蓋規則：
+#### 2. 核心邏輯與狀態管理 (Core Logic & State Management)
+*   **目標：** 修復導致服務崩潰或行為異常的程式碼路徑。
+*   **檢查重點：**
+    *   **異步處理 (Asynchronous Handling)：** 確認多個 Agent 的協調機制是否使用了正確的鎖定（Locking）和訊息佇列（Message Queue），避免 Race Condition。
+    *   **錯誤邊界 (Error Boundaries)：** 確保任何單一 Agent 的失敗不會導致整個 `MCP Server` 服務層崩潰，必須實施強健的 `try...except` 區塊。
 
-```css
-/* ================================================== */
-/* [FIX] Smart Suggestion Card - Dark Theme Border Fix */
-/* 確保在暗色模式下，建議卡片的頂部邊框不會變為突兀的黑色。 */
-/* ================================================== */
+#### 3. 資料傳輸與序列化保護 (Data Transfer & Serialization Protection)
+*   **【關鍵防禦點】**：由於此伺服器必然涉及數據存取和 API 通訊，我會特別檢查以下四個「專案歷史踩坑防禦要點」的執行情況。
 
-/* 1. 定義整個容器的覆蓋規則 (如果卡片是放在一個特定父元素內) */
-body.dark-theme .suggestion-card,
-.dark-theme .smart-suggest-container {
-    /* 確保背景色與暗主題一致，避免邊框產生錯覺 */
-    background-color: var(--bg-secondary-dark); /* 使用系統定義的次級深色背景 */
-}
+---
 
-/* 2. 覆蓋頂部邊框顏色 (核心修復) */
-body.dark-theme .suggestion-card,
-.dark-theme .smart-suggest-container {
-    /* 將 border-top 的顏色從預設值（可能為黑色）強制改為柔和的淺灰或藍灰色 */
-    border-top: 1px solid #3a4762 !important; /* 建議使用此種低飽和度的深藍灰 */
-}
+### 🛡️ 【專案歷史踩坑防禦要點】強制審查清單 (Mandatory Defense Checklist)
 
-/* 3. 如果卡片本身有 bg-light 的應用，也需要調整其邊框顏色 */
-body.dark-theme .bg-light {
-    border-top: none !important; /* 若不希望在暗色模式下顯示任何頂部線條，則設為 none */
-}
+在修復或新增任何涉及 I/O、API 通訊或資料庫操作的程式碼時，我將會主動檢查並確保以下規則被嚴格遵守：
 
-/* 備註：如果您的設計要求保留一個極細的分割線，請使用以下替代值： */
-/* border-top: 1px solid rgba(255, 255, 255, 0.08) !important; */
-```
+1.  **【Unicode 防禦】：** 任何讀取本地檔案（如配置檔、模型權重）的操作，必須明確使用 `open(..., encoding='utf-8', errors='ignore')` 或 `errors='replace'` 來處理編碼衝突。
+2.  **【JSON 序列化保護】：** 所有從資料庫 (MySQL) 查詢的結果集，在傳回給 API 層或外部服務前，必須執行數據類型轉換：
+    *   `datetime.date`/`datetime.datetime` $\rightarrow$ 標準 `string` (ISO 8601 format)。
+    *   `decimal.Decimal` $\rightarrow$ 標準 `float` 或 `string`。
+3.  **【Gemini API 400 兼容】：** 如果 Agent 的推理過程涉及呼叫 Gemini API，在執行 Function Calling 的第二輪回傳時（即 `functionResponse`），必須將第一輪接收到的完整內容 (包含原始的 `thoughtSignature`) 原封不動地放入 `contents` 的 `model` 角色中。
+4.  **【零破壞原則】：** 所有新的監控介面或管理功能，都必須設計為獨立的、可選配的 App 或 Dashboard 組件，絕不能修改或遮擋現有的 K 線圖繪製邏輯與核心估值計算流程。
 
-### 【實施說明與注意事項】
+---
 
-1.  **CSS 特異性 (Specificity)：** 我們使用了 `body.dark-theme` 這個組合選擇器，確保這些樣式只在應用程式處於暗色模式時生效。同時使用 `!important` 標記是必要的，因為這是在覆蓋現有的、具有高特異性的預設邊框定義。
-2.  **顏色調整：** 我建議的 `#3a4762` 是一個常見且視覺上舒適的深藍灰色，它既能提供結構感，又不會像純黑（`#000000`）那樣刺眼。請根據您平台整體 UI 的色板進行微調。
-3.  **零破壞原則確認：** 此 CSS 調整僅針對視覺邊框的顏色覆蓋，不涉及任何結構性 HTML 或 JavaScript 邏輯修改。因此，不會干擾既有的 ApexCharts K線圖渲染或 Blended Valuation 計算的核心功能區塊。
-
-請將上述代碼片段整合到您的 `base.html` 的樣式定義中，並進行測試驗證。
+請您提供相關程式碼和日誌，我將立即開始進行精準的代碼審查與架構修復工作。
