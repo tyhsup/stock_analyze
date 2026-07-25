@@ -498,6 +498,7 @@
                             Reset Zoom</button>
                     </div>
                     <div id="kline-macd" style="min-height: 220px;"></div>
+                    <div id="macd-analysis-panel" class="px-3 pb-3 mt-2"></div>
                 </div>
                 <!-- Other oscillator panels placeholder -->
                 <div id="kline-stoch-wrap" style="display:none;">
@@ -1767,10 +1768,199 @@
                     legend: { fontSize: '18px' },
                 });
                 _macdChart.render();
+                renderMACDAnalysisPanel(timestamps, closes, macdLine, signalLine, histogram);
             } else {
                 macdWrap.style.display = 'none';
                 if (_macdChart) { _macdChart.destroy(); _macdChart = null; }
+                const macdPanel = document.getElementById('macd-analysis-panel');
+                if (macdPanel) macdPanel.innerHTML = '';
             }
+        }
+
+        function renderMACDAnalysisPanel(timestamps, closes, macdLine, signalLine, histogram) {
+            const panel = document.getElementById('macd-analysis-panel');
+            if (!panel) return;
+            
+            let idx = macdLine.length - 1;
+            while (idx >= 0 && (macdLine[idx] === null || signalLine[idx] === null || histogram[idx] === null)) {
+                idx--;
+            }
+            
+            if (idx < 1) {
+                panel.innerHTML = `<div class="alert alert-secondary mb-0 small">MACD 數據計算中或數據不足...</div>`;
+                return;
+            }
+            
+            const curDIF = macdLine[idx];
+            const curSig = signalLine[idx];
+            const curHist = histogram[idx];
+            
+            const prevDIF = macdLine[idx - 1];
+            const prevSig = signalLine[idx - 1];
+            const prevHist = histogram[idx - 1];
+            
+            // 1. 零軸多空防線
+            let zeroStatusBadge = '';
+            let zeroStatusDesc = '';
+            if (curDIF > 0 && curSig > 0) {
+                zeroStatusBadge = '<span class="badge bg-success"><i class="bi bi-shield-check me-1"></i>零軸之上（多頭格局）</span>';
+                zeroStatusDesc = '12 日均價成本高於 26 日成本，市場主基調偏多，拉回多有買盤承接。';
+            } else if (curDIF < 0 && curSig < 0) {
+                zeroStatusBadge = '<span class="badge bg-danger"><i class="bi bi-shield-x me-1"></i>零軸之下（空頭格局）</span>';
+                zeroStatusDesc = '12 日均價成本低於 26 日成本，市場主基調偏空，短線反彈易面臨解套賣壓。';
+            } else {
+                zeroStatusBadge = '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-left-right me-1"></i>零軸附近（多空轉折/拉鋸）</span>';
+                zeroStatusDesc = '快慢線分居零軸兩側或於零軸交錯，代表市場多空拉鋸，正處於方向選擇轉折期。';
+            }
+            
+            // 2. 四象限訊號與交叉診斷
+            let crossState = 'none';
+            if (prevDIF <= prevSig && curDIF > curSig) crossState = 'golden';
+            else if (prevDIF >= prevSig && curDIF < curSig) crossState = 'death';
+            
+            let quadBadge = '';
+            let quadTitle = '';
+            let quadDesc = '';
+            let quadReliability = '';
+            
+            if (curDIF >= 0 && curSig >= 0) {
+                if (crossState === 'golden' || curDIF > curSig) {
+                    quadTitle = '第一象限：零軸以上黃金交叉';
+                    quadBadge = '<span class="badge bg-success p-2 fs-6"><i class="bi bi-graph-up-arrow me-1"></i>' + quadTitle + '</span>';
+                    quadDesc = '整體屬於多頭格局，快線上穿慢線帶動多頭動能再度爆發。';
+                    quadReliability = '<span class="text-success fw-bold">【極高可靠度做多訊號】</span>適合順勢進場或持股加碼。';
+                } else {
+                    quadTitle = '第三象限：零軸以上死亡交叉';
+                    quadBadge = '<span class="badge bg-warning text-dark p-2 fs-6"><i class="bi bi-arrow-down-right me-1"></i>' + quadTitle + '</span>';
+                    quadDesc = '整體屬於多頭格局，快線下穿慢線顯示短期動能轉弱。';
+                    quadReliability = '<span class="text-warning fw-bold">【低可靠度做空訊號】</span>多屬上升趨勢中的短線回檔修正，不宜盲目追空。';
+                }
+            } else {
+                if (crossState === 'golden' || curDIF > curSig) {
+                    quadTitle = '第二象限：零軸以下黃金交叉';
+                    quadBadge = '<span class="badge bg-info text-dark p-2 fs-6"><i class="bi bi-arrow-up-right me-1"></i>' + quadTitle + '</span>';
+                    quadDesc = '整體處於空頭格局，短期出現止跌勾頭與弱勢反彈。';
+                    quadReliability = '<span class="text-info fw-bold">【低可靠度做多訊號】</span>大跌趨勢中的弱勢反彈，追高風險較大，宜保持客觀風控。';
+                } else {
+                    quadTitle = '第四象限：零軸以下死亡交叉';
+                    quadBadge = '<span class="badge bg-danger p-2 fs-6"><i class="bi bi-graph-down-arrow me-1"></i>' + quadTitle + '</span>';
+                    quadDesc = '整體處於空頭格局，快線下破慢線加速向下。';
+                    quadReliability = '<span class="text-danger fw-bold">【極高可靠度做空/避險訊號】</span>空頭動能急遽向下加速，系統性退潮，應嚴格執行停損。';
+                }
+            }
+            
+            // 3. 柱狀體 (OSC) 動能變化
+            let histMomentumText = '';
+            let histMomentumBadge = '';
+            if (curHist >= 0) {
+                if (curHist > prevHist) {
+                    histMomentumBadge = '<span class="badge bg-success-subtle text-success border border-success">紅柱放大（多頭動能加速）</span>';
+                    histMomentumText = '多頭動能持續強勁，上漲趨勢加速，行情有機會延伸。';
+                } else {
+                    histMomentumBadge = '<span class="badge bg-warning-subtle text-warning border border-warning">紅柱縮短（多頭動能趨緩）</span>';
+                    histMomentumText = '多頭動能減弱，顯示上漲力道趨緩，需留意高檔整理或拉回風險。';
+                }
+            } else {
+                if (Math.abs(curHist) > Math.abs(prevHist)) {
+                    histMomentumBadge = '<span class="badge bg-danger-subtle text-danger border border-danger">綠柱放大（空頭賣壓加速）</span>';
+                    histMomentumText = '空頭動能增強，賣壓持續釋放，跌勢可能延伸。';
+                } else {
+                    histMomentumBadge = '<span class="badge bg-info-subtle text-info border border-info">綠柱縮短（空頭賣壓趨緩）</span>';
+                    histMomentumText = '空頭動能減弱，顯示賣壓可能收斂，留意反彈或震盪打底機會。';
+                }
+            }
+            
+            // 4. 頂背離 / 底背離掃描
+            let divAlert = '';
+            const scanLen = Math.min(60, idx + 1);
+            let topDivDetected = false;
+            let botDivDetected = false;
+            
+            let pMax1 = -Infinity, pMax2 = -Infinity;
+            let macdMax1 = -Infinity, macdMax2 = -Infinity;
+            let pMin1 = Infinity, pMin2 = Infinity;
+            let macdMin1 = Infinity, macdMin2 = Infinity;
+            
+            const midPoint = idx - Math.floor(scanLen / 2);
+            for (let i = idx - scanLen + 1; i < midPoint; i++) {
+                if (closes[i] > pMax1) pMax1 = closes[i];
+                if (macdLine[i] !== null && macdLine[i] > macdMax1) macdMax1 = macdLine[i];
+                if (closes[i] < pMin1) pMin1 = closes[i];
+                if (macdLine[i] !== null && macdLine[i] < macdMin1) macdMin1 = macdLine[i];
+            }
+            for (let i = midPoint; i <= idx; i++) {
+                if (closes[i] > pMax2) pMax2 = closes[i];
+                if (macdLine[i] !== null && macdLine[i] > macdMax2) macdMax2 = macdLine[i];
+                if (closes[i] < pMin2) pMin2 = closes[i];
+                if (macdLine[i] !== null && macdLine[i] < macdMin2) macdMin2 = macdLine[i];
+            }
+            
+            if (pMax2 > pMax1 * 1.02 && macdMax2 < macdMax1 * 0.95 && curDIF > 0) {
+                topDivDetected = true;
+            }
+            if (pMin2 < pMin1 * 0.98 && macdMin2 > macdMin1 * 1.05 && curDIF < 0) {
+                botDivDetected = true;
+            }
+            
+            if (topDivDetected) {
+                divAlert = `<div class="alert alert-danger py-2 mb-2 small border-start border-danger border-4">
+                    <strong>⚠️【高檔/頂背離警訊】</strong> 股價創近期新高，但 MACD 快線動能並未同步創新高（峰值遞減），反映內在上升動能衰竭，需留意高位反轉向下風險！
+                </div>`;
+            } else if (botDivDetected) {
+                divAlert = `<div class="alert alert-success py-2 mb-2 small border-start border-success border-4">
+                    <strong>💡【低檔/底背離買訊】</strong> 股價創近期新低，但 MACD 快線低谷已逐漸墊高（未破底），反映賣壓趨於消退，潛在止跌反彈訊號！
+                </div>`;
+            } else {
+                divAlert = `<div class="alert alert-secondary py-1 mb-2 small text-muted">
+                    <i class="bi bi-check-circle me-1"></i>背離狀態：無明顯背離現象（指標與價格走勢一致）。
+                </div>`;
+            }
+            
+            panel.innerHTML = `
+                <div class="card bg-body-tertiary border shadow-sm rounded-3">
+                    <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <span class="fw-bold text-primary small"><i class="bi bi-cpu-fill me-1"></i>MACD 實戰判讀與趨勢策略診斷</span>
+                        <span class="small text-muted">即時數值：DIF <code>${curDIF.toFixed(2)}</code> | Signal <code>${curSig.toFixed(2)}</code> | OSC <code>${curHist.toFixed(2)}</code></span>
+                    </div>
+                    <div class="card-body p-3">
+                        ${divAlert}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="p-2 border rounded bg-body">
+                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                        <span class="small text-muted fw-bold">1. 零軸多空防線</span>
+                                        ${zeroStatusBadge}
+                                    </div>
+                                    <p class="small text-secondary mb-0">${zeroStatusDesc}</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="p-2 border rounded bg-body">
+                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                        <span class="small text-muted fw-bold">2. 柱狀體 (OSC) 動能</span>
+                                        ${histMomentumBadge}
+                                    </div>
+                                    <p class="small text-secondary mb-0">${histMomentumText}</p>
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <div class="p-2 border rounded bg-body">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <span class="small text-muted fw-bold">3. 四象限訊號與交叉診斷</span>
+                                        ${quadBadge}
+                                    </div>
+                                    <p class="small text-body mb-1"><strong>判讀依據：</strong>${quadDesc}</p>
+                                    <p class="small mb-0">${quadReliability}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2 pt-2 border-top d-flex flex-wrap gap-3 text-muted extra-small">
+                            <span><i class="bi bi-info-circle me-1"></i><strong>實戰盲點提醒：</strong>MACD 具滯後性，橫盤震盪行情中易頻繁交叉產生假訊號。</span>
+                            <span><i class="bi bi-shield-check me-1"></i>建議結合 <strong>RSI 超買/超賣</strong>、<strong>成交量</strong> 與 <strong>價格行為 (Price Action)</strong> 進行二次多重驗證。</span>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // Helper to create simple oscillator chart
