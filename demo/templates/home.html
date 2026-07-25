@@ -761,6 +761,119 @@
         return rsi;
     }
 
+    function analyzeRSISignals(closes, timestamps, periodShort = 5, periodLong = 14) {
+        const rsiShort = computeRSI(closes, periodShort);
+        const rsiLong = computeRSI(closes, periodLong);
+        const annotationsPoints = [];
+
+        // 1. 金叉/死叉與 50 中線穿越訊號
+        for (let i = 1; i < closes.length; i++) {
+            const ts = timestamps[i];
+            const r14 = rsiLong[i];
+            const r14Prev = rsiLong[i - 1];
+            const r5 = rsiShort[i];
+            const r5Prev = rsiShort[i - 1];
+
+            if (r14 === null || r14Prev === null) continue;
+
+            // (A) RSI 5與 RSI 14 黃金交叉 / 死亡交叉
+            if (r5 !== null && r5Prev !== null) {
+                if (r5Prev <= r14Prev && r5 > r14) {
+                    annotationsPoints.push({
+                        x: ts, y: parseFloat(r14.toFixed(2)),
+                        marker: { size: 6, fillColor: '#2e7d32', strokeColor: '#ffffff', radius: 2 },
+                        label: { borderColor: '#2e7d32', style: { color: '#ffffff', background: '#2e7d32', fontSize: '11px', padding: { left: 4, right: 4, top: 2, bottom: 2 } }, text: '▲ RSI金叉' }
+                    });
+                } else if (r5Prev >= r14Prev && r5 < r14) {
+                    annotationsPoints.push({
+                        x: ts, y: parseFloat(r14.toFixed(2)),
+                        marker: { size: 6, fillColor: '#c62828', strokeColor: '#ffffff', radius: 2 },
+                        label: { borderColor: '#c62828', style: { color: '#ffffff', background: '#c62828', fontSize: '11px', padding: { left: 4, right: 4, top: 2, bottom: 2 } }, text: '▼ RSI死叉' }
+                    });
+                }
+            }
+
+            // (B) 50 中線穿越
+            if (r14Prev < 50 && r14 >= 50) {
+                annotationsPoints.push({
+                    x: ts, y: parseFloat(r14.toFixed(2)),
+                    marker: { size: 4, fillColor: '#2196f3', strokeColor: '#ffffff', radius: 2 },
+                    label: { borderColor: '#2196f3', style: { color: '#ffffff', background: '#2196f3', fontSize: '10px' }, text: 'RSI站上50' }
+                });
+            } else if (r14Prev > 50 && r14 <= 50) {
+                annotationsPoints.push({
+                    x: ts, y: parseFloat(r14.toFixed(2)),
+                    marker: { size: 4, fillColor: '#ff9800', strokeColor: '#ffffff', radius: 2 },
+                    label: { borderColor: '#ff9800', style: { color: '#ffffff', background: '#ff9800', fontSize: '10px' }, text: 'RSI跌破50' }
+                });
+            }
+        }
+
+        // 2. 背離偵測（一般頂背離/底背離、隱藏看漲/看跌背離）
+        const window = 3;
+        const peaks = [];
+        const troughs = [];
+
+        for (let i = window; i < closes.length - window; i++) {
+            if (rsiLong[i] === null) continue;
+            let isPricePeak = true, isPriceTrough = true;
+            for (let j = i - window; j <= i + window; j++) {
+                if (j === i) continue;
+                if (closes[j] >= closes[i]) isPricePeak = false;
+                if (closes[j] <= closes[i]) isPriceTrough = false;
+            }
+            if (isPricePeak) peaks.push({ index: i, price: closes[i], rsi: rsiLong[i], ts: timestamps[i] });
+            if (isPriceTrough) troughs.push({ index: i, price: closes[i], rsi: rsiLong[i], ts: timestamps[i] });
+        }
+
+        // 頂背離與隱藏看跌背離 (Peaks)
+        for (let k = 1; k < peaks.length; k++) {
+            const pPrev = peaks[k - 1];
+            const pCurr = peaks[k];
+            const dist = pCurr.index - pPrev.index;
+            if (dist < 4 || dist > 60) continue;
+
+            if (pCurr.price > pPrev.price && pCurr.rsi < pPrev.rsi) {
+                annotationsPoints.push({
+                    x: pCurr.ts, y: parseFloat(pCurr.rsi.toFixed(2)),
+                    marker: { size: 7, fillColor: '#d32f2f', strokeColor: '#ffffff', radius: 3 },
+                    label: { borderColor: '#d32f2f', style: { color: '#ffffff', background: '#d32f2f', fontSize: '12px', fontWeight: 'bold' }, text: '▼ 頂背離 (看跌反轉)' }
+                });
+            } else if (pCurr.price < pPrev.price && pCurr.rsi > pPrev.rsi) {
+                annotationsPoints.push({
+                    x: pCurr.ts, y: parseFloat(pCurr.rsi.toFixed(2)),
+                    marker: { size: 6, fillColor: '#e65100', strokeColor: '#ffffff', radius: 3 },
+                    label: { borderColor: '#e65100', style: { color: '#ffffff', background: '#e65100', fontSize: '11px' }, text: '▼ 隱藏看跌 (空頭延續)' }
+                });
+            }
+        }
+
+        // 底背離與隱藏看漲背離 (Troughs)
+        for (let k = 1; k < troughs.length; k++) {
+            const tPrev = troughs[k - 1];
+            const tCurr = troughs[k];
+            const dist = tCurr.index - tPrev.index;
+            if (dist < 4 || dist > 60) continue;
+
+            if (tCurr.price < tPrev.price && tCurr.rsi > tPrev.rsi) {
+                annotationsPoints.push({
+                    x: tCurr.ts, y: parseFloat(tCurr.rsi.toFixed(2)),
+                    marker: { size: 7, fillColor: '#388e3c', strokeColor: '#ffffff', radius: 3 },
+                    label: { borderColor: '#388e3c', style: { color: '#ffffff', background: '#388e3c', fontSize: '12px', fontWeight: 'bold' }, text: '▲ 底背離 (看漲反轉)' }
+                });
+            } else if (tCurr.price > tPrev.price && tCurr.rsi < tPrev.rsi) {
+                annotationsPoints.push({
+                    x: tCurr.ts, y: parseFloat(tCurr.rsi.toFixed(2)),
+                    marker: { size: 6, fillColor: '#1b5e20', strokeColor: '#ffffff', radius: 3 },
+                    label: { borderColor: '#1b5e20', style: { color: '#ffffff', background: '#1b5e20', fontSize: '11px' }, text: '▲ 隱藏看漲 (多頭延續)' }
+                });
+            }
+        }
+
+        return { rsiShort, rsiLong, annotationsPoints };
+    }
+
+
     function computeMACD(prices, fast = 12, slow = 26, signal = 9) {
         function ema(arr, period) {
             const k = 2 / (period + 1);
@@ -1056,7 +1169,7 @@
                     x: timestamps[i],
                     y: candleData[i].y[2] * 0.98, // 最低價下方 2%
                     marker: { size: 7, fillColor: '#00e676', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: finalUp.reason, style: { color: '#fff', background: '#00c853', fontSize: '15px', fontWeight: 'bold' } }
+                    label: { text: finalUp.reason, style: { color: '#000', background: '#00c853', fontSize: '15px', fontWeight: 'bold' } }
                 });
                 lastUpDay = i;
             } else if (finalDown) {
@@ -1064,7 +1177,7 @@
                     x: timestamps[i],
                     y: candleData[i].y[1] * 1.02, // 最高價上方 2%
                     marker: { size: 7, fillColor: '#ff1744', strokeColor: '#fff', shape: 'circle' },
-                    label: { text: finalDown.reason, style: { color: '#fff', background: '#d50000', fontSize: '15px', fontWeight: 'bold' } }
+                    label: { text: finalDown.reason, style: { color: '#000', background: '#d50000', fontSize: '15px', fontWeight: 'bold' } }
                 });
                 lastDownDay = i;
             }
@@ -1177,7 +1290,7 @@
                     x: timestamps[i],
                     y: signalPos === 'above' ? currHigh * 1.025 : currLow * 0.975,
                     marker: { size: 7, fillColor: signalBg, strokeColor: '#fff', shape: 'circle' },
-                    label: { text: signalText, style: { color: '#fff', background: signalBg, fontSize: '14px', fontWeight: 'bold' } }
+                    label: { text: signalText, style: { color: '#000', background: signalBg, fontSize: '14px', fontWeight: 'bold' } }
                 });
             }
         }
@@ -1198,23 +1311,23 @@
         if (latestPb !== null) {
             if (latestPb > 1.0) {
                 zoneText = '極強勢區 (>+2σ)';
-                zoneBadgeClass = 'bg-danger text-white';
+                zoneBadgeClass = 'bg-danger text-dark fw-bold';
                 strategyAdvice = '趨勢極強，已有多單續抱，不宜追高；防範假突破拉回。';
             } else if (latestPb > 0.8) {
                 zoneText = '強勢區 (+1σ ~ +2σ)';
-                zoneBadgeClass = 'bg-warning text-dark';
+                zoneBadgeClass = 'bg-warning text-dark fw-bold';
                 strategyAdvice = '多方主導行情，最佳買點為拉回回踩中軌 (20MA) 或 +1σ 時順勢進場。';
             } else if (latestPb >= 0.2) {
                 zoneText = '震盪區 (-1σ ~ +1σ)';
-                zoneBadgeClass = 'bg-secondary text-white';
+                zoneBadgeClass = 'bg-secondary text-dark fw-bold';
                 strategyAdvice = '無明確單邊趨勢，隨機性較強，建議區間均值回歸低買高賣或觀望。';
             } else if (latestPb >= 0.0) {
                 zoneText = '弱勢區 (-2σ ~ -1σ)';
-                zoneBadgeClass = 'bg-info text-dark';
+                zoneBadgeClass = 'bg-info text-dark fw-bold';
                 strategyAdvice = '空方主導行情，最佳賣點為反彈至中軌 (20MA) 或 -1σ 時順勢做空。';
             } else {
                 zoneText = '極弱勢區 (<-2σ)';
-                zoneBadgeClass = 'bg-success text-white';
+                zoneBadgeClass = 'bg-success text-dark fw-bold';
                 strategyAdvice = '嚴重超賣但跌勢強勁，已有空單續抱，切忌急於抄底。';
             }
         }
@@ -1502,8 +1615,8 @@
                                     <span><strong>三軌 (上/中/下):</strong> <span style="color:#ff5252;font-weight:bold;">${info.upperPrice}</span> / <span style="color:#ffb300;font-weight:bold;">${info.middlePrice}</span> / <span style="color:#00e676;font-weight:bold;">${info.lowerPrice}</span></span>
                                 </div>
                             </div>
-                            <div class="mt-1 pt-1 border-top border-secondary text-light small">
-                                <i class="bi bi-lightbulb-fill text-warning me-1"></i><strong>實戰策略建議：</strong>${info.strategyAdvice}
+                            <div class="mt-1 pt-1 border-top border-secondary text-light small" style="font-weight: 500;">
+                                <i class="bi bi-lightbulb-fill text-warning me-1"></i><strong class="text-light">實戰策略建議：</strong>${info.strategyAdvice}
                             </div>
                         </div>
                     </div>
@@ -1561,11 +1674,16 @@
         if (rsiWrap && rsiEl) {
             if (rsiChecked) {
                 rsiWrap.style.display = '';
-                const rsiValues = computeRSI(closes);
-                const rsiSeries = timestamps.map((ts, i) => ({ x: ts, y: rsiValues[i] !== null ? parseFloat(rsiValues[i].toFixed(2)) : null }));
+                const { rsiShort, rsiLong, annotationsPoints } = analyzeRSISignals(closes, timestamps, 5, 14);
+                const rsiSeries14 = timestamps.map((ts, i) => ({ x: ts, y: rsiLong[i] !== null ? parseFloat(rsiLong[i].toFixed(2)) : null }));
+                const rsiSeries5 = timestamps.map((ts, i) => ({ x: ts, y: rsiShort[i] !== null ? parseFloat(rsiShort[i].toFixed(2)) : null }));
+
                 if (_rsiChart) _rsiChart.destroy();
                 _rsiChart = new ApexCharts(rsiEl, {
-                    series: [{ name: 'RSI (14)', data: rsiSeries }],
+                    series: [
+                        { name: 'RSI (14)', data: rsiSeries14 },
+                        { name: 'RSI (5)', data: rsiSeries5 }
+                    ],
                     chart: {
                         type: 'line', height: 220,
                         animations: { enabled: false },
@@ -1576,23 +1694,25 @@
                     xaxis: {
                         type: 'datetime',
                         labels: { 
-                            style: { fontSize: '18px' },
+                            style: { fontSize: '14px' },
                             datetimeUTC: false,
                             datetimeFormatter: { year: 'yyyy', month: "MMM 'yy", day: 'dd MMM', hour: 'HH:mm' }
                         }
                     },
                     yaxis: {
                         min: 0, max: 100, tickAmount: 5,
-                        labels: { style: { fontSize: '18px' } }
+                        labels: { style: { fontSize: '14px' } }
                     },
-                    stroke: { width: 3 },
-                    colors: ['#ff5722'],
-                    legend: { fontSize: '18px' },
+                    stroke: { width: [3, 2], dashArray: [0, 2] },
+                    colors: ['#ff5722', '#0288d1'],
+                    legend: { fontSize: '14px', position: 'top' },
                     annotations: {
                         yaxis: [
-                            { y: 70, borderColor: '#f44336', strokeDashArray: 4, label: { text: 'Overbought', style: { color: '#fff', background: '#f44336' } } },
-                            { y: 30, borderColor: '#4caf50', strokeDashArray: 4, label: { text: 'Oversold', style: { color: '#fff', background: '#4caf50' } } },
-                        ]
+                            { y: 70, borderColor: '#f44336', strokeDashArray: 4, label: { text: '超買區 (70)', style: { color: '#fff', background: '#f44336' } } },
+                            { y: 50, borderColor: '#9e9e9e', strokeDashArray: 2, label: { text: '多空分界 (50)', style: { color: '#fff', background: '#757575' } } },
+                            { y: 30, borderColor: '#4caf50', strokeDashArray: 4, label: { text: '超賣區 (30)', style: { color: '#fff', background: '#4caf50' } } },
+                        ],
+                        points: annotationsPoints
                     },
                 });
                 _rsiChart.render();
