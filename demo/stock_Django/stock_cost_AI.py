@@ -91,6 +91,9 @@ class IntegratedStockPredModel:
 
     def _setup_gpu(self):
         """配置 GPU 資源以進行高效訓練"""
+        if not HAS_TENSORFLOW or tf is None:
+            logger.debug("TensorFlow 未安裝或無法載入，跳過 GPU 配置。")
+            return
         try:
             gpus = tf.config.list_physical_devices('GPU')
             if gpus:
