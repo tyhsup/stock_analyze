@@ -491,6 +491,16 @@ class IntegratedStockPredModel:
         bb_bw = bb_dict.get('bandwidth', 'N/A')
         bb_pat = bb_dict.get('pattern_state', 'N/A')
         bb_adv = bb_dict.get('strategy_advice', 'N/A')
+
+        rsi_dict = ma_features.get('rsi_analysis', {})
+        rsi_val = rsi_dict.get('rsi_value', 'N/A')
+        rsi_zone = rsi_dict.get('rsi_zone', '無數據')
+        rsi_adv = rsi_dict.get('rsi_advice', '無特別訊號')
+
+        macd_dict = ma_features.get('macd_analysis', {})
+        macd_zone = macd_dict.get('macd_zone', '無數據')
+        macd_hist_state = macd_dict.get('hist_state', '持平')
+        macd_adv = macd_dict.get('macd_advice', '無特別訊號')
         
         # 籌碼資料
         chips_str = json.dumps(chips_features, ensure_ascii=False)
@@ -510,7 +520,7 @@ class IntegratedStockPredModel:
         # 構建 Prompt
         prompt = (
             f"您是專業的金融分析師。請綜合分析以下提供的股票（{self.stock_number}）數據，並給出投資建議：\n\n"
-            f"[技術分析與預測 (LSTM + 均線 + 布林通道多軌分析)]\n"
+            f"[技術分析與預測 (LSTM + 均線 + 布林通道多軌 + RSI & MACD 戰術動能分析)]\n"
             f"- 最新收盤價: {latest_price:.2f}\n"
             f"- LSTM 預測未來 5 日價格走勢: [{pred_str}]\n"
             f"- LSTM 預估看漲機率: {trend_prob * 100:.1f}%\n"
@@ -520,7 +530,9 @@ class IntegratedStockPredModel:
             f"- 布林通道帶寬: {bb_bw}\n"
             f"- 布林型態狀態: {bb_pat}\n"
             f"- 布林實戰策略解讀: {bb_adv}\n"
-            f"- 近 5 日關鍵技術與布林轉折訊號: {ma_signals_str}\n"
+            f"- RSI(14) 強弱指標: 當前值 {rsi_val} | 分區: {rsi_zone} | 建議: {rsi_adv}\n"
+            f"- MACD(12,26,9) 動能指標: 分區: {macd_zone} | 柱狀體: {macd_hist_state} | 建議: {macd_adv}\n"
+            f"- 近 5 日關鍵技術/布林/RSI/MACD 轉折訊號: {ma_signals_str}\n"
             f"- 20日乖離率 (BIAS): {bias_20}\n"
             f"- 量價動能驗證: {vol_conf}\n"
             f"- 技術面評估範疇: {deg_level}\n\n"
@@ -536,7 +548,7 @@ class IntegratedStockPredModel:
             f"[總體經濟與產業分析 (子 Agent 觀點)]\n"
             f"- 總體宏觀觀點: {macro_view}\n\n"
             f"任務：\n"
-            f"1. 綜合上述數據，分析該股票的最新投資前景。\n"
+            f"1. 綜合上述數據（務必結合 RSI 超買超賣與 MACD 零軸動能/柱狀體轉折），分析該股票的最新投資前景。\n"
             f"2. 給予買進或賣出的建議，評等必須嚴格限制為以下五個項目之一：'強力賣出', '賣出', '觀望', '買進', '強力買進'。\n"
             f"3. 給予一個推薦分數 (score)，範圍為 0 至 100 之間（0-20: 強力賣出, 21-40: 賣出, 41-60: 觀望, 61-80: 買進, 81-100: 強力買進）。\n"
             f"4. 提供 150 字以內的簡短中文推薦理由。\n\n"
@@ -546,7 +558,7 @@ class IntegratedStockPredModel:
             f"  \"score\": 50,\n"
             f"  \"reason\": \"理由說明\",\n"
             f"  \"details\": {{\n"
-            f"    \"technical\": \"技術分析簡短評語\",\n"
+            f"    \"technical\": \"技術分析簡短評語（需包含均線、布林通道與 RSI/MACD 綜合診斷）\",\n"
             f"    \"chips\": \"籌碼分析簡短評語\",\n"
             f"    \"sentiment\": \"輿情分析簡短評語\",\n"
             f"    \"valuation\": \"基本估值簡短評語\",\n"

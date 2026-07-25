@@ -459,7 +459,81 @@ class MovingAverageTrendExtractor:
         elif vol_ratio < 0.8:
             vol_confirmation += " (量縮震盪觀望)"
 
-        # 7. 掃描近 window_days 天發生的轉折訊號 (對齊 home.html computeMAReversalPoints & Bollinger)
+        # 6.5 RSI(14) 與 MACD(12, 26, 9) 技術指標計算與狀態解讀
+        delta = s_close.diff()
+        gain = delta.clip(lower=0)
+        loss = (-delta).clip(lower=0)
+        avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+        rs = avg_gain / np.where(avg_loss != 0, avg_loss, np.nan)
+        rsi_series = 100.0 - (100.0 / (1.0 + rs))
+        rsi_values = rsi_series.values
+
+        ema12 = s_close.ewm(span=12, adjust=False).mean()
+        ema26 = s_close.ewm(span=26, adjust=False).mean()
+        macd_dif = (ema12 - ema26).values
+        macd_signal = (ema12 - ema26).ewm(span=9, adjust=False).mean().values
+        macd_hist = (macd_dif - macd_signal) * 2.0
+
+        # RSI 狀態分析
+        c_rsi = rsi_values[-1] if n_rows >= 14 and not np.isnan(rsi_values[-1]) else None
+        rsi_zone = "無數據 (數據不足 14 筆)"
+        rsi_advice = "數據觀察中"
+        if c_rsi is not None:
+            if c_rsi >= 70.0:
+                rsi_zone = f"超買熱區 ({c_rsi:.1f}, >=70)"
+                rsi_advice = "短線過熱風險增加，注意頂位背離或獲利回吐賣壓。"
+            elif c_rsi >= 50.0:
+                rsi_zone = f"多方控盤偏強區 ({c_rsi:.1f}, 50~70)"
+                rsi_advice = "動能維持多頭對抗，站穩中軸 50 以上保持震盪看多。"
+            elif c_rsi >= 30.0:
+                rsi_zone = f"空方控盤偏弱區 ({c_rsi:.1f}, 30~50)"
+                rsi_advice = "動能受制於中軸 50 以下，宜等待回彈過 50 確證。"
+            else:
+                rsi_zone = f"超賣反彈區 ({c_rsi:.1f}, <30)"
+                rsi_advice = "指標進入極度超賣區，短線隨時可能引發技術性跌深反彈。"
+
+        rsi_analysis = {
+            "rsi_value": f"{c_rsi:.1f}" if c_rsi is not None else "N/A",
+            "rsi_zone": rsi_zone,
+            "rsi_advice": rsi_advice
+        }
+
+        # MACD 狀態分析
+        c_dif = macd_dif[-1] if n_rows >= 26 and not np.isnan(macd_dif[-1]) else None
+        c_sig = macd_signal[-1] if n_rows >= 26 and not np.isnan(macd_signal[-1]) else None
+        c_hist = macd_hist[-1] if n_rows >= 26 and not np.isnan(macd_hist[-1]) else None
+        p_hist = macd_hist[-2] if n_rows >= 27 and not np.isnan(macd_hist[-2]) else c_hist
+
+        macd_zone = "無數據 (數據不足 26 筆)"
+        macd_hist_state = "柱狀體持平"
+        macd_advice = "動能觀察中"
+
+        if c_dif is not None and c_sig is not None and c_hist is not None:
+            zone_str = "零軸上方多頭分區 (DIF > 0)" if c_dif > 0 else "零軸下方空頭分區 (DIF < 0)"
+            macd_zone = f"{zone_str} (DIF: {c_dif:.2f}, Signal: {c_sig:.2f})"
+            if c_hist > 0:
+                if c_hist >= p_hist:
+                    macd_hist_state = f"紅柱發散擴大 (Hist: +{c_hist:.2f})"
+                    macd_advice = "多頭攻擊動能持續擴張，趨勢強勁。"
+                else:
+                    macd_hist_state = f"紅柱收斂縮短 (Hist: +{c_hist:.2f})"
+                    macd_advice = "多頭漲勢放緩，動能高檔收斂，宜留意多頭回檔風險。"
+            else:
+                if c_hist <= p_hist:
+                    macd_hist_state = f"綠柱發散擴大 (Hist: {c_hist:.2f})"
+                    macd_advice = "空頭賣壓沉重發散，跌勢尚未見底。"
+                else:
+                    macd_hist_state = f"綠柱收斂縮短 (Hist: {c_hist:.2f})"
+                    macd_advice = "空頭賣壓漸見收斂，可能醞釀止跌築底或反彈。"
+
+        macd_analysis = {
+            "macd_zone": macd_zone,
+            "hist_state": macd_hist_state,
+            "macd_advice": macd_advice
+        }
+
+        # 7. 掃描近 window_days 天發生的轉折訊號 (對齊 home.html computeMAReversalPoints, Bollinger, RSI & MACD)
         start_idx = max(0, n_rows - window_days)
         detected_signals = []
 
@@ -469,6 +543,32 @@ class MovingAverageTrendExtractor:
             dt_str = dates[i]
             v_ratio = (volumes[i] / vol_5ma[i]) if (vol_5ma[i] > 0) else 1.0
             vol_tag = " (帶量確證)" if v_ratio >= 1.5 else ""
+
+            # E. RSI(14) 轉折與超買/超賣突破訊號
+            if i >= 1 and not np.isnan(rsi_values[i]) and not np.isnan(rsi_values[i-1]):
+                if rsi_values[i-1] <= 30 and rsi_values[i] > 30:
+                    detected_signals.append((i, 5, f"{dt_str} RSI 自超賣區向上回彈突破 30{vol_tag}"))
+                elif rsi_values[i-1] >= 70 and rsi_values[i] < 70:
+                    detected_signals.append((i, 5, f"{dt_str} RSI 自超買區向下拉回跌破 70"))
+                elif rsi_values[i-1] <= 50 and rsi_values[i] > 50:
+                    detected_signals.append((i, 4, f"{dt_str} RSI 向上突破 50 中軸分水嶺"))
+                elif rsi_values[i-1] >= 50 and rsi_values[i] < 50:
+                    detected_signals.append((i, 4, f"{dt_str} RSI 向下跌破 50 中軸分水嶺"))
+
+            # F. MACD(12, 26, 9) 黃金交叉 / 死亡交叉 / 柱狀體翻轉
+            if i >= 1 and not np.isnan(macd_dif[i]) and not np.isnan(macd_signal[i]) and not np.isnan(macd_dif[i-1]) and not np.isnan(macd_signal[i-1]):
+                if macd_dif[i-1] <= macd_signal[i-1] and macd_dif[i] > macd_signal[i]:
+                    cross_tag = " (零軸上方強勢金叉)" if macd_dif[i] > 0 else " (零軸下方反彈金叉)"
+                    detected_signals.append((i, 6, f"{dt_str} MACD DIF/Signal 黃金交叉{cross_tag}{vol_tag}"))
+                elif macd_dif[i-1] >= macd_signal[i-1] and macd_dif[i] < macd_signal[i]:
+                    cross_tag = " (高檔死叉)" if macd_dif[i] > 0 else " (破位死叉)"
+                    detected_signals.append((i, 6, f"{dt_str} MACD DIF/Signal 死亡交叉{cross_tag}"))
+
+            if i >= 1 and not np.isnan(macd_hist[i]) and not np.isnan(macd_hist[i-1]):
+                if macd_hist[i-1] <= 0 and macd_hist[i] > 0:
+                    detected_signals.append((i, 5, f"{dt_str} MACD 柱狀體轉正翻紅"))
+                elif macd_hist[i-1] >= 0 and macd_hist[i] < 0:
+                    detected_signals.append((i, 5, f"{dt_str} MACD 柱狀體轉負翻綠"))
 
             # 布林開口突破發散與轉折
             if i >= 1 and not np.isnan(bandwidth[i]) and not np.isnan(bandwidth[i-1]):
@@ -538,6 +638,8 @@ class MovingAverageTrendExtractor:
             "bias_20": bias_20_str,
             "volume_confirmation": vol_confirmation,
             "degradation_level": deg_level,
-            "bollinger_analysis": bollinger_analysis
+            "bollinger_analysis": bollinger_analysis,
+            "rsi_analysis": rsi_analysis,
+            "macd_analysis": macd_analysis
         }
 
