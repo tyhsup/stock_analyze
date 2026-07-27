@@ -65,6 +65,26 @@
         </button>
     </li>
     <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-deconstruct-tab" data-bs-toggle="tab" data-bs-target="#tw-deconstruct-panel" type="button" role="tab" aria-controls="tw-deconstruct-panel" aria-selected="false">
+            <i class="bi bi-diagram-3 me-1"></i> 籌碼解構與強弱手
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-distribution-tab" data-bs-toggle="tab" data-bs-target="#tw-distribution-panel" type="button" role="tab" aria-controls="tw-distribution-panel" aria-selected="false">
+            <i class="bi bi-pie-chart me-1"></i> 集保大戶權分散
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-divergence-tab" data-bs-toggle="tab" data-bs-target="#tw-divergence-panel" type="button" role="tab" aria-controls="tw-divergence-panel" aria-selected="false">
+            <i class="bi bi-lightning-charge me-1"></i> 外資散戶丟大戶接
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="tw-branches-tab" data-bs-toggle="tab" data-bs-target="#tw-branches-panel" type="button" role="tab" aria-controls="tw-branches-panel" aria-selected="false">
+            <i class="bi bi-building me-1"></i> 台股關鍵分點
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
         <button class="nav-link fw-bold" id="tw-industry-tab" data-bs-toggle="tab" data-bs-target="#tw-industry-panel" type="button" role="tab" aria-controls="tw-industry-panel" aria-selected="false">
             <i class="bi bi-grid-3x3-gap me-1"></i> 產業資金流向
         </button>
@@ -75,6 +95,7 @@
         </button>
     </li>
 </ul>
+
 
 <div class="tab-content" id="tw-sub-tabs-content">
     <!-- Tab Panel 1: 籌碼買賣超 -->
@@ -136,6 +157,170 @@
             </div>
         </div>
     </div>
+
+    <!-- Tab Panel 2: 籌碼解構與強弱手 -->
+
+
+    <div class="tab-pane fade" id="tw-deconstruct-panel" role="tabpanel" aria-labelledby="tw-deconstruct-tab">
+        <div class="row mb-4">
+            <div class="col-md-6 mb-4 mb-md-0">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-success text-white py-3">
+                        <h5 class="card-title fw-bold mb-0"><i class="bi bi-shield-check me-2"></i>強勢手（外資/投信/大戶）籌碼流入榜</h5>
+                        <small class="opacity-75">法人連買 2 天以上 + 散戶融資退場，籌碼高度集中</small>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0" id="table-strong-hands">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>股票代碼/名稱</th>
+                                        <th>股價</th>
+                                        <th>連買天數</th>
+                                        <th>融資變動</th>
+                                        <th>淨流入(百萬)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="5" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>載入強勢手資料中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-danger text-white py-3">
+                        <h5 class="card-title fw-bold mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>弱勢手 / 主力誘多高風險告警</h5>
+                        <small class="opacity-75">主力倒貨 + 散戶融資暴增追高，籌碼發散風險極高</small>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0" id="table-weak-hands">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>股票代碼/名稱</th>
+                                        <th>股價</th>
+                                        <th>連買天數</th>
+                                        <th>融資暴增</th>
+                                        <th>淨賣出(百萬)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="5" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-danger me-2"></div>載入警示資料中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Panel 3: 集保大戶權分散 -->
+    <div class="tab-pane fade" id="tw-distribution-panel" role="tabpanel" aria-labelledby="tw-distribution-tab">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4 bg-light">
+                <div class="row align-items-center g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold"><i class="bi bi-search me-1 text-primary"></i> 查詢個股集保大戶分散表</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="dist-ticker-input" value="2330" placeholder="輸入台股代碼 (例: 2330, 2454)">
+                            <button class="btn btn-primary fw-bold" type="button" id="btn-fetch-dist"><i class="bi bi-search me-1"></i> 查詢分析</button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <span class="badge bg-primary fs-6 p-2 me-2" id="dist-consec-badge">大戶連續集中: -- 週</span>
+                        <span class="badge bg-success fs-6 p-2" id="dist-status-badge">籌碼狀態: 分析中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 py-3">
+                <h5 class="card-title fw-bold mb-0"><i class="bi bi-graph-up text-primary me-2"></i>400張以上大戶 vs 10張以下散戶持股比例 (近12週)</h5>
+            </div>
+            <div class="card-body">
+                <div id="chart-shareholder-dist" style="min-height: 420px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Panel 4: 外資散戶丟大戶接 -->
+    <div class="tab-pane fade" id="tw-divergence-panel" role="tabpanel" aria-labelledby="tw-divergence-tab">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-primary text-white py-3">
+                <h5 class="card-title fw-bold mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>外資散戶丟、大戶接 (籌碼分歧洗盤飆股器)</h5>
+                <small class="opacity-75">外資機械性賣出、散戶融資退場，但公司大戶與內資默默吸籌</small>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="table-divergence">
+                        <thead class="table-light">
+                            <tr>
+                                <th>股票代碼/名稱</th>
+                                <th>最新股價</th>
+                                <th>外資賣超(百萬)</th>
+                                <th>集保大戶增加</th>
+                                <th>散戶融資減少</th>
+                                <th>產業別</th>
+                                <th>訊號標籤</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="7" class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>篩選籌碼分歧個股中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Panel 5: 台股關鍵分點 -->
+    <div class="tab-pane fade" id="tw-branches-panel" role="tabpanel" aria-labelledby="tw-branches-tab">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4 bg-light">
+                <div class="row align-items-center g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold"><i class="bi bi-building me-1 text-primary"></i> 查詢個股主力券商分點</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="branch-ticker-input" value="2330" placeholder="輸入台股代碼 (例: 2330)">
+                            <button class="btn btn-primary fw-bold" type="button" id="btn-fetch-branches"><i class="bi bi-search me-1"></i> 查詢主力分點</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-7 mb-4 mb-lg-0">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 py-3">
+                        <h5 class="card-title fw-bold mb-0"><i class="bi bi-bar-chart-line text-primary me-2"></i>TOP 10 主力買賣超券商分點排行</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="chart-key-branches" style="min-height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-0 py-3">
+                        <h5 class="card-title fw-bold mb-0"><i class="bi bi-tags text-primary me-2"></i>主力分點操作特性與跟車價差</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush" id="list-branch-details">
+                            <div class="p-4 text-center text-muted"><div class="spinner-border spinner-border-sm text-primary me-2"></div>載入分點明細中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Tab Panel 2: 產業資金流向 -->
     <div class="tab-pane fade" id="tw-industry-panel" role="tabpanel" aria-labelledby="tw-industry-tab">
@@ -309,9 +494,10 @@
         </div>
     </div>
 </div>
-    </div>
+</div>
 
     <!-- USA Content -->
+
     <div class="tab-pane fade" id="us-content" role="tabpanel" aria-labelledby="us-tab">
         {% if error and "US chip data" in error %}
         <div class="alert alert-danger shadow-sm border-0 d-flex align-items-center mb-3" role="alert">
@@ -1973,19 +2159,183 @@
         const btnRefreshTwMaster = document.getElementById('btn-refresh-tw-master');
         const btnRefreshUsMaster = document.getElementById('btn-refresh-us-master');
 
-        if (btnRefreshTwMaster) {
-            btnRefreshTwMaster.addEventListener('click', function() {
-                const master = twMasterSelect ? twMasterSelect.value : 'buffett';
-                fetchMasterSelection('tw', master, true);
+        // =========================================================================
+        // NotebookLM 4 大籌碼模組 AJAX 載入與圖表渲染邏輯
+        // =========================================================================
+
+        // 1. 籌碼解構與強弱手
+        async function fetchChipDeconstruction() {
+            try {
+                const res = await fetch('/chips/api/chip-deconstruction/');
+                const data = await res.json();
+                
+                const tbodyStrong = document.querySelector('#table-strong-hands tbody');
+                const tbodyWeak = document.querySelector('#table-weak-hands tbody');
+
+                if (data.status === 'success') {
+                    if (tbodyStrong) {
+                        tbodyStrong.innerHTML = data.strong_hands.map(item => `
+                            <tr>
+                                <td><span class="fw-bold text-primary">${item.symbol}</span> <span class="small text-muted">${item.name}</span></td>
+                                <td class="fw-bold">$${item.close}</td>
+                                <td><span class="badge bg-success px-2 py-1">${item.consec_buys} 天連買</span></td>
+                                <td><span class="text-success fw-bold">${item.margin_change} 張</span></td>
+                                <td class="text-end pe-3 fw-bold text-success">+$${item.net_flow_m}M</td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="5" class="text-center py-3 text-muted">無強勢手資料</td></tr>';
+                    }
+
+                    if (tbodyWeak) {
+                        tbodyWeak.innerHTML = data.weak_hands_warning.map(item => `
+                            <tr>
+                                <td><span class="fw-bold text-danger">${item.symbol}</span> <span class="small text-muted">${item.name}</span></td>
+                                <td class="fw-bold">$${item.close}</td>
+                                <td><span class="badge bg-secondary px-2 py-1">${item.consec_buys} 天</span></td>
+                                <td><span class="text-danger fw-bold">+${item.margin_change} 張</span></td>
+                                <td class="text-end pe-3 fw-bold text-danger">-$${Math.abs(item.net_flow_m)}M</td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="5" class="text-center py-3 text-muted">無高風險警示資料</td></tr>';
+                    }
+                }
+            } catch (err) {
+                console.error("fetchChipDeconstruction error:", err);
+            }
+        }
+
+        // 2. 集保戶大戶權分散
+        let distChart = null;
+        async function fetchShareholderDist(ticker = '2330') {
+            try {
+                const res = await fetch(`/chips/api/shareholder-distribution/?ticker=${ticker}`);
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('dist-consec-badge').innerText = `大戶連續集中: ${data.consec_weeks} 週`;
+                    document.getElementById('dist-status-badge').innerText = `籌碼狀態: ${data.trend_status}`;
+                    document.getElementById('dist-status-badge').className = `badge fs-6 p-2 ${data.consec_weeks >= 2 ? 'bg-success' : 'bg-warning text-dark'}`;
+
+                    const options = {
+                        series: data.chart_data.series,
+                        chart: { type: 'line', height: 420, toolbar: { show: true } },
+                        colors: ['#2e7d32', '#d32f2f'],
+                        stroke: { width: [3, 3], curve: 'smooth' },
+                        xaxis: { categories: data.chart_data.categories },
+                        yaxis: { title: { text: '持股比例 (%)' } },
+                        tooltip: { shared: true, intersect: false }
+                    };
+
+                    if (distChart) distChart.destroy();
+                    distChart = new ApexCharts(document.querySelector("#chart-shareholder-dist"), options);
+                    distChart.render();
+                }
+            } catch (err) {
+                console.error("fetchShareholderDist error:", err);
+            }
+        }
+
+        const btnFetchDist = document.getElementById('btn-fetch-dist');
+        if (btnFetchDist) {
+            btnFetchDist.addEventListener('click', () => {
+                const ticker = document.getElementById('dist-ticker-input').value.trim() || '2330';
+                fetchShareholderDist(ticker);
             });
         }
-        if (btnRefreshUsMaster) {
-            btnRefreshUsMaster.addEventListener('click', function() {
-                const master = usMasterSelect ? usMasterSelect.value : 'buffett';
-                fetchMasterSelection('us', master, true);
-            });
+
+        // 3. 外資散戶丟大戶接 (籌碼分歧)
+        async function fetchChipDivergence() {
+            try {
+                const res = await fetch('/chips/api/chip-divergence/');
+                const data = await res.json();
+                
+                const tbody = document.querySelector('#table-divergence tbody');
+                if (tbody && data.status === 'success') {
+                    tbody.innerHTML = data.data.map(item => `
+                        <tr>
+                            <td><span class="fw-bold text-primary">${item.symbol}</span> <span class="fw-bold">${item.name}</span></td>
+                            <td class="fw-bold">$${item.close}</td>
+                            <td class="text-danger fw-bold">-$${item.foreign_sell_m}M</td>
+                            <td class="text-success fw-bold">${item.large_holder_inc}</td>
+                            <td class="text-success fw-bold">-${item.margin_dec_shares} 張</td>
+                            <td><span class="badge bg-light text-dark border">${item.industry}</span></td>
+                            <td><span class="badge bg-success px-3 py-2 fs-6 shadow-sm">${item.status_label}</span></td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error("fetchChipDivergence error:", err);
+            }
+        }
+
+        // 4. 台股關鍵分點
+        let branchChart = null;
+        async function fetchKeyBranches(ticker = '2330') {
+            try {
+                const res = await fetch(`/chips/api/key-branches/?ticker=${ticker}`);
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    const options = {
+                        series: data.chart_data.series,
+                        chart: { type: 'bar', height: 400, toolbar: { show: false } },
+                        plotOptions: { bar: { horizontal: true, distributed: true } },
+                        colors: data.branches.map(b => b.net_buy >= 0 ? '#26a69a' : '#ef5350'),
+                        xaxis: { categories: data.chart_data.categories },
+                        yaxis: { labels: { style: { fontSize: '13px', fontWeight: 600 } } }
+                    };
+
+                    if (branchChart) branchChart.destroy();
+                    branchChart = new ApexCharts(document.querySelector("#chart-key-branches"), options);
+                    branchChart.render();
+
+                    // 分點明細
+                    const listContainer = document.getElementById('list-branch-details');
+                    if (listContainer) {
+                        listContainer.innerHTML = data.branches.map(b => `
+                            <div class="list-group-item p-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="fw-bold fs-6">${b.name}</span>
+                                    <span class="badge bg-light text-dark border fs-6">${b.type}</span>
+                                </div>
+                                <div class="d-flex justify-content-between small text-muted">
+                                    <span>淨買超: <strong class="${b.net_buy >= 0 ? 'text-success' : 'text-danger'}">${b.net_buy} 張</strong></span>
+                                    <span>買均價: <strong>$${b.cost}</strong></span>
+                                </div>
+                                ${b.alert ? `<div class="mt-2 text-danger small fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>${b.alert}</div>` : ''}
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (err) {
+                console.error("fetchKeyBranches error:", err);
+            }
+        }
+
+
+        // --- 頁籤自動觸發與雙重事件監聽 ---
+        function bindTabFetch(tabId, fetchFn) {
+            const el = document.getElementById(tabId);
+            if (el) {
+                el.addEventListener('click', fetchFn);
+                el.addEventListener('shown.bs.tab', fetchFn);
+            }
+        }
+
+        bindTabFetch('tw-deconstruct-tab', fetchChipDeconstruction);
+        bindTabFetch('tw-distribution-tab', () => fetchShareholderDist(document.getElementById('dist-ticker-input')?.value.trim() || '2330'));
+        bindTabFetch('tw-divergence-tab', fetchChipDivergence);
+        bindTabFetch('tw-branches-tab', () => fetchKeyBranches(document.getElementById('branch-ticker-input')?.value.trim() || '2330'));
+
+        const usTabBtn = document.getElementById('us-tab');
+        if (usTabBtn) {
+            const triggerUS = () => {
+                const btnGen = document.getElementById('btn-generate-holders');
+                if (btnGen) btnGen.click();
+            };
+            usTabBtn.addEventListener('click', triggerUS);
+            usTabBtn.addEventListener('shown.bs.tab', triggerUS);
         }
 
     });
 </script>
 {% endblock %}
+

@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     chips_view, refresh_tw_api, refresh_us_api, refresh_status_api, 
     api_industry_flow, api_us_stocks_list, api_master_selection,
-    api_us_holders
+    api_us_holders, api_chip_deconstruction, api_shareholder_distribution,
+    api_key_branches, api_chip_divergence
 )
 from .us_chips_views import api_us_money_flow
 
@@ -16,4 +17,10 @@ urlpatterns = [
     path('api/us-money-flow/', api_us_money_flow, name='api_us_money_flow'),
     path('api/master-selection/', api_master_selection, name='api_master_selection'),
     path('api/us-holders/', api_us_holders, name='api_us_holders'),
+    # NotebookLM Chip Analysis APIs
+    path('api/chip-deconstruction/', api_chip_deconstruction, name='api_chip_deconstruction'),
+    path('api/shareholder-distribution/', api_shareholder_distribution, name='api_shareholder_distribution'),
+    path('api/key-branches/', api_key_branches, name='api_key_branches'),
+    path('api/chip-divergence/', api_chip_divergence, name='api_chip_divergence'),
 ]
+
