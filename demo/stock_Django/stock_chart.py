@@ -749,6 +749,41 @@ class chart_create:
             'ratio': round(buy_vol / sell_vol, 2) if sell_vol > 0 else (100 if buy_vol > 0 else 1),
         }
 
+        # NotebookLM Smart Chip Diagnosis & Strategy Advice
+        foreign_buy = shares[0] if len(shares) > 0 else 0
+        trust_buy = shares[1] if len(shares) > 1 else 0
+        net_total = foreign_buy + trust_buy
+
+        if net_total > 0 and trust_buy > 0:
+            status_title = "籌碼高度集中（強勢手法人連買）"
+            status_desc = "外資與投信呈現積極同步买超，籌碼集中於法人手裡，屬易漲難跌多頭格局。"
+            strategy_advice = "【三面整合進場策略】籌碼面極佳！可觀察股價是否站上 20 日均線（月線），若成交量配合放大，為勝率極高的波段佈局買點。"
+            badge_color = "success"
+        elif foreign_buy < 0 and trust_buy > 0:
+            status_title = "外資散戶丟、大戶與投信接（籌碼分歧/洗盤末期）"
+            status_desc = "外資因匯率或權重機械性賣出，但本土投信與大戶資金強勢低檔承接，洗盤即將結束。"
+            strategy_advice = "【籌碼分歧反轉策略】若基本面營收持續成長且股價未跌破關鍵支撐，此分歧為絕佳波段低吸買點。"
+            badge_color = "primary"
+        elif net_total < 0:
+            status_title = "籌碼發散（主力大戶派發倒貨）"
+            status_desc = "三大法人持續淨賣出，籌碼由大戶流向散戶，主力出貨賣壓偏重。"
+            strategy_advice = "【防禦減碼策略】籌碼面與價格走勢背離或向下，宜果斷減碼避險，切忌盲目逢低拉回接刀。"
+            badge_color = "danger"
+        else:
+            status_title = "籌碼沉澱觀望（多空交戰震盪）"
+            status_desc = "法人買賣超金額波動收斂，短線主力處於多空觀望階段。"
+            strategy_advice = "【觀望待變策略】等待籌碼集中度方向明確（法人連續買超 3 日以上）後再行順勢跟車進場。"
+            badge_color = "warning"
+
+        chip_diagnosis = {
+            'status_title': status_title,
+            'status_desc': status_desc,
+            'strategy_advice': strategy_advice,
+            'badge_color': badge_color,
+            'foreign_buy': foreign_buy,
+            'trust_buy': trust_buy,
+        }
+
         return {
             'symbol': symbol,
             'categories': categories,
@@ -759,10 +794,43 @@ class chart_create:
             'bar_colors': bar_colors,
             'concentration': concentration_data,
             'sentiment': sentiment,
+            'chip_diagnosis': chip_diagnosis,
             'total_institutional_pct': 0,
             'total_shares_held': int(sum(abs(s) for s in shares)),
             'is_tw': True,
         }
+
+    def chart_shareholder_distribution_apex(self, dates, large_holder_pcts, small_holder_pcts):
+        """
+        產出集保戶權分散大戶 vs 散戶持股比例歷史趨勢圖 (ApexCharts)
+        `large_holder_pcts`: 400張/1000張以上大戶持股比率 (%)
+        `small_holder_pcts`: 10張以下小戶持股比率 (%)
+        """
+        if not dates:
+            return None
+        return {
+            'categories': [str(d) for d in dates],
+            'series': [
+                {'name': '400張以上大戶持股比 (%)', 'data': [round(float(x), 2) for x in large_holder_pcts]},
+                {'name': '10張以下散戶持股比 (%)', 'data': [round(float(x), 2) for x in small_holder_pcts]}
+            ]
+        }
+
+    def chart_broker_branches_apex(self, branch_names, net_buys, buy_costs, current_price):
+        """
+        產出 Top 10 主力券商分點進出排行與買賣均價成本線 (ApexCharts)
+        """
+        if not branch_names:
+            return None
+        return {
+            'categories': [str(b)[:15] for b in branch_names],
+            'series': [
+                {'name': '分點淨買超(張)', 'data': [int(x) for x in net_buys]}
+            ],
+            'buy_costs': [round(float(c), 2) for c in buy_costs],
+            'current_price': round(float(current_price), 2)
+        }
+
 
     def investor_buysell_top_apex(self, data, amount=10):
         """

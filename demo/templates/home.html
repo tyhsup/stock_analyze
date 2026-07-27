@@ -542,7 +542,9 @@
             <div class="card-body p-3">
                 <div id="investor-chart-container" {% if not investor_json and not us_investor_json %}style="display:none;"{% endif %}>
                     <div id="investor-chart" style="min-height: 400px;"></div>
+                    <div id="chip-diagnosis-card" style="display:none;"></div>
                 </div>
+
                 
                 {% if not investor_json and not us_investor_json and number %}
                 <div class="text-center py-5" id="no-investor-data-msg">
@@ -2481,11 +2483,33 @@
                         colors: ['#42a5f5', '#26a69a', '#ffa726', '#ab47bc'],
                     });
                     _investorChart.render();
+
+                    // NotebookLM 籌碼診斷卡片渲染
+                    if (config.chip_diagnosis) {
+                        const diagEl = document.getElementById('chip-diagnosis-card');
+                        if (diagEl) {
+                            diagEl.style.display = 'block';
+                            diagEl.innerHTML = `
+                                <div class="alert alert-${config.chip_diagnosis.badge_color} border-0 shadow-sm p-4 mt-3">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge bg-${config.chip_diagnosis.badge_color} me-2 fs-6">NotebookLM 籌碼分析</span>
+                                        <h5 class="fw-bold mb-0 text-${config.chip_diagnosis.badge_color}">${config.chip_diagnosis.status_title}</h5>
+                                    </div>
+                                    <p class="mb-2 text-dark fs-6">${config.chip_diagnosis.status_desc}</p>
+                                    <div class="p-3 bg-white bg-opacity-75 rounded border">
+                                        <strong class="text-primary"><i class="bi bi-lightbulb-fill me-1"></i>交易策略與進場建議：</strong>
+                                        <span class="text-dark">${config.chip_diagnosis.strategy_advice}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
                 }
             } catch (e) {
                 console.error('Investor chart error:', e);
             }
         }
+
 
         // 3. Investor Comparison Chart
         const compScript = document.getElementById('investor-comparison-data');
