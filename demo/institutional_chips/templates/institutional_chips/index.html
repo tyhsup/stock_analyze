@@ -2214,14 +2214,26 @@
                     document.getElementById('dist-status-badge').innerText = `籌碼狀態: ${data.trend_status}`;
                     document.getElementById('dist-status-badge').className = `badge fs-6 p-2 ${data.consec_weeks >= 2 ? 'bg-success' : 'bg-warning text-dark'}`;
 
+                    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+                    const chartTextColor = isDark ? '#e0e0e0' : '#333333';
+                    const chartLabelStyle = { fontSize: '15px', colors: [chartTextColor] };
+
                     const options = {
                         series: data.chart_data.series,
-                        chart: { type: 'line', height: 420, toolbar: { show: true } },
+                        chart: { type: 'line', height: 420, toolbar: { show: true }, foreColor: chartTextColor },
                         colors: ['#2e7d32', '#d32f2f'],
                         stroke: { width: [3, 3], curve: 'smooth' },
-                        xaxis: { categories: data.chart_data.categories },
-                        yaxis: { title: { text: '持股比例 (%)' } },
-                        tooltip: { shared: true, intersect: false }
+                        xaxis: {
+                            categories: data.chart_data.categories,
+                            labels: { style: { fontSize: '15px', colors: chartTextColor } }
+                        },
+                        yaxis: {
+                            title: { text: '持股比例 (%)', style: { fontSize: '15px', color: chartTextColor } },
+                            labels: { style: chartLabelStyle }
+                        },
+                        legend: { fontSize: '15px', labels: { colors: chartTextColor } },
+                        tooltip: { shared: true, intersect: false },
+                        theme: { mode: isDark ? 'dark' : 'light' }
                     };
 
                     if (distChart) distChart.destroy();
@@ -2274,13 +2286,21 @@
                 const data = await res.json();
 
                 if (data.status === 'success') {
+                    const isDarkBranch = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+                    const branchTextColor = isDarkBranch ? '#e0e0e0' : '#333333';
+
                     const options = {
                         series: data.chart_data.series,
-                        chart: { type: 'bar', height: 400, toolbar: { show: false } },
+                        chart: { type: 'bar', height: 400, toolbar: { show: false }, foreColor: branchTextColor },
                         plotOptions: { bar: { horizontal: true, distributed: true } },
                         colors: data.branches.map(b => b.net_buy >= 0 ? '#26a69a' : '#ef5350'),
-                        xaxis: { categories: data.chart_data.categories },
-                        yaxis: { labels: { style: { fontSize: '13px', fontWeight: 600 } } }
+                        xaxis: {
+                            categories: data.chart_data.categories,
+                            labels: { style: { fontSize: '15px', colors: branchTextColor } }
+                        },
+                        yaxis: { labels: { style: { fontSize: '15px', fontWeight: 600, colors: branchTextColor } } },
+                        legend: { fontSize: '15px', labels: { colors: branchTextColor } },
+                        theme: { mode: isDarkBranch ? 'dark' : 'light' }
                     };
 
                     if (branchChart) branchChart.destroy();
