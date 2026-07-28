@@ -33,41 +33,48 @@ def News_display(request):
     news_mgr = NewsExcelManager()
     
     quantity_warning = False
+    tw_en_warning = None
+
     if form.is_valid():
         query = form.cleaned_data['news_query'].strip().upper()
-        limit = form.cleaned_data['news_days']
+        limit = form.cleaned_data.get('news_days') or 0
+        en_limit = form.cleaned_data.get('news_en_count') or 0
+        total_requested = limit + en_limit
         
+        # 判斷是否為台股
+        is_tw = (query.isdigit() and len(query) >= 4) or ".TW" in query or ".TWO" in query
+        if is_tw and en_limit > 0:
+            tw_en_warning = "提示：Finnhub 新聞來源僅支援北美股票，台股輸入的英文新聞數量將不適用。"
+            en_limit = 0  # 台股自動歸零英文數量
+
         # 1. Try finding news for specific ticker first
-        data = news_mgr.read_news(query, limit=limit)
+        data = news_mgr.read_news(query, limit=total_requested if total_requested > 0 else 100)
         
         # 2. Check if we have enough data or if it's stale; if so, trigger a background refresh
-        is_ticker = (query.isdigit() and len(query) >= 4) or \
-                     ".TW" in query or \
-                     (query.isalpha() and 1 <= len(query) <= 5)
+        is_ticker = is_tw or (query.isalpha() and 1 <= len(query) <= 5)
         
         if is_ticker:
             is_fresh = check_news_freshness(query)
             
-            if len(data) < limit or not is_fresh:
+            if len(data) < total_requested or not is_fresh:
                 if not is_fresh:
                     logger.info(f"[News] {query} is stale. Triggering background refresh.")
-                trigger_news_refresh(query, limit=limit)
+                trigger_news_refresh(query, limit=limit, en_limit=en_limit)
                 
-                if len(data) < limit:
+                if len(data) < total_requested:
                     quantity_warning = True
 
         # Fallback to general search if still empty (for non-ticker queries or failed ticker search)
         if not data:
-            data = news_mgr.read_news_general(query=query, limit=limit)
-            if len(data) < limit:
+            data = news_mgr.read_news_general(query=query, limit=total_requested if total_requested > 0 else 100)
+            if len(data) < total_requested:
                 quantity_warning = True
         
-        # 3. Dynamic Sentiment Enhancement (Optional but high value)
+        # 3. Dynamic Sentiment Enhancement
         try:
             nlp = NLPService()
             for item in data:
                 if item.get('正負分析') == '中性':
-                    # 優先使用內容分析，否則使用標題
                     analysis_text = item.get('內容') or item.get('標題', '')
                     res = nlp.analyze_sentiment(analysis_text)
                     if res.get('label') != 'error':
@@ -78,7 +85,8 @@ def News_display(request):
     return render(request, 'news_display.html', {
         'form': form, 
         'data': data, 
-        'quantity_warning': quantity_warning
+        'quantity_warning': quantity_warning,
+        'tw_en_warning': tw_en_warning
     })
 
 def refresh_status_api(request, ticker):
@@ -142,14 +150,26 @@ def smart_advisor_analysis(request, ticker):
     })
 
 def news_refresh_api(request, ticker):
-    """API endpoint to trigger news refresh from 鉅亨網."""
+    """API endpoint to trigger news refresh for Chinese and English news."""
     limit = request.GET.get('limit', 20)
+    en_limit = request.GET.get('en_limit', 0)
     try:
         limit = int(limit)
     except ValueError:
         limit = 20
-    trigger_news_refresh(ticker, limit=limit)
-    return JsonResponse({'status': 'triggered', 'ticker': ticker})
+    try:
+        en_limit = int(en_limit)
+    except ValueError:
+        en_limit = 0
+
+    # 判斷台股
+    ticker_upper = str(ticker).strip().upper()
+    is_tw = ticker_upper.isdigit() or ".TW" in ticker_upper or ".TWO" in ticker_upper
+    if is_tw:
+        en_limit = 0
+
+    trigger_news_refresh(ticker, limit=limit, en_limit=en_limit)
+    return JsonResponse({'status': 'triggered', 'ticker': ticker, 'limit': limit, 'en_limit': en_limit})
 
 from .services import StockService
 

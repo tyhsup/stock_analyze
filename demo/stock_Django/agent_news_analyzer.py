@@ -41,13 +41,9 @@ class RateLimiter:
 
 class FinBertScorer:
     """
-    使用 IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment 進行中文情緒分析。
-    - 優先使用 CUDA GPU。
-    - 雖然名稱不是 FinBERT，但這是目前本地執行中文情緒分析最穩定、快速的選擇。
-    - 輸出映射：
-        0: Negative -> 負面
-        1: Positive -> 正面
-    - 若信心度低於門檻，自動判定為「中立」。
+    雙語情緒分析器：
+    - 中文：IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment
+    - 英文：ProsusAI/finbert (Lazy loaded)
     """
 
     def __init__(self, model_name: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"):
@@ -56,7 +52,7 @@ class FinBertScorer:
 
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"[Scorer] 初始化，裝置: {self.device}，模型: {model_name}")
+        logger.info(f"[Scorer] 初始化中文模型，裝置: {self.device}，模型: {model_name}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
@@ -65,13 +61,35 @@ class FinBertScorer:
         self._torch = torch
         self.neutral_threshold = 0.65  # 若最高信心度低於此值，視為中立
 
-    def analyze(self, title: str, content: str) -> dict:
+        # Lazy loading for English FinBERT model
+        self.en_tokenizer = None
+        self.en_model = None
+
+    def _get_en_model(self):
+        if self.en_tokenizer is None or self.en_model is None:
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            en_model_name = "ProsusAI/finbert"
+            logger.info(f"[Scorer] 載入英文 FinBERT 模型: {en_model_name}...")
+            try:
+                self.en_tokenizer = AutoTokenizer.from_pretrained(en_model_name)
+                self.en_model = AutoModelForSequenceClassification.from_pretrained(en_model_name)
+                self.en_model.to(self.device)
+                self.en_model.eval()
+            except Exception as e:
+                logger.error(f"[Scorer] 載入英文 FinBERT 失敗: {e}")
+                return False
+        return True
+
+    def analyze(self, title: str, content: str, language: str = 'zh-TW') -> dict:
         """
-        分析新聞，回傳量化情緒指標。
+        分析新聞，回傳量化情緒指標。支援中英文自動分流。
         """
         combined = f"{title}. {content[:200]}".strip()
         if not combined:
             return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
+
+        if language == 'en':
+            return self._analyze_en(combined)
 
         try:
             inputs = self.tokenizer(
@@ -106,7 +124,51 @@ class FinBertScorer:
             }
 
         except Exception as e:
-            logger.error(f"[Scorer] 推論失敗: {e}")
+            logger.error(f"[Scorer] 中文推論失敗: {e}")
+            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
+
+    def _analyze_en(self, text: str) -> dict:
+        """使用 ProsusAI/finbert 分析英文新聞"""
+        if not self._get_en_model():
+            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
+
+        try:
+            inputs = self.en_tokenizer(
+                text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512
+            ).to(self.device)
+
+            with self._torch.no_grad():
+                outputs = self.en_model(**inputs)
+                probs = self._torch.softmax(outputs.logits, dim=-1)[0].cpu().tolist()
+
+            # ProsusAI/finbert 輸出：[positive, negative, neutral]
+            pos_prob = probs[0]
+            neg_prob = probs[1]
+            neu_prob = probs[2]
+
+            confidence = max(pos_prob, neg_prob, neu_prob)
+
+            if neu_prob >= 0.5 or confidence < 0.5:
+                label = "中立"
+                sentiment_score = 0.0
+            elif pos_prob > neg_prob:
+                label = "正面"
+                sentiment_score = round(pos_prob - neg_prob, 4)
+            else:
+                label = "負面"
+                sentiment_score = round(pos_prob - neg_prob, 4)
+
+            return {
+                "positive_negative_analysis": label,
+                "sentiment_score": sentiment_score,
+                "confidence": round(confidence, 4)
+            }
+        except Exception as e:
+            logger.error(f"[Scorer] 英文推論失敗: {e}")
             return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
 
 
@@ -124,7 +186,7 @@ GEMINI_SYSTEM_PROMPT = """你是專業金融分析師。請基於提供的新聞
 class AgentNewsAnalyzer:
     """
     金融新聞混合分析器。
-    Stage 1: 本地 Roberta 模型 (快速評分)
+    Stage 1: 本地 Roberta / FinBERT 模型 (雙語快速評分)
     Stage 2: Gemini CLI 雲端 Gemma 4 31B (深度解釋)
     """
 
@@ -149,21 +211,22 @@ class AgentNewsAnalyzer:
         self.scorer = FinBertScorer()
 
     def analyze_news(self, news_data: dict, force_llm: bool = False, is_recent: bool = True) -> dict:
-        title   = news_data.get("title",   news_data.get("標題", ""))
-        date    = news_data.get("date",    news_data.get("發布時間", ""))
-        content = news_data.get("content", news_data.get("內文", ""))
-        link    = news_data.get("link",    news_data.get("連結", ""))
-        source  = news_data.get("source",  news_data.get("來源", ""))
+        title    = news_data.get("title",   news_data.get("標題", ""))
+        date     = news_data.get("date",    news_data.get("發布時間", ""))
+        content  = news_data.get("content", news_data.get("內文", ""))
+        link     = news_data.get("link",    news_data.get("連結", ""))
+        source   = news_data.get("source",  news_data.get("來源", ""))
+        language = news_data.get("language", news_data.get("語言", "zh-TW"))
 
-        # Stage 1: 本地快速評分
-        score_res = self.scorer.analyze(title, content)
+        # Stage 1: 本地雙語評分
+        score_res = self.scorer.analyze(title, content, language=language)
         
         # 升級判斷 (重要新聞篩選機制)：
-        # 僅在本地判定為「非中立」且「長度大於 400 字」且「新聞屬於 7 天內 (is_recent=True)」時升級至雲端
+        # 僅在本地判定為「非中立」且「長度大於 200 字 (英文單字/中文數)」且「新聞屬於 7 天內 (is_recent=True)」時升級至雲端
         is_neutral = score_res["positive_negative_analysis"] == "中立"
         should_upgrade = force_llm or (
             not is_neutral 
-            and len(content) > 400 
+            and len(content) > 200 
             and is_recent
         )
         
@@ -178,6 +241,7 @@ class AgentNewsAnalyzer:
             "content": content,
             "link": link,
             "source": source,
+            "language": language,
             "positive_negative_analysis": score_res["positive_negative_analysis"],
             "sentiment_score": score_res["sentiment_score"],
             "confidence": score_res["confidence"],

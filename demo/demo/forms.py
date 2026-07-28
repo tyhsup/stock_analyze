@@ -8,11 +8,20 @@ class Economynews(forms.Form):
         widget=forms.TextInput(attrs={'placeholder': ' ', 'class': 'form-control'})
     )
     news_days = forms.IntegerField(
-        label='顯示的新聞數量', 
-        min_value=1, 
+        label='中文新聞數量', 
+        min_value=0, 
         max_value=1000, 
-        required=True,
-        widget=forms.NumberInput(attrs={'placeholder': ' ', 'class': 'form-control'})
+        required=False,
+        initial=50,
+        widget=forms.NumberInput(attrs={'placeholder': '50', 'class': 'form-control'})
+    )
+    news_en_count = forms.IntegerField(
+        label='英文新聞數量', 
+        min_value=0, 
+        max_value=1000, 
+        required=False,
+        initial=0,
+        widget=forms.NumberInput(attrs={'placeholder': '0', 'class': 'form-control'})
     )
     
 class StocknumberInput(forms.Form):

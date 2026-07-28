@@ -10,7 +10,7 @@
 
         <form method="get" class="card p-4 shadow-sm bg-white border-0">
             <div class="row g-3 align-items-center justify-content-center">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <div class="form-floating">
                         {{ form.news_query }}
                         <label for="{{ form.news_query.id_for_label }}">Symbol or Keyword</label>
@@ -19,7 +19,13 @@
                 <div class="col-md-3">
                     <div class="form-floating">
                         {{ form.news_days }}
-                        <label for="{{ form.news_days.id_for_label }}">Max Results</label>
+                        <label for="{{ form.news_days.id_for_label }}">中文新聞數量</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-floating">
+                        {{ form.news_en_count }}
+                        <label for="{{ form.news_en_count.id_for_label }}">英文新聞數量</label>
                     </div>
                 </div>
                 <div class="col-md-2">
@@ -31,6 +37,18 @@
         </form>
     </div>
 </div>
+
+{% if tw_en_warning %}
+<div class="row mb-3">
+    <div class="col-md-8 mx-auto">
+        <div class="alert alert-warning alert-dismissible fade show border-0 shadow-sm" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>提示：</strong> {{ tw_en_warning }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if data %}
 <div class="row">
@@ -221,8 +239,10 @@
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Refreshing...';
 
         const limitInput = document.getElementById('id_news_days');
+        const enLimitInput = document.getElementById('id_news_en_count');
         const limit = limitInput ? limitInput.value : 50;
-        fetch(`/api/news-refresh/${ticker}/?limit=${limit}`)
+        const enLimit = enLimitInput ? enLimitInput.value : 0;
+        fetch(`/api/news-refresh/${ticker}/?limit=${limit}&en_limit=${enLimit}`)
             .then(r => r.json())
             .then(data => {
                 alert(`News refresh for ${ticker} triggered! Please check back in a few seconds.`);
@@ -289,6 +309,7 @@
                     ${aiInsightHTML}
                     <div class="d-flex align-items-center mt-3">
                         <span class="badge ${sentimentClass} me-2">${item.正負分析 || '中性'}</span>
+                        <span class="badge bg-info text-dark me-2"><i class="bi bi-translate me-1"></i>${item.語言 || 'zh-TW'}</span>
                         <span class="badge bg-light text-muted border small"><i class="bi bi-tag me-1"></i>${item.來源 || '未知來源'}</span>
                         <a href="${item.連結}" target="_blank" class="btn btn-link btn-sm p-0 ms-auto text-decoration-none">
                             Read More <i class="bi bi-box-arrow-up-right ms-1"></i>

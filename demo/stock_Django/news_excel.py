@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Absolute path to news data folder - FIXED as per user request
 NEWS_DATA_DIR = Path(r'E:\Infinity\mydjango\demo\newsapp\news_data')
 
-SCHEMA_COLUMNS = ['標題', '日期', '內容', '連結', '正負分析', '來源', '市場', '信心度', '影響範疇', '分析摘要']
+SCHEMA_COLUMNS = ['標題', '日期', '內容', '連結', '正負分析', '來源', '市場', '信心度', '影響範疇', '分析摘要', '語言']
 
 # Threading lock for file operations
 _excel_lock = threading.Lock()
@@ -58,59 +58,40 @@ class NewsExcelManager:
             pass
         return str(datetime.now().year)
 
-    def read_news(self, ticker: str, query: str = None, years: list = None, limit: int = 1000) -> list:
-        """
-        Read news for a ticker, optionally filtered by keyword and year.
-        Searches across ALL sheets (years) unless years is specified.
-        Older data files (newsapp/static/news_data.xlsx) are NOT affected.
-        """
-        file_path = self.get_file_path(ticker)
-
-        # Also check legacy general file for backwards compatibility
-        legacy_path = Path(__file__).resolve().parent.parent / 'newsapp' / 'static' / 'news_data.xlsx'
-
-        frames = []
-
-        # Read from per-stock file
-        if file_path.exists():
-            try:
-                xl = pd.ExcelFile(file_path)
-                sheets_to_read = years if years else xl.sheet_names
-                for sheet in sheets_to_read:
-                    if sheet in xl.sheet_names:
-                        df = xl.parse(sheet)
-                        if not df.empty:
-                            frames.append(df)
-            except Exception as e:
-                logger.warning(f"Error reading {file_path}: {e}")
-
     def _normalize_df_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Normalize DataFrame columns to SCHEMA_COLUMNS.
-        Handles cases where headers might be mangled or missing '內容'.
+        Handles cases where headers might be mangled or missing '內容' or '語言'.
         """
         if df.empty:
             return pd.DataFrame(columns=SCHEMA_COLUMNS)
             
-        # Try to detect if this is a 5-column (old) or 6-column (new) file
         cols = list(df.columns)
         if len(cols) == 5:
             # Old schema: 標題, 日期, 連結, 正負分析, 來源
             df.columns = ['標題', '日期', '連結', '正負分析', '來源']
             df['內容'] = ''
+            df['語言'] = 'zh-TW'
         elif len(cols) == 6 and '內容' in cols:
             # New schema without AI fields: 標題, 日期, 內容, 連結, 正負分析, 來源
             df.columns = ['標題', '日期', '內容', '連結', '正負分析', '來源']
+            df['語言'] = 'zh-TW'
         elif len(cols) == 10:
-            # Full schema with AI fields
+            # Full schema with AI fields without 語言
+            df.columns = ['標題', '日期', '內容', '連結', '正負分析', '來源', '市場', '信心度', '影響範疇', '分析摘要']
+            df['語言'] = 'zh-TW'
+        elif len(cols) == 11:
+            # Full schema with 語言
             df.columns = SCHEMA_COLUMNS
         else:
-            # Unknown schema, try to map available ones, fill missing
             pass
             
         for col in SCHEMA_COLUMNS:
             if col not in df.columns:
-                df[col] = ''
+                if col == '語言':
+                    df[col] = 'zh-TW'
+                else:
+                    df[col] = ''
         
         return df[SCHEMA_COLUMNS]
 
@@ -250,12 +231,13 @@ class NewsExcelManager:
                     existing_links = set(existing_df['連結'].astype(str).tolist())
                     
                     new_rows = new_df[~new_df.apply(
-                        lambda r: (str(r['標題']), str(r['日期'])) in existing_keys or str(r['連結']) in existing_links, axis=1
+                        lambda r: (str(r['標題']), str(r['日期'])) in existing_keys or (str(r['連結']) != '' and str(r['連結']) in existing_links), axis=1
                     )]
                 else:
                     new_rows = new_df
 
-                if new_rows.empty:
+                needs_schema_upgrade = (year in wb.sheetnames and headers and len(headers) < len(SCHEMA_COLUMNS))
+                if new_rows.empty and not needs_schema_upgrade:
                     continue
 
                 combined = pd.concat([existing_df, new_rows], ignore_index=True)
@@ -263,7 +245,7 @@ class NewsExcelManager:
                 combined = combined.sort_values('日期', ascending=False)
                 combined['日期'] = combined['日期'].dt.strftime('%Y-%m-%d').fillna('')
 
-                # Rewrite sheet
+                # Rewrite sheet with standardized 11-column schema
                 ws = wb[year]
                 ws.delete_rows(1, ws.max_row)
                 for r in dataframe_to_rows(combined[SCHEMA_COLUMNS], index=False, header=True):

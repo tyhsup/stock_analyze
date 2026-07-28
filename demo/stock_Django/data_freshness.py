@@ -263,48 +263,58 @@ def trigger_refresh_if_stale(ticker: str, is_tw: bool, engine) -> bool:
 # Global cooldown tracker
 _news_cooldown = {}
 
-def refresh_news_background(ticker: str, market: str, limit: int = 50):
+def refresh_news_background(ticker: str, market: str, limit: int = 50, en_limit: int = 0):
     """
-    Background thread to fetch news from 鉅亨網.
+    Background thread to fetch news from 鉅亨網 (中文) and Finnhub (英文).
     使用新聞專用 status key ({ticker}_NEWS) 避免與 OHLCV/法人狀態衝突。
     """
     import time
     import concurrent.futures
     from stock_Django.news_scraper_cnyes import CnyesScraper
+    from stock_Django.news_scraper_en import FinnhubScraper
     from stock_Django.news_excel import NewsExcelManager
 
     ticker = ticker.upper()
     news_key = _news_status_key(ticker)
-    _set_status(news_key, 'running', 10, f'正在從 鉅亨網 抓取 {ticker} 最新新聞...')
+    _set_status(news_key, 'running', 10, f'正在抓取 {ticker} 中/英文最新新聞...')
 
     start_time = time.time()
     try:
-        scraper = CnyesScraper()
+        cnyes_scraper = CnyesScraper()
+        finnhub_scraper = FinnhubScraper()
         news_mgr = NewsExcelManager()
 
-        # Scrape using high-performance cnyes-cli hybrid architecture
-        results = scraper.fetch_news(ticker, market=market, limit=limit)
+        results = []
 
-        # 區分 CLI 失敗（None）與成功查詢但無新聞（空 list）
-        if results is None:
-            elapsed = time.time() - start_time
-            _set_status(news_key, 'error', 0,
-                        f'❌ cnyes-cli 執行失敗，無法取得 {ticker} 新聞 (耗時 {elapsed:.1f}s)')
-            logger.error(f"[Freshness] News refresh for {ticker} FAILED: cnyes-cli returned None (CLI error). Elapsed: {elapsed:.2f}s")
-            return
+        # 1. 抓取中文新聞 (鉅亨網)
+        if limit > 0:
+            _set_status(news_key, 'running', 15, f'正在從 鉅亨網 抓取 {ticker} 中文新聞 ({limit} 則)...')
+            cnyes_results = cnyes_scraper.fetch_news(ticker, market=market, limit=limit)
+            if cnyes_results:
+                for item in cnyes_results:
+                    item['語言'] = 'zh-TW'
+                results.extend(cnyes_results)
+
+        # 2. 抓取英文新聞 (Finnhub)
+        if en_limit > 0:
+            _set_status(news_key, 'running', 35, f'正在從 Finnhub 抓取 {ticker} 英文新聞 ({en_limit} 則)...')
+            en_results = finnhub_scraper.fetch_news(ticker, limit=en_limit)
+            if en_results:
+                for item in en_results:
+                    item['語言'] = 'en'
+                results.extend(en_results)
 
         if not results:
             elapsed = time.time() - start_time
             _set_status(news_key, 'done', 100,
-                        f'✅ {ticker} 抓取完成，但未發現新新聞，耗時 {elapsed:.2f} 秒')
+                        f'✅ {ticker} 抓取完成，未取得任何新新聞，耗時 {elapsed:.2f} 秒')
             logger.info(f"[Freshness] News refresh for {ticker} completed with no new items. Elapsed: {elapsed:.2f}s")
-            # 成功查詢但無結果，仍設定 cooldown 避免無意義重複抓取
             _news_cooldown[ticker] = time.time()
             return
 
-        # 有新聞資料，進行 AI 強化分析
+        # 有新聞資料，進行 AI 強化分析 (雙語)
         _set_status(news_key, 'running', 50,
-                    f'成功取得 {len(results)} 則新聞，開始 AI 分析...')
+                    f'成功取得 {len(results)} 則中/英文新聞，開始 AI 情緒與定性分析...')
 
         from stock_Django.agent_news_analyzer import AgentNewsAnalyzer
 
@@ -328,9 +338,10 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
                 except Exception as e_dt:
                     logger.warning(f"Failed to parse news date '{item_date_str}': {e_dt}")
 
+                lang_label = item.get('語言', 'zh-TW')
                 _set_status(news_key, 'running',
                             50 + int(40 * (idx / len(results))),
-                            f'AI 強化分析中 ({idx+1}/{len(results)})...')
+                            f'AI 雙語強化分析中 ({idx+1}/{len(results)}) [{lang_label}]...')
                 ai_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
                 try:
                     future = ai_executor.submit(agent.analyze_news, {
@@ -338,7 +349,8 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
                         "date": item.get('日期', ''),
                         "content": item.get('內容', ''),
                         "link": item.get('連結', ''),
-                        "source": item.get('來源', '')
+                        "source": item.get('來源', ''),
+                        "language": lang_label
                     }, is_recent=is_recent)
                     analysis = future.result(timeout=120)
                     item['正負分析'] = analysis['positive_negative_analysis']
@@ -371,11 +383,11 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
                 enhanced_results.append(item)
 
         _set_status(news_key, 'running', 95,
-                    f'寫入 {len(enhanced_results)} 則新聞資料...')
+                    f'寫入 {len(enhanced_results)} 則中/英文新聞資料至同一 Excel...')
         news_mgr.write_news(ticker, enhanced_results)
         elapsed = time.time() - start_time
         _set_status(news_key, 'done', 100,
-                    f'✅ {ticker} 新聞更新完成，共 {len(enhanced_results)} 則，總耗時 {elapsed:.2f} 秒')
+                    f'✅ {ticker} 新聞更新完成，共 {len(enhanced_results)} 則 (中/英文)，總耗時 {elapsed:.2f} 秒')
         logger.info(f"[Freshness] News refresh for {ticker} completed. {len(enhanced_results)} items. Total elapsed: {elapsed:.2f}s")
 
         # 成功後設定 cooldown
@@ -386,10 +398,9 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50):
         _set_status(news_key, 'error', 0, f'❌ 新聞更新錯誤: {e}')
 
 
-def trigger_news_refresh(ticker: str, limit: int = 50) -> bool:
+def trigger_news_refresh(ticker: str, limit: int = 50, en_limit: int = 0) -> bool:
     """
-    Trigger news refresh if not already running and cooldown passed.
-    Cooldown 僅在成功後設定，失敗時允許立即重試。
+    Trigger news refresh for Chinese and/or English news if not already running and cooldown passed.
     """
     ticker = ticker.upper()
 
@@ -408,10 +419,10 @@ def trigger_news_refresh(ticker: str, limit: int = 50) -> bool:
     is_tw = ticker.isdigit() or ".TW" in ticker
     market = 'tw' if is_tw else 'us'
 
-    logger.info(f"[News] Triggering background news refresh for {ticker} (market={market}, limit={limit})")
+    logger.info(f"[News] Triggering background news refresh for {ticker} (market={market}, limit={limit}, en_limit={en_limit})")
     thread = threading.Thread(
         target=refresh_news_background,
-        args=(ticker, market, limit),
+        args=(ticker, market, limit, en_limit),
         daemon=True
     )
     thread.start()
