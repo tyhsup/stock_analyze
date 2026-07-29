@@ -69,6 +69,7 @@ To deliver a professional-grade user experience, the platform was optimized to s
 * **Data Scraping & Automation**
   * **APIs**: yfinance (US market data), CNYES News API, FRED API, Central Bank of Taiwan API.
   * **Crawlers**: aiohttp (asynchronous HTTP requests with proxy and User-Agent rotation to handle rate limits) and custom TWSE/TPEX CLIs.
+  * **Note**: Users are responsible for managing their own data sources, API keys, and ensuring compliance with third-party data provider terms of service.
 
 * **Data Science & Machine Learning**
   * **Financial Indicators**: TA-Lib (RSI, MACD, HT_PHASOR calculation).
