@@ -1006,12 +1006,11 @@ class StockService:
                     investor_data_raw = self.sql_op.get_latest_investor_data(days + 30)
 
                 invest_df = StockUtils.transfer_numeric(investor_data_raw)
-                target_num = str(number).strip()
-                ticker_investor = self.chart.get_investor(invest_df, target_num, days)
+                clean_target_num = str(number).replace('.TWO', '').replace('.TW', '').strip()
+                ticker_investor = self.chart.get_investor(invest_df, clean_target_num, days)
                 
-                if ticker_investor.empty and target_num.isdigit():
-                    suffix = ".TWO" if ".TWO" in valuation_symbol else ".TW"
-                    ticker_investor = self.chart.get_investor(invest_df, f"{target_num}{suffix}", days)
+                if ticker_investor.empty and clean_target_num != number:
+                    ticker_investor = self.chart.get_investor(invest_df, str(number).strip(), days)
                 
                 if not ticker_investor.empty:
                     result['investor_json'] = self.chart.investor_apex(ticker_investor, symbol=number)

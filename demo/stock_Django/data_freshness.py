@@ -101,23 +101,30 @@ def check_ohlcv_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, str |
 
 
 def check_investor_freshness(engine, ticker: str, is_tw: bool) -> tuple[bool, str | None]:
-    """Check if investor/chip data is fresh."""
-    if is_tw:
-        table = 'stock_investor'
-        date_col = 'date'
-    else:
-        table = 'stock_investor_us'
-        date_col = 'date'
-
+    """Check if investor/chip data is fresh. Prioritizes stock_investor_tw for TW stocks."""
+    clean_sym = ticker.upper().replace('.TWO', '').replace('.TW', '').strip()
     try:
         with engine.connect() as conn:
             if is_tw:
+                # 優先查詢新表 stock_investor_tw 且限定該個股
                 result = conn.execute(
-                    text(f"SELECT MAX(`{date_col}`) FROM {table}")
+                    text("SELECT MAX(date) FROM stock_investor_tw WHERE number = :num"),
+                    {'num': clean_sym}
                 ).fetchone()
+                
+                # 若新表查無該個股，回退至全表或舊表
+                if not result or not result[0]:
+                    result = conn.execute(
+                        text("SELECT MAX(date) FROM stock_investor_tw")
+                    ).fetchone()
+                if not result or not result[0]:
+                    result = conn.execute(
+                        text("SELECT MAX(`日期`) FROM stock_investor WHERE number = :num"),
+                        {'num': clean_sym}
+                    ).fetchone()
             else:
                 result = conn.execute(
-                    text(f"SELECT MAX(`{date_col}`) FROM {table} WHERE ticker = :num"),
+                    text("SELECT MAX(date) FROM stock_investor_us WHERE ticker = :num"),
                     {'num': ticker.upper()}
                 ).fetchone()
 
@@ -168,6 +175,7 @@ def refresh_data_background(ticker: str, is_tw: bool):
     from stock_Django.mySQL_OP import OP_Fun
 
     ticker = ticker.upper()
+    clean_ticker = ticker.replace('.TWO', '').replace('.TW', '').strip()
     _set_status(ticker, 'running', 0, '開始更新資料...')
     sql = OP_Fun()
 
@@ -187,11 +195,18 @@ def refresh_data_background(ticker: str, is_tw: bool):
         _set_status(ticker, 'running', 35, '正在更新法人買賣超資料...')
         try:
             if is_tw:
-                # Use stock_investor Selenium scraper for TW
-                from stock_Django.stock_investor import StockInvestorManager
-                inv_mgr = StockInvestorManager()
-                inv_mgr.update_investor_data()
-                _set_status(ticker, 'running', 70, '✅ 台股三大法人資料更新完成')
+                is_otc = ".TWO" in ticker or (len(clean_ticker) == 4 and clean_ticker[0] in '34568')
+                if is_otc:
+                    from stock_Django.stock_investor_tpex import TPExInvestorManager
+                    tpex_mgr = TPExInvestorManager()
+                    tpex_mgr.update_tpex_investor(days_back=10)
+                    _set_status(ticker, 'running', 70, '✅ 台股上櫃三大法人資料更新完成')
+                else:
+                    # Use stock_investor Selenium scraper for TWSE
+                    from stock_Django.stock_investor import StockInvestorManager
+                    inv_mgr = StockInvestorManager()
+                    inv_mgr.update_investor_data()
+                    _set_status(ticker, 'running', 70, '✅ 台股上市三大法人資料更新完成')
             else:
                 # Use stock_investor_us for US
                 from stock_Django.stock_investor_us import USStockInvestorManager

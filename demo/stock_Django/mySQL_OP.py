@@ -140,10 +140,40 @@ class OP_Fun:
     def get_latest_investor_data(self, days=30):
         """
         Optimized method to fetch only the latest N distinct trading days of investor data.
+        Prioritizes stock_investor_tw (new unified table for TWSE + TPEx) and maps columns to compatible schema.
+        Falls back to stock_investor if stock_investor_tw is empty or query fails.
         """
+        # 1. 優先查詢雙軌新表 stock_investor_tw (包含 TWSE 上市 + TPEx 上櫃)
         try:
-            # Table stock_investor has ~900k rows. Fetch only recent rows (last ~60 days * ~1000 tickers = 60000)
-            # This balances performance and accuracy.
+            query_tw = "SELECT * FROM stock_investor_tw ORDER BY date DESC LIMIT 100000"
+            df_tw = pd.read_sql(text(query_tw), con=self.engine)
+            if not df_tw.empty:
+                # 篩選最新 N 個交易日
+                unique_dates = sorted(df_tw['date'].astype(str).unique(), reverse=True)[:int(days)]
+                df_tw = df_tw[df_tw['date'].astype(str).isin(unique_dates)].copy()
+                
+                # 轉態與欄位映射以相容下游 stock_chart.py
+                df_tw.rename(columns={
+                    'date': '日期',
+                    'name': '證券名稱',
+                    'foreign_net': '外陸資買賣超股數(不含外資自營商)',
+                    'trust_net': '投信買賣超股數',
+                    'dealer_net': '自營商買賣超股數(自行買賣)',
+                    'total_net': '三大法人買賣超股數'
+                }, inplace=True)
+                
+                # 補充可能缺失的自營商避險或外資自營商預設欄位以避免 KeyError
+                if '自營商買賣超股數(避險)' not in df_tw.columns:
+                    df_tw['自營商買賣超股數(避險)'] = 0.0
+                if '自營商買賣超股數' not in df_tw.columns:
+                    df_tw['自營商買賣超股數'] = df_tw['自營商買賣超股數(自行買賣)']
+                
+                return df_tw
+        except Exception as e_new:
+            logger.warning(f"Query stock_investor_tw in get_latest_investor_data failed: {e_new}, falling back to stock_investor")
+
+        # 2. Fallback 回退至舊表 stock_investor
+        try:
             query = "SELECT * FROM stock_investor ORDER BY 1 DESC LIMIT 100000"
             df = pd.read_sql(text(query), con=self.engine)
             df = self._fix_investor_columns(df)
@@ -155,7 +185,7 @@ class OP_Fun:
                 
             return df
         except Exception as e:
-            logger.error(f"Failed to fetch latest investor data: {e}")
+            logger.error(f"Failed to fetch latest investor data from fallback table: {e}")
             return pd.DataFrame()
 
     def get_dynamic_batch_size(self) -> int:

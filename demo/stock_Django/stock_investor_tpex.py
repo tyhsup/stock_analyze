@@ -186,7 +186,7 @@ class TPExInvestorManager:
 
                         # 雙軌寫入：寫入舊表 stock_investor
                         df_old = pd.DataFrame(filtered_rows, columns=old_columns)
-                        df_old.insert(0, 'date', date_str)
+                        df_old.insert(0, 'date', ad_date_str)
                         df_old.rename(columns={'代號': 'number', '名稱': '證券名稱'}, inplace=True)
                         for col in df_old.columns:
                             if any(x in col for x in ['買進', '賣出', '差額', '合計', '股數']):
@@ -457,7 +457,7 @@ class TPExInvestorSeleniumManager:
 
                             # 雙軌寫入舊表 stock_investor
                             df_old = pd.DataFrame(filtered_rows, columns=old_columns)
-                            df_old.insert(0, 'date', roc_date_str)
+                            df_old.insert(0, 'date', ad_date_str)
                             df_old.rename(columns={'代號': 'number', '名稱': '證券名稱'}, inplace=True)
                             for col in df_old.columns:
                                 if any(x in col for x in ['買進', '賣出', '差額', '合計', '股數']):
