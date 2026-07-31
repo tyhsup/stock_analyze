@@ -128,7 +128,9 @@ class StockInvestorManager:
         
         driver = None
         try:
-            driver = webdriver.Edge(options=options)
+            from webdriver_manager.microsoft import EdgeChromiumDriverManager
+            from selenium.webdriver.edge.service import Service as EdgeService
+            driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=options)
             wait = WebDriverWait(driver, 20)
             current_date = start_date
             

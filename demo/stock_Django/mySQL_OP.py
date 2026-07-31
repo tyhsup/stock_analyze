@@ -139,20 +139,20 @@ class OP_Fun:
 
     def get_latest_investor_data(self, days=30):
         """
-        Optimized method to fetch only the latest N distinct trading days of investor data.
-        Prioritizes stock_investor_tw (new unified table for TWSE + TPEx) and maps columns to compatible schema.
-        Falls back to stock_investor if stock_investor_tw is empty or query fails.
+        合併 stock_investor_tw (OTC/上櫃) 與 stock_investor (TWSE/上市) 兩表資料。
+        兩表 Schema 不同，各自正規化欄位後合併，以 number+日期 去重。
         """
-        # 1. 優先查詢雙軌新表 stock_investor_tw (包含 TWSE 上市 + TPEx 上櫃)
+        frames = []
+
+        # 1. 讀取新表 stock_investor_tw (含 OTC 上櫃最新資料)
         try:
-            query_tw = "SELECT * FROM stock_investor_tw ORDER BY date DESC LIMIT 100000"
-            df_tw = pd.read_sql(text(query_tw), con=self.engine)
+            df_tw = pd.read_sql(text("SELECT * FROM stock_investor_tw ORDER BY date DESC LIMIT 100000"), con=self.engine)
             if not df_tw.empty:
                 # 篩選最新 N 個交易日
-                unique_dates = sorted(df_tw['date'].astype(str).unique(), reverse=True)[:int(days)]
-                df_tw = df_tw[df_tw['date'].astype(str).isin(unique_dates)].copy()
+                unique_dates_tw = sorted(df_tw['date'].astype(str).unique(), reverse=True)[:int(days)]
+                df_tw = df_tw[df_tw['date'].astype(str).isin(unique_dates_tw)].copy()
                 
-                # 轉態與欄位映射以相容下游 stock_chart.py
+                # 欄位映射至中文 (相容下游 stock_chart.py)
                 df_tw.rename(columns={
                     'date': '日期',
                     'name': '證券名稱',
@@ -166,27 +166,36 @@ class OP_Fun:
                 if '自營商買賣超股數(避險)' not in df_tw.columns:
                     df_tw['自營商買賣超股數(避險)'] = 0.0
                 if '自營商買賣超股數' not in df_tw.columns:
-                    df_tw['自營商買賣超股數'] = df_tw['自營商買賣超股數(自行買賣)']
+                    df_tw['自營商買賣超股數'] = df_tw.get('自營商買賣超股數(自行買賣)', 0.0)
                 
-                return df_tw
+                frames.append(df_tw)
         except Exception as e_new:
-            logger.warning(f"Query stock_investor_tw in get_latest_investor_data failed: {e_new}, falling back to stock_investor")
+            logger.warning(f"Query stock_investor_tw in get_latest_investor_data failed: {e_new}")
 
-        # 2. Fallback 回退至舊表 stock_investor
+        # 2. 讀取舊表 stock_investor (含 TWSE 上市最新資料)
         try:
             query = "SELECT * FROM stock_investor ORDER BY 1 DESC LIMIT 100000"
-            df = pd.read_sql(text(query), con=self.engine)
-            df = self._fix_investor_columns(df)
+            df_old = pd.read_sql(text(query), con=self.engine)
+            df_old = self._fix_investor_columns(df_old)
             
-            if not df.empty:
+            if not df_old.empty:
                 # Filter to last 'days' unique dates
-                unique_dates = sorted(df['日期'].unique(), reverse=True)[:int(days)]
-                df = df[df['日期'].isin(unique_dates)]
-                
-            return df
+                unique_dates_old = sorted(df_old['日期'].unique(), reverse=True)[:int(days)]
+                df_old = df_old[df_old['日期'].isin(unique_dates_old)]
+                frames.append(df_old)
         except Exception as e:
             logger.error(f"Failed to fetch latest investor data from fallback table: {e}")
+
+        # 3. 合併並去重 (同一 number+日期 優先保留新表資料)
+        if not frames:
             return pd.DataFrame()
+            
+        merged = pd.concat(frames, ignore_index=True)
+        date_col = '日期' if '日期' in merged.columns else 'date'
+        merged[date_col] = merged[date_col].astype(str)
+        merged.drop_duplicates(subset=['number', date_col], keep='first', inplace=True)
+        
+        return merged
 
     def get_dynamic_batch_size(self) -> int:
         """
