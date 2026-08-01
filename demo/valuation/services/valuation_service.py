@@ -67,18 +67,29 @@ class ValuationService:
             projections = projector.run_projection()
             
             # 6. Calculate DCF Implied Price
-            # FCF = Net Income + D&A - CapEx - DeltaWC
+            # FCFF = EBIT * (1 - Tax Rate) + D&A - CapEx - DeltaWC
             last_year = projections.iloc[-1]
-            fcf_5 = last_year['net_income'] + last_year['depreciation'] - last_year['capex'] - last_year['change_in_wc']
+            tax_rate = assumptions.tax_rate
+            fcf_5 = last_year['ebit'] * (1 - tax_rate) + last_year['depreciation'] - last_year['capex'] - last_year['change_in_wc']
             g = assumptions.perpetuity_growth_rate
             
-            # Floor (wacc - g) at 2% to prevent extreme valuations from near-zero denominators
-            denom = max(wacc - g, 0.02)
+            # 強化終值與 WACC 邊界防護
+            if wacc < 0.03:
+                logger.warning(f"Abnormally low WACC detected for {ticker_symbol}: {wacc:.2%}. Flooring at 3%.")
+                wacc = max(wacc, 0.03)
+
+            denom = wacc - g
+            if denom <= 0:
+                logger.warning(f"WACC ({wacc:.2%}) <= terminal growth ({g:.2%}) for {ticker_symbol}. Flooring denom at 1%.")
+                denom = 0.01
+            elif denom < 0.01:
+                denom = 0.01
+                
             terminal_value = fcf_5 * (1 + g) / denom
             
             pv_fcfs = 0
             for i, row in projections.iterrows():
-                fcf = row['net_income'] + row['depreciation'] - row['capex'] - row['change_in_wc']
+                fcf = row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']
                 pv_fcfs += fcf / ((1 + wacc)**(i + 1))
             
             pv_tv = terminal_value / ((1 + wacc)**5)
@@ -87,7 +98,8 @@ class ValuationService:
             equity_value = enterprise_value - net_debt
             
             # Defensive check: if Equity Value is too low or negative, fallback to a floor
-            shares = max(start_data.get('shares_outstanding', 1), 1)
+            # 導入完全稀釋股數 (TSM) 作為分母
+            shares = max(start_data.get('diluted_shares', start_data.get('shares_outstanding', 1)), 1)
             implied_price_dcf = equity_value / shares
             
             # Formatting and Scaling for Display
@@ -148,11 +160,11 @@ class ValuationService:
             # Standardize output to Millions (M) for large stocks
             years_list = [f"Year {i+1}" for i in range(len(projections))]
             revenues_list = [round(float(val) / 1000000, 2) for val in projections['revenue'].tolist()]
-            fcfs_list = [round(float(row['net_income'] + row['depreciation'] - row['capex'] - row['change_in_wc']) / 1000000, 2) for _, row in projections.iterrows()]
+            fcfs_list = [round(float(row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']) / 1000000, 2) for _, row in projections.iterrows()]
             
             # Re-calculate discounted FCFs for display (also in Millions)
             discounted_fcfs_list = []
-            for i, fcf_val_abs in enumerate([float(row['net_income'] + row['depreciation'] - row['capex'] - row['change_in_wc']) for _, row in projections.iterrows()]):
+            for i, fcf_val_abs in enumerate([float(row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']) for _, row in projections.iterrows()]):
                 val = fcf_val_abs / ((1 + wacc)**(i + 1))
                 discounted_fcfs_list.append(round(val / 1000000, 2))
 

@@ -463,6 +463,9 @@ class FinancialDataLoader:
                 # yfinance 英文欄位名稱 (fallback) + MOPS 中文欄位名稱 (DB)
                 'revenue': ["Total Revenue", "Revenue", "Operating Revenue", "營業收入合計", "營業收入", "營業收入淨額", "Net Sales", "運輸收入"],
                 'ebit': ["Operating Income", "EBIT", "Operating Income Loss", "營業利益（損失）", "營業利益", "營業利益淨額", "Operating Profit", "運輸利益"],
+                'pretax_income': ["稅前淨利", "稅前淨利（淨損）", "繼續營業單位稅前淨利（淨損）", "繼續營業單位稅前淨利（負擔）", "Pretax Income", "Income Before Tax"],
+                'tax_expense': ["所得稅費用", "所得稅費用（利益）", "所得稅", "所得稅（費用）利益", "Income Tax Expense", "Tax Provision"],
+                'diluted_eps': ["稀釋每股盈餘", "Diluted EPS", "基本每股盈餘"],
                 'net_income': ["Net Income", "Net Income Common Stockholders", "本期淨利（負擔）", "本期淨利", "歸屬於母公司業主之本期淨利（損）", "本期淨利（淨損）", "Net Profit"],
                 'cash': ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments", "現金及約約資金", "現金及約當現金", "現金", "約當現金", "流動資產-現金及約當現金"],
                 'accounts_receivable': ["Accounts Receivable", "Net Receivables", "應收帳款淨額", "應收帳款", "應收票據及帳款", "流動應收帳款", "應收帳款及票據"],
@@ -478,6 +481,9 @@ class FinancialDataLoader:
             'us': {
                 'revenue': ["Revenues", "RevenueFromContractWithCustomerExcludingCostReportedOnNetBasis", "TotalRevenue", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax", "TotalRevenues"],
                 'ebit': ["OperatingIncomeLoss", "OperatingIncome", "EBIT"],
+                'pretax_income': ["IncomeBeforeIncomeTaxes", "IncomeBeforeTax", "PretaxIncome", "ProfitLossBeforeTax"],
+                'tax_expense': ["IncomeTaxExpenseBenefit", "IncomeTaxExpense", "TaxProvision"],
+                'diluted_eps': ["EarningsPerShareDiluted", "DilutedEPS"],
                 'net_income': ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss"],
                 'cash': ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents", "Cash", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
                 'accounts_receivable': ["AccountsReceivableNetCurrent", "AccountsReceivableNet", "ReceivablesNetCurrent"],
@@ -516,11 +522,27 @@ class FinancialDataLoader:
             if da_ttm <= 0:
                 da_ttm = get_ttm(recent_is, m.get('da', []))
             
+            # TSM 推估: 取得 diluted_eps
+            net_income_ttm = get_ttm(recent_is, m.get('net_income', []))
+            diluted_eps_ttm = get_ttm(recent_is, m.get('diluted_eps', [])) # if recent_is is 4 quarters, EPS sum is roughly annual EPS
+            
+            # 如果是台股，eps 從千元還原 (因為在 get_full_financials() 中全部被乘了 1000)
+            if self.market == 'tw' and diluted_eps_ttm > 0:
+                diluted_eps_ttm = diluted_eps_ttm / 1000
+                
+            basic_shares = self._get_shares_outstanding()
+            diluted_shares = basic_shares
+            if diluted_eps_ttm > 0 and net_income_ttm > 0:
+                # 反推股數
+                implied_diluted = net_income_ttm / diluted_eps_ttm
+                if implied_diluted > basic_shares * 0.5 and implied_diluted < basic_shares * 2:
+                    diluted_shares = max(implied_diluted, basic_shares)
+            
             return {
                 'revenue': get_ttm(recent_is, m.get('revenue', [])),
                 'ebit': ebit_ttm,
                 'ebitda': ebit_ttm + da_ttm,
-                'net_income': get_ttm(recent_is, m.get('net_income', [])),
+                'net_income': net_income_ttm,
                 'cash': get_v_bs(last_bs, m.get('cash', []), 'cash'),
                 'accounts_receivable': get_v_bs(last_bs, m.get('accounts_receivable', []), 'accounts_receivable'),
                 'inventory': get_v_bs(last_bs, m.get('inventory', []), 'inventory'),
@@ -529,7 +551,8 @@ class FinancialDataLoader:
                 'total_debt': get_v_bs(last_bs, m.get('total_debt', []), 'total_debt'),
                 'share_capital': get_v_bs(last_bs, m.get('share_capital', []), 'share_capital'),
                 'retained_earnings': get_v_bs(last_bs, m.get('retained_earnings', []), 'retained_earnings'),
-                'shares_outstanding': self._get_shares_outstanding(),
+                'shares_outstanding': basic_shares,
+                'diluted_shares': diluted_shares,
                 'capex': abs(get_ttm(recent_cf, m.get('capex', []))),
                 'depreciation': abs(da_ttm)
             }
@@ -559,6 +582,9 @@ class FinancialDataLoader:
 
         rev_series = get_sum(recent_is, m.get('revenue', []))
         ebit_series = get_sum(recent_is, m.get('ebit', []))
+        pretax_series = get_sum(recent_is, m.get('pretax_income', []))
+        tax_series = get_sum(recent_is, m.get('tax_expense', []))
+        
         # D&A 優先從 CF 抓取，否則從 IS 抓取
         da_series = get_sum(recent_cf, m.get('da', []))
         if da_series.sum() <= 0:
@@ -573,6 +599,18 @@ class FinancialDataLoader:
                 'capex_as_pct_revenue': 0.05, 'da_as_pct_revenue': 0.05,
                 'ar_as_pct_revenue': 0.1, 'inv_as_pct_revenue': 0.1, 'ap_as_pct_revenue': 0.05
             }
+
+        pretax_total = pretax_series.sum()
+        tax_total = tax_series.sum()
+        
+        if pretax_total > 0 and tax_total > 0:
+            calc_tax_rate = tax_total / pretax_total
+        elif pretax_total < 0 and tax_total < 0:
+            calc_tax_rate = tax_total / pretax_total
+        else:
+            calc_tax_rate = 0.20 # Fallback
+            
+        calc_tax_rate = max(min(float(calc_tax_rate), 0.5), 0.0)
 
         # 核心利潤率與支出率 (基於合計以平滑季度變動)
         ebit_margin = ebit_series.sum() / total_rev
@@ -603,7 +641,7 @@ class FinancialDataLoader:
         ap = get_bs_val(last_bs, m.get('accounts_payable', []))
         
         return {
-            'tax_rate': 0.20, # 暫定 20%
+            'tax_rate': calc_tax_rate,
             'ebit_margin': ebit_margin,
             'da_as_pct_revenue': da_ratio,
             'capex_as_pct_revenue': capex_ratio,
@@ -620,6 +658,8 @@ class FinancialDataLoader:
             'tw': {
                 'revenue': ["Total Revenue", "Operating Revenue", "營業收入合計", "營業收入", "營業收入淨額"],
                 'ebit': ["Operating Income", "EBIT", "營業利益（損失）", "營業利益", "營業利益淨額"],
+                'pretax_income': ["稅前淨利", "稅前淨利（淨損）", "繼續營業單位稅前淨利（淨損）", "繼續營業單位稅前淨利（負擔）", "Pretax Income", "Income Before Tax"],
+                'tax_expense': ["所得稅費用", "所得稅費用（利益）", "所得稅", "所得稅（費用）利益", "Income Tax Expense", "Tax Provision"],
                 'da': ["Depreciation And Amortization", "折舊及攤銷", "折舊及攤銷費用", "折舊費用", "攤銷費用", "折舊", "攤銷", "折舊及攤銷合計"],
                 'capex': ["Capital Expenditure", "Capital Expenditures", "取得不動產、廠房及設備", "取得資產及設備"],
                 'accounts_receivable': ["Accounts Receivable", "應收帳款淨額", "應收帳款"],
@@ -629,6 +669,8 @@ class FinancialDataLoader:
             'us': {
                 'revenue': ["Revenues", "TotalRevenue", "SalesRevenueNet"],
                 'ebit': ["OperatingIncomeLoss"],
+                'pretax_income': ["IncomeBeforeIncomeTaxes", "IncomeBeforeTax", "PretaxIncome", "ProfitLossBeforeTax"],
+                'tax_expense': ["IncomeTaxExpenseBenefit", "IncomeTaxExpense", "TaxProvision"],
                 'da': ["DepreciationAndAmortization", "Depreciation"],
                 'capex': ["CapitalExpenditure", "CapitalExpenditures"],
                 'accounts_receivable': ["AccountsReceivableNetCurrent"],
