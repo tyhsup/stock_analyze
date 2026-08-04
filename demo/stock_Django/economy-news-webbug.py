@@ -66,16 +66,18 @@ class economy_news_webbug:
             last_height = new_height
 
     def create_driver(self):
-        options = webdriver.EdgeOptions()
-        options.add_argument(f"user-agent = {self.user_agents}")
+        options = webdriver.ChromeOptions()
+        options.add_argument(f"user-agent={self.user_agents}")
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
         #無頭模式
         if self.headless_mode == True:
-            options.add_argument('--headless = new')
+            options.add_argument('--headless=new')
         #禁用GPU加速
         if self.gpu_acc == True:
             options.add_argument('--disable-gpu')
         options.add_experimental_option('detach', True)
-        return webdriver.Edge(options=options)
+        return webdriver.Chrome(options=options)
     
     def input_stock_number(self, driver):
         search_input = driver.find_element(By.TAG_NAME, 'input')

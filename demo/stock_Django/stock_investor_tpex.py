@@ -331,8 +331,8 @@ class TPExInvestorSeleniumManager:
         roc_date_str = self._to_roc_date_str(target_date)
         ad_date_str = target_date.strftime('%Y-%m-%d')
 
-        options = webdriver.EdgeOptions()
-        options.add_argument('--headless') 
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless=new') 
         options.add_argument('--disable-gpu')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
@@ -344,7 +344,7 @@ class TPExInvestorSeleniumManager:
         has_margin = False
 
         try:
-            driver = webdriver.Edge(options=options)
+            driver = webdriver.Chrome(options=options)
             wait = WebDriverWait(driver, 20)
 
             # --- 1. 爬取三大法人 ---

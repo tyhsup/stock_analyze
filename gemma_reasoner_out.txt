@@ -1,175 +1,47 @@
-這是一個涉及資料層、服務邏輯層與系統維護的全面性重構任務。由於核心目標是確保數據完整性和程式碼穩定性，我將按照模組化、分階段的方式提供修復方案，並在每個環節嵌入必要的「專案歷史踩坑防禦要點」以防止未來發生類似的資料流或編碼錯誤。
+本專案目前在爬蟲模組的設計上，對於瀏覽器驅動程式（WebDriver）的版本管理機制，尚未達到「自動檢測並下載最新版本」的完整循環。當目標網站或底層瀏覽器發布重大更新時，若 WebDriver 版本與實際運行環境不匹配，系統將會直接拋出 `SessionNotCreatedException` 或類似的執行錯誤，導致爬蟲流程中斷。
 
-請注意，所有代碼修改必須遵循 **【零破壞原則】**，即新邏輯必須是增量且獨立於現有 K 線圖與估值計算流程之外進行優化。
+為確保系統的穩定性與持續運作能力（Self-healing），必須建立一個專門的「依賴管理層」（Dependency Management Layer）。
+
+以下是針對此問題制定的修改計畫，目的在於使系統能夠自主地更新和初始化所需的瀏覽器驅動程式。
 
 ---
 
-### 🛠️ 重構分析與實作計畫
+### 🛠️ 修改目標：實現 WebDriver 的自動版本檢測與下載機制
 
-#### Phase 1: 資料存取層重構 (`mySQL_OP.py`)
-**目標：** 修復 `.TWO` 上櫃股票籌碼面資料缺失問題，確保優先查詢 `stock_investor_tw`。
+**核心概念：** 不應直接依賴本地預設的 `chromedriver.exe` 或 `geckodriver.exe` 路徑，而必須將其升級為一個可運行、可驗證版本的資源。
 
-**核心邏輯修正：** 將單純的 SQL 執行改為帶有明確優先級和錯誤處理的函數結構。
+### 📋 修改計畫步驟 (Modification Plan)
 
-```python
-# mySQL_OP.py (get_latest_investor_data)
+#### Step 1: 建立版本檢測與下載模組 (`WebDriverManager`)
 
-def get_latest_investor_data(stock_code: str):
-    """
-    根據股票代碼獲取最新的籌碼面投資人數據。
-    優先查詢 stock_investor_tw，若失敗或無資料，則嘗試備用機制。
-    """
-    conn = None
-    try:
-        # 1. 優先查詢：針對上櫃市場 (stock_investor_tw)
-        primary_query = f"SELECT * FROM stock_investor_tw WHERE code = '{stock_code}' ORDER BY date DESC LIMIT 1;"
-        print("Attempting to query primary source: stock_investor_tw...")
-        
-        # 執行查詢邏輯 (假設 conn 已建立)
-        cursor.execute(primary_query)
-        result = cursor.fetchone()
+*   **功能描述：** 新增一個獨立的 Python Class 或 Module，專門負責管理 WebDriver 的生命週期。
+*   **實作細節：**
+    1.  **目標識別 (Target Identification)：** 定義當前爬蟲所依賴的瀏覽器類型（例如：Chrome, Firefox）及其版本範圍。
+    2.  **版本查詢機制 (Version Query)：** 該模組必須能夠透過 API 或官方文件，獲取目前穩定版瀏覽器的最新建議驅動程式版本號。
+    3.  **本地比對與檢查 (Local Check)：** 比較「所需版本」與「本地已存在版本」。若不匹配或不存在，則觸發下載流程。
 
-        if result:
-            return process_data_row(result) # 處理並返回數據
-        else:
-            print("Primary source returned no data for this code.")
-            # 2. Fallback 機制：如果主表無資料，則執行備用查詢 (例如舊的或通用表)
-            fallback_query = f"SELECT * FROM general_investor_data WHERE code = '{stock_code}' ORDER BY date DESC LIMIT 1;"
-            cursor.execute(fallback_query)
-            result = cursor.fetchone()
-            if result:
-                return process_data_row(result, fallback=True)
-            else:
-                # 最終失敗，返回空結構
-                return None
+#### Step 2: 實作自動下載與路徑管理
 
-    except Exception as e:
-        print(f"Database error during data retrieval: {e}")
-        # 確保在任何資料庫錯誤時都能捕獲並返回預設的空值或錯誤狀態。
-        return {"error": str(e), "status": "Failed"}
-    finally:
-        if conn:
-            conn.close()
+*   **功能描述：** 當檢測到版本落後時，執行安全、可靠的下載操作並將驅動程式放置於專案可讀寫的緩存目錄（Cache Directory）。
+*   **技術考量 (Technical Consideration)：**
+    1.  **下載來源：** 應使用官方推薦或業界標準的 WebDriver 管理庫（例如 `webdriver-manager` 或類似機制）來處理下載，避免手動爬取驅動程式連結帶來的風險。
+    2.  **路徑管理：** 下載後的驅動程式必須被放置在專案根目錄下的特定資料夾 (e.g., `./cache/drivers/`)，並確保所有爬蟲初始化時都指向此絕對路徑。
 
-def process_data_row(result, fallback=False):
-    """
-    處理從資料庫取出的單行結果，並進行類型轉換。
-    [JSON 序列化保護]：必須將所有日期和數值類型標準化為 string/float。
-    """
-    # ... (實際的數據解析邏輯)
-    return {
-        "code": "...",
-        "date": str(result['date']), # 強制轉為字串格式
-        "data_value": float(result['investor_buy_ratio']) # 確保是 float
-    }
+#### Step 3: 重構爬蟲啟動流程 (Integration Point)
 
-# [專案歷史踩坑防禦要點 - Unicode 防禦]
-# 若在此模組中讀取任何本地的 CSV 或設定檔，請務必使用：
-# with open('file.csv', 'r', encoding='utf-8', errors='ignore') as f:
-```
+*   **修改點：** 所有執行 `webdriver.Chrome()` 或 `webdriver.Firefox()` 的地方，必須將其初始化邏輯包裹在一個新的「環境準備函數」中。
+*   **流程順序 (Execution Flow)：**
+    1.  `[Start]` $\rightarrow$ 呼叫 `WebDriverManager.initialize_driver(browser_type)`。
+    2.  `WebDriverManager` 執行版本檢測、下載（若需要）。
+    3.  `WebDriverManager` 返回一個已驗證的 WebDriver Session Object。
+    4.  爬蟲核心邏輯開始運行，使用該穩定的 Session Object。
 
-#### Phase 2: 服務邏輯層重構 (`services.py`)
-**目標：** 修復舊型 Fallback 與圖表渲染邏輯，確保數據缺失時的處理是乾淨且可預期的。
+---
 
-**核心邏輯修正：** 將資料獲取與業務判斷分離，並優化錯誤狀態傳遞。
+### ✅ 專案歷史踩坑防禦要點提醒 (Mandatory Safety Checks)
 
-```python
-# services.py (get_latest_investor_data)
+在實作此自動化依賴管理模組時，請務必注意以下開發規範：
 
-def get_latest_investor_data(stock_code: str):
-    """
-    調用 mySQL_OP 取得數據，並根據業務規則進行處理。
-    """
-    raw_data = mySQL_OP.get_latest_investor_data(stock_code)
-
-    if raw_data is None or "error" in raw_data:
-        # [修復舊型 Fallback]：當數據層返回錯誤或空值時，不應直接傳遞給圖表渲染。
-        # 而是應該返回一個標準化的「無資料」狀態標記。
-        print(f"Warning: No valid investor data found for {stock_code}. Using default empty state.")
-        return {"status": "NO_DATA", "data": None}
-
-    # [圖表渲染邏輯修正]：確保返回的數據結構是圖表組件預期的格式。
-    try:
-        processed_data = process_for_chart(raw_data)
-        return {"status": "SUCCESS", "data": processed_data}
-    except Exception as e:
-        # 捕獲業務邏輯層的轉換錯誤
-        print(f"Error processing data for chart rendering: {e}")
-        return {"status": "PROCESSING_ERROR", "message": str(e)}
-
-def process_for_chart(raw_data):
-    """將原始數據結構轉換為圖表組件所需的格式。"""
-    # 這裡應包含所有必要的資料清洗和計算，確保即使 data_value 是 None，也不會崩潰。
-    return {
-        "date": raw_data['date'],
-        "buyRatio": float(raw_data.get('data_value', 0.0)), # 使用預設值避免 NaN/None 錯誤
-        # ... 其他圖表所需的數據點
-    }
-
-# [專案歷史踩坑防禦要點 - JSON 序列化保護]
-# 當此函數的結果最終被 API 層轉換為 JSON 返回給前端時，所有日期和浮點數必須是標準類型。
-```
-
-#### Phase 3: 資料新鮮度與範圍擴展 (`data_freshness.py`)
-**目標：** 自動更新與新鮮度判斷涵蓋 TPEx (台灣證券交易所)，並修正舊表日期寫入格式。
-
-**核心邏輯修正：** 更新數據源列表，標準化日期處理函數。
-
-```python
-# data_freshness.py
-
-def check_data_freshness(stock_code: str):
-    """
-    檢查股票代碼的資料新鮮度，現在涵蓋 TWSE (TPEx) 和 OTC (.TWO)。
-    """
-    sources = ["TWSE", "OTC"] # 新增 TPEx 來源判斷
-
-    for source in sources:
-        if source == "TWSE":
-            # 針對 TPEx 的 API 或資料庫查詢邏輯
-            last_update = query_twse_data(stock_code)
-        elif source == "OTC":
-            # 針對上櫃市場的查詢邏輯 (mySQL_OP 已處理此處優先級)
-            last_update = query_otc_data(stock_code)
-        else:
-            continue
-
-        if last_update is None:
-            print(f"Warning: No data found for {source}.")
-            continue
-
-        # [舊表日期格式修正]：確保所有寫入的日期都是標準化的 YYYY-MM-DD 格式。
-        return calculate_freshness(last_update)
-    
-    return "Unknown"
-
-
-def write_date_to_old_table(connection, table_name, date_obj):
-    """
-    通用函數：將日期物件寫入舊表時，必須強制轉換為字串。
-    """
-    # 確保無論傳入的是 datetime.date 還是 datetime.datetime，都統一格式化。
-    formatted_date = date_obj.strftime("%Y-%m-%d") # 標準化格式
-    
-    cursor = connection.cursor()
-    try:
-        cursor.execute(f"UPDATE {table_name} SET last_check_date = %s WHERE id=1", (formatted_date,))
-        connection.commit()
-        print(f"Successfully updated {table_name} with date: {formatted_date}")
-    except Exception as e:
-        print(f"Failed to write date to {table_name}: {e}")
-
-# [專案歷史踩坑防禦要點 - Unicode 防禦]
-# 若此模組需要讀取本地的資料源配置或日曆檔案，請務必加上 errors='ignore'。
-```
-
-### 總結與檢查清單 (Checklist)
-
-| 要點 | 執行狀態 | 實施位置 | 備註 |
-| :--- | :--- | :--- | :--- |
-| **籌碼面優先級** | ✅ 完成重構 | `mySQL_OP.py` | 已確保查詢順序：`stock_investor_tw` $\rightarrow$ Fallback。 |
-| **TPEx 涵蓋範圍** | ✅ 更新邏輯 | `data_freshness.py` | 新增了對 TWSE 資料源的檢查與判斷。 |
-| **舊表日期格式** | ✅ 標準化處理 | `data_freshness.py` | 所有寫入資料庫的日期必須使用 `.strftime("%Y-%m-%d")` 統一格式。 |
-| **JSON 保護 (Date/Decimal)** | ✅ 實施保護 | `mySQL_OP.py`, `services.py` | 在數據返回給 API 層之前，所有 `datetime` 和 `decimal.Decimal` 都被強制轉換為 `str` 或 `float`。 |
-| **Unicode 防禦** | ⚠️ 提醒執行 | 所有 I/O 操作 | 任何涉及本地檔案讀寫的代碼，請務必加上 `errors='ignore'` 或 `errors='replace'`。 |
-| **Fallback 穩定性** | ✅ 優化結構 | `services.py` | 當數據缺失時，服務層返回標準化的 `{status: "NO_DATA"}` 狀態，避免圖表渲染崩潰。 |
+1.  **【Unicode 防禦】:** 若 `WebDriverManager` 需要讀取本地的配置或環境變數檔案（如 `.env`），所有 I/O 操作必須明確指定編碼處理，例如使用 `open(file_path, encoding='utf-8', errors='ignore')`。
+2.  **【零破壞原則】:** 此依賴管理模組應作為一個獨立的服務層 (Service Layer) 運行，不應修改或干擾現有的 K 線圖繪製邏輯 (`ApexCharts`) 或任何計算金融指標的核心業務函數。它只負責提供穩定的執行環境。
+3.  **【JSON 序列化保護】:** 若在爬蟲過程中需要將抓取的結構化數據（如日期、浮點數）回傳給後端 API，請務必使用標準化的資料轉換器 (Data Transformer)，確保所有 `datetime` 和 `decimal.Decimal` 類型都被格式化為 ISO 8601 字串或 Python 標準的 `float`/`str`。

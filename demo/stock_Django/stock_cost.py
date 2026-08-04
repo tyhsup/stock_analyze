@@ -175,11 +175,14 @@ class StockCostManager:
             logger.error("缺少 Selenium，無法執行抓取")
             return []
         
-        options = webdriver.EdgeOptions()
-        options.add_argument('--headless')
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless=new')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
         
         try:
-            driver = webdriver.Edge(options=options)
+            driver = webdriver.Chrome(options=options)
             driver.get(url)
             time.sleep(5) 
             soup = BeautifulSoup(driver.page_source, "lxml")

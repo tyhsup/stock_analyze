@@ -118,8 +118,8 @@ class StockInvestorManager:
             return
 
         # --- 1. 瀏覽器效能參數與安全參數優化 ---
-        options = webdriver.EdgeOptions()
-        options.add_argument('--headless') 
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless=new') 
         options.add_argument('--disable-gpu')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
@@ -128,9 +128,7 @@ class StockInvestorManager:
         
         driver = None
         try:
-            from webdriver_manager.microsoft import EdgeChromiumDriverManager
-            from selenium.webdriver.edge.service import Service as EdgeService
-            driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=options)
+            driver = webdriver.Chrome(options=options)
             wait = WebDriverWait(driver, 20)
             current_date = start_date
             
