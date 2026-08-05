@@ -36,31 +36,23 @@ class StockService:
         })
 
     def format_large_number(self, num: Optional[float], currency: str = 'USD') -> str:
-        """將大數字轉換為常用商業單位 (M/B/T 或 台股之 萬/億/兆)。"""
+        """將大數字轉換為常用商業單位 (M/B/T)。"""
         if num is None or pd.isna(num):
             return ""
         
         abs_num = abs(num)
+        if abs_num == 0:
+            return "0"
         
-        if currency == 'TWD':
-            # Taiwan units: 兆 (10^12), 億 (10^8), 萬 (10^4)
-            if abs_num >= 1e12:
-                return f"{num/1e12:.2f}兆"
-            elif abs_num >= 1e8:
-                return f"{num/1e8:.2f}億"
-            elif abs_num >= 1e4:
-                return f"{num/1e4:.2f}萬"
-            else:
-                return f"{num:,.0f}"
-        else: # USD or other currencies
-            if abs_num >= 1e12:
-                return f"{num/1e12:.2f}T"
-            elif abs_num >= 1e9:
-                return f"{num/1e9:.2f}B"
-            elif abs_num >= 1e6:
-                return f"{num/1e6:.2f}M"
-            else:
-                return f"{num:,.0f}"
+        # 無論幣別，統一使用英文商業單位 (M/B/T)
+        if abs_num >= 1e12:
+            return f"{num/1e12:.2f}T"
+        elif abs_num >= 1e9:
+            return f"{num/1e9:.2f}B"
+        elif abs_num >= 1e6:
+            return f"{num/1e6:.2f}M"
+        else:
+            return f"{num:,.0f}"
 
     @staticmethod
     def get_first_match(series, keys):
