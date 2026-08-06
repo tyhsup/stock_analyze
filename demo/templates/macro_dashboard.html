@@ -65,22 +65,36 @@
         (function() {
             const btn = document.getElementById('macro-theme-toggle');
             const body = document.body;
-            let isDark = true;
-            btn.addEventListener('click', function() {
-                isDark = !isDark;
-                if (isDark) {
-                    body.style.background = 'radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%)';
-                    body.style.color = '#f3f4f6';
-                    btn.textContent = '🌙';
-                } else {
+            
+            // 讀取全站統一的 theme 設定（若無則相容 macro-theme，預設為 dark）
+            let currentTheme = localStorage.getItem('theme') || localStorage.getItem('macro-theme') || 'dark';
+            
+            function applyTheme(theme) {
+                if (theme === 'light') {
                     body.style.background = '#f8fafc';
                     body.style.color = '#1e293b';
-                    btn.textContent = '☀️';
+                    if (btn) btn.textContent = '☀️';
+                } else {
+                    body.style.background = 'radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%)';
+                    body.style.color = '#f3f4f6';
+                    if (btn) btn.textContent = '🌙';
                 }
-                // Reload to apply chart theme changes
-                localStorage.setItem('macro-theme', isDark ? 'dark' : 'light');
-                setTimeout(function() { window.location.reload(); }, 150);
-            });
+            }
+
+            // 初始化頁面主題
+            applyTheme(currentTheme);
+
+            if (btn) {
+                btn.addEventListener('click', function() {
+                    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    localStorage.setItem('theme', nextTheme);
+                    localStorage.setItem('macro-theme', nextTheme);
+                    currentTheme = nextTheme;
+                    applyTheme(nextTheme);
+                    // 重新載入以使 ApexCharts 切換主題圖表
+                    setTimeout(function() { window.location.reload(); }, 150);
+                });
+            }
         })();
     </script>
 
