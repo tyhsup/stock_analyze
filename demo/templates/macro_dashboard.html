@@ -56,8 +56,33 @@
             <a href="/valuation/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">🧮 Valuation</a>
             <a href="/scheduler/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📅 Scheduler</a>
             <a href="/wiki/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📚 LLM Wiki</a>
+            <button id="macro-theme-toggle" class="ml-auto px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition cursor-pointer bg-transparent border border-gray-700" title="切換主題">
+                🌙
+            </button>
         </nav>
     </div>
+    <script>
+        (function() {
+            const btn = document.getElementById('macro-theme-toggle');
+            const body = document.body;
+            let isDark = true;
+            btn.addEventListener('click', function() {
+                isDark = !isDark;
+                if (isDark) {
+                    body.style.background = 'radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%)';
+                    body.style.color = '#f3f4f6';
+                    btn.textContent = '🌙';
+                } else {
+                    body.style.background = '#f8fafc';
+                    body.style.color = '#1e293b';
+                    btn.textContent = '☀️';
+                }
+                // Reload to apply chart theme changes
+                localStorage.setItem('macro-theme', isDark ? 'dark' : 'light');
+                setTimeout(function() { window.location.reload(); }, 150);
+            });
+        })();
+    </script>
 
     <!-- 大師總經決策與警示面板 (Macro Investment Master Panel) -->
     <div class="max-w-7xl mx-auto mb-8 glass-card p-6">
