@@ -18,6 +18,21 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-size/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/scheduler/style.css">
+    <style>
+        /* 快速導覽列主題樣式 */
+        .quick-nav { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 16px; margin-bottom:20px; border-radius:12px; background:rgba(30,30,46,0.7); border:1px solid rgba(255,255,255,0.08); }
+        .quick-nav a { padding:6px 12px; font-size:13px; font-weight:500; color:#a0aec0; text-decoration:none; border-radius:8px; transition:all 0.2s; }
+        .quick-nav a:hover { background:rgba(255,255,255,0.1); color:#fff; }
+        .quick-nav .qn-active { color:#818cf8; background:rgba(99,102,241,0.15); }
+        .quick-nav .qn-theme-btn { margin-left:auto; padding:6px 10px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#a0aec0; cursor:pointer; font-size:14px; transition:all 0.2s; }
+
+        /* Light theme 導覽列覆寫 */
+        [data-theme="light"] .quick-nav { background:rgba(255,255,255,0.9); border:1px solid #e2e8f0; }
+        [data-theme="light"] .quick-nav a { color:#475569; }
+        [data-theme="light"] .quick-nav a:hover { background:#f1f5f9; color:#1e293b; }
+        [data-theme="light"] .quick-nav .qn-active { color:#4f46e5; background:#eef2ff; }
+        [data-theme="light"] .quick-nav .qn-theme-btn { background:rgba(0,0,0,0.04); border:1px solid #cbd5e1; color:#475569; }
+    </style>
 </head>
 <body>
     <!-- 背景光暈裝飾 -->
@@ -37,7 +52,7 @@
                     <p class="subtitle">智能股市數據排程器</p>
                 </div>
             </div>
-            <!-- 控制區：包含主題切換與配額顯示 -->
+            <!-- 控制區：包含配額顯示 -->
             <div class="header-controls">
                 <!-- LLM 額度顯示卡 -->
                 <div class="quota-card" id="quota-container">
@@ -52,16 +67,16 @@
             </div>
         </header>
 
-        <!-- Quick Navigation Bar (consistent with other pages) -->
-        <nav style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 16px;margin-bottom:20px;border-radius:12px;background:rgba(30,30,46,0.7);border:1px solid rgba(255,255,255,0.08);">
-            <a href="/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">📈 Dashboard</a>
-            <a href="/macro/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">🌐 Macro</a>
-            <a href="/news/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">📰 News</a>
-            <a href="/chips/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">👥 Institutional</a>
-            <a href="/valuation/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">🧮 Valuation</a>
-            <a href="/scheduler/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#818cf8;text-decoration:none;border-radius:8px;background:rgba(99,102,241,0.15);">📅 Scheduler</a>
-            <a href="/wiki/" style="padding:6px 12px;font-size:13px;font-weight:500;color:#a0aec0;text-decoration:none;border-radius:8px;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'" onmouseout="this.style.background='';this.style.color='#a0aec0'">📚 LLM Wiki</a>
-            <button id="theme-toggle" class="btn-theme-toggle" style="margin-left:auto;padding:6px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#a0aec0;cursor:pointer;font-size:14px;transition:all 0.2s;" title="切換主題">
+        <!-- Quick Navigation Bar -->
+        <nav class="quick-nav">
+            <a href="/">📈 Dashboard</a>
+            <a href="/macro/">🌐 Macro</a>
+            <a href="/news/">📰 News</a>
+            <a href="/chips/">👥 Institutional</a>
+            <a href="/valuation/">🧮 Valuation</a>
+            <a href="/scheduler/" class="qn-active">📅 Scheduler</a>
+            <a href="/wiki/">📚 LLM Wiki</a>
+            <button id="theme-toggle" class="btn-theme-toggle qn-theme-btn" title="切換主題">
                 <i id="theme-icon" class="fa-solid fa-moon"></i>
             </button>
         </nav>

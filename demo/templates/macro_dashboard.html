@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <title>總體經濟多維分析儀表板</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 防止 FOUC：立即從 localStorage 讀取主題 -->
+    <script>
+        var _macroTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', _macroTheme);
+        var _macroChartTheme = _macroTheme;
+    </script>
     <!-- 引入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Google Fonts Outfit & Inter -->
@@ -13,6 +19,11 @@
     <style>
         body {
             font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* ===== Dark Theme (預設) ===== */
+        [data-theme="dark"] body,
+        body {
             background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
             color: #f3f4f6;
         }
@@ -26,6 +37,62 @@
         }
         .glow-title {
             text-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+        .macro-nav {
+            background: rgba(17, 24, 39, 0.6);
+            border: 1px solid rgba(55, 65, 81, 1);
+        }
+        .macro-nav a { color: #d1d5db; text-decoration: none; }
+        .macro-nav a:hover { color: #fff; background: rgba(55, 65, 81, 1); }
+        .macro-nav .nav-active { color: #60a5fa !important; background: rgba(30, 58, 138, 0.4) !important; }
+        .macro-nav .nav-theme-btn { color: #d1d5db; background: transparent; border: 1px solid rgba(55, 65, 81, 1); }
+
+        /* ===== Light Theme ===== */
+        [data-theme="light"] body {
+            background: #f1f5f9 !important;
+            color: #1e293b !important;
+        }
+        [data-theme="light"] .glass-card {
+            background: rgba(255, 255, 255, 0.85) !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+        }
+        [data-theme="light"] .glow-title {
+            text-shadow: none !important;
+            color: #1e40af !important;
+        }
+        [data-theme="light"] .macro-nav {
+            background: rgba(255, 255, 255, 0.9) !important;
+            border: 1px solid #e2e8f0 !important;
+        }
+        [data-theme="light"] .macro-nav a { color: #475569 !important; }
+        [data-theme="light"] .macro-nav a:hover { color: #1e293b !important; background: #f1f5f9 !important; }
+        [data-theme="light"] .macro-nav .nav-active { color: #2563eb !important; background: #dbeafe !important; }
+        [data-theme="light"] .macro-nav .nav-theme-btn { color: #475569 !important; border-color: #cbd5e1 !important; }
+
+        /* Light 模式下的子卡片與文字 */
+        [data-theme="light"] .bg-gray-900\/60,
+        [data-theme="light"] [class*="bg-gray-900"] {
+            background: #f8fafc !important;
+            border-color: #e2e8f0 !important;
+        }
+        [data-theme="light"] .border-gray-800 {
+            border-color: #e2e8f0 !important;
+        }
+        [data-theme="light"] .text-white {
+            color: #1e293b !important;
+        }
+        [data-theme="light"] .text-gray-400 {
+            color: #64748b !important;
+        }
+        [data-theme="light"] .text-gray-500 {
+            color: #94a3b8 !important;
+        }
+        [data-theme="light"] .text-gray-300 {
+            color: #475569 !important;
+        }
+        [data-theme="light"] .text-blue-400 {
+            color: #2563eb !important;
         }
     </style>
 </head>
@@ -41,58 +108,36 @@
             </p>
         </div>
         <div class="flex gap-4">
-            <button onclick="refreshData()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition font-medium flex items-center gap-2 shadow-lg shadow-blue-500/20">
+            <button onclick="refreshData()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition font-medium flex items-center gap-2 shadow-lg shadow-blue-500/20" style="color:#fff !important;">
                 🔄 更新總經數據
             </button>
         </div>
     </div>
-    <!-- Quick Navigation Bar (consistent with base.html navbar) -->
+    <!-- Quick Navigation Bar -->
     <div class="max-w-7xl mx-auto mb-6">
-        <nav class="flex flex-wrap items-center gap-2 px-4 py-3 rounded-xl bg-gray-900/60 border border-gray-800">
-            <a href="/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📈 Dashboard</a>
-            <a href="/macro/" class="px-3 py-1.5 text-sm font-medium text-blue-400 bg-blue-900/40 rounded-lg">🌐 Macro</a>
-            <a href="/news/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📰 News</a>
-            <a href="/chips/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">👥 Institutional</a>
-            <a href="/valuation/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">🧮 Valuation</a>
-            <a href="/scheduler/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📅 Scheduler</a>
-            <a href="/wiki/" class="px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition">📚 LLM Wiki</a>
-            <button id="macro-theme-toggle" class="ml-auto px-3 py-1.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition cursor-pointer bg-transparent border border-gray-700" title="切換主題">
+        <nav class="macro-nav flex flex-wrap items-center gap-2 px-4 py-3 rounded-xl">
+            <a href="/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📈 Dashboard</a>
+            <a href="/macro/" class="nav-active px-3 py-1.5 text-sm font-medium rounded-lg">🌐 Macro</a>
+            <a href="/news/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📰 News</a>
+            <a href="/chips/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">👥 Institutional</a>
+            <a href="/valuation/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">🧮 Valuation</a>
+            <a href="/scheduler/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📅 Scheduler</a>
+            <a href="/wiki/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📚 LLM Wiki</a>
+            <button id="macro-theme-toggle" class="nav-theme-btn ml-auto px-3 py-1.5 text-sm font-medium rounded-lg transition cursor-pointer" title="切換主題">
                 🌙
             </button>
         </nav>
     </div>
     <script>
         (function() {
-            const btn = document.getElementById('macro-theme-toggle');
-            const body = document.body;
-            
-            // 讀取全站統一的 theme 設定（若無則相容 macro-theme，預設為 dark）
-            let currentTheme = localStorage.getItem('theme') || localStorage.getItem('macro-theme') || 'dark';
-            
-            function applyTheme(theme) {
-                if (theme === 'light') {
-                    body.style.background = '#f8fafc';
-                    body.style.color = '#1e293b';
-                    if (btn) btn.textContent = '☀️';
-                } else {
-                    body.style.background = 'radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%)';
-                    body.style.color = '#f3f4f6';
-                    if (btn) btn.textContent = '🌙';
-                }
-            }
-
-            // 初始化頁面主題
-            applyTheme(currentTheme);
-
+            var btn = document.getElementById('macro-theme-toggle');
+            var currentTheme = _macroTheme;
+            if (btn) btn.textContent = currentTheme === 'light' ? '☀️' : '🌙';
             if (btn) {
                 btn.addEventListener('click', function() {
-                    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    var nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
                     localStorage.setItem('theme', nextTheme);
-                    localStorage.setItem('macro-theme', nextTheme);
-                    currentTheme = nextTheme;
-                    applyTheme(nextTheme);
-                    // 重新載入以使 ApexCharts 切換主題圖表
-                    setTimeout(function() { window.location.reload(); }, 150);
+                    window.location.reload();
                 });
             }
         })();
@@ -617,6 +662,10 @@
                 }
             }
 
+            // 圖表主題共用變數（根據 _macroChartTheme 自動切換）
+            var _chartForeColor = _macroChartTheme === 'light' ? '#475569' : '#9ca3af';
+            var _chartGridColor = _macroChartTheme === 'light' ? '#e2e8f0' : '#1f2937';
+
             // 限制圖表時間跨度 (近 15 年，大約 180 個月)
             const limit = 180;
             const sliceData = (data) => data.slice(-limit);
@@ -632,14 +681,14 @@
                 chart: {
                     type: 'line',
                     height: 340,
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
@@ -664,7 +713,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-liquidity'] = new ApexCharts(document.querySelector("#chart-tw-liquidity"), twOptions);
@@ -681,14 +730,14 @@
                 chart: {
                     type: 'line',
                     height: 340,
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
@@ -713,7 +762,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-liquidity'] = new ApexCharts(document.querySelector("#chart-us-liquidity"), usOptions);
@@ -731,14 +780,14 @@
                 chart: {
                     type: 'line',
                     height: 340,
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#f59e0b', '#ef4444'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
@@ -763,7 +812,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-inflation'] = new ApexCharts(document.querySelector("#chart-tw-inflation"), twCpiOptions);
@@ -782,14 +831,14 @@
                 chart: {
                     type: 'line',
                     height: 340,
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#f59e0b', '#ef4444', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
@@ -814,7 +863,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-inflation'] = new ApexCharts(document.querySelector("#chart-us-inflation"), usCpiOptions);
@@ -832,14 +881,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: [3, 2], curve: 'smooth', dashArray: [0, 4] },
                 colors: ['#3b82f6', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 45, right: 55 }
                 },
                 xaxis: { 
@@ -876,7 +925,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-policy'] = new ApexCharts(document.querySelector("#chart-tw-policy"), twPolicyOptions);
@@ -895,14 +944,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#ec4899', '#3b82f6', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
@@ -939,7 +988,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-policy'] = new ApexCharts(document.querySelector("#chart-us-policy"), usPolicyOptions);
@@ -957,14 +1006,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: [0, 3], curve: 'smooth' },
                 colors: ['#3b82f6', '#ef4444'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 55, right: 45 }
                 },
                 xaxis: { 
@@ -1001,7 +1050,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-employment'] = new ApexCharts(document.querySelector("#chart-us-employment"), usEmpOptions);
@@ -1019,14 +1068,14 @@
                 chart: {
                     type: 'line',
                     height: 340,
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#8b5cf6', '#ec4899'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 35 }
                 },
                 xaxis: { 
@@ -1051,7 +1100,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-credit'] = new ApexCharts(document.querySelector("#chart-tw-credit"), twCreditOptions);
@@ -1071,14 +1120,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#3b82f6', '#f59e0b', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
@@ -1115,7 +1164,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-gdp-saving'] = new ApexCharts(document.querySelector("#chart-us-gdp-saving"), usGdpSavingOptions);
@@ -1135,14 +1184,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: [3, 2, 3], curve: 'smooth', dashArray: [0, 4, 0] },
                 colors: ['#ef4444', '#f59e0b', '#10b981'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
@@ -1179,7 +1228,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-interest'] = new ApexCharts(document.querySelector("#chart-tw-interest"), twInterestOptions);
@@ -1199,14 +1248,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: [3, 2, 2], curve: 'smooth' },
                 colors: ['#ec4899', '#f59e0b', '#3b82f6'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
@@ -1243,7 +1292,7 @@
                         }
                     }
                 ],
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-us-cost-income'] = new ApexCharts(document.querySelector("#chart-us-cost-income"), usCostIncomeOptions);
@@ -1261,14 +1310,14 @@
                 chart: {
                     height: 340,
                     type: 'line',
-                    foreColor: '#9ca3af',
+                    foreColor: _chartForeColor,
                     background: 'transparent',
                     toolbar: { show: false }
                 },
                 stroke: { width: 3, curve: 'smooth' },
                 colors: ['#3b82f6', '#ef4444'],
                 grid: { 
-                    borderColor: '#1f2937',
+                    borderColor: _chartGridColor,
                     padding: { left: 40, right: 45 }
                 },
                 xaxis: { 
@@ -1293,7 +1342,7 @@
                         }
                     }
                 },
-                theme: { mode: 'dark' },
+                theme: { mode: _macroChartTheme },
                 legend: { position: 'top', fontSize: '14px' }
             };
             window.macroCharts['chart-tw-employment'] = new ApexCharts(document.querySelector("#chart-tw-employment"), twEmploymentOptions);
