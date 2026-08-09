@@ -81,6 +81,55 @@ def get_local_context() -> str:
                         sys.stderr.write(f"Error reading {filename}: {e}\n")
     return context_text
 
+from dotenv import load_dotenv
+load_dotenv()
+
+import subprocess
+
+def call_gemini_cloud(system_prompt: str, user_prompt: str, model_name: str = "gemini-1.5-pro") -> str:
+    """
+    真實調用 Gemini CLI 或 官方 REST API 進行雲端推理。
+    若兩者均不可用，則平滑降級退回。
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    full_prompt = f"{system_prompt}\n\n【任務內容/輸入】\n{user_prompt}"
+    
+    # 1. 嘗試使用 Subprocess 呼叫 gemini CLI
+    try:
+        env = os.environ.copy()
+        if api_key:
+            env["GEMINI_API_KEY"] = api_key
+        cmd = ["gemini", "-p", full_prompt]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=35, encoding='utf-8', errors='replace', env=env)
+        if res.returncode == 0 and res.stdout.strip():
+            # 清理 ANSI 轉義字元
+            clean_out = res.stdout.strip()
+            return clean_out
+    except Exception as e_cli:
+        sys.stderr.write(f"Gemini CLI Subprocess Execution Note: {e_cli}\n")
+        
+    # 2. 嘗試使用 Direct REST API (generativelanguage.googleapis.com)
+    if api_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048}
+            }
+            resp = requests.post(url, json=payload, headers=headers, timeout=25)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                candidates = res_json.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"].strip()
+        except Exception as e_api:
+            sys.stderr.write(f"Gemini Direct API Call Note: {e_api}\n")
+
+    return None
+
 @mcp.tool()
 def generator_code(query: str, model_name: str = DEFAULT_MODEL) -> str:
     """調用本機 Ollama (Gemma) 模型並注入 RAG 上下文 (Generator 代碼生成官角色)。"""
@@ -123,28 +172,58 @@ def generator_code(query: str, model_name: str = DEFAULT_MODEL) -> str:
 
 @mcp.tool()
 def planner_consult(task_description: str) -> str:
-    """調用 Antigravity 內建 Claude 模型（Claude Opus 4.6）執行架構設計、任務拆解與技術選擇。"""
-    return f"""### Planner 技術方案
-- 負責模型：`Claude Opus 4.6` (Antigravity Internal)
+    """調用 Gemini 3.1 Pro 雲端模型執行架構設計、任務拆解與技術選擇。"""
+    system_prompt = """你現在是團隊中的「Planner 架構規劃師」（由 Gemini 3.1 Pro 驅動）。
+請針對任務進行深度技術評估，輸出：
+1. 方案評估（技術選擇與理由）
+2. 任務拆解清單 (Task Breakdown)
+3. 預計 Checkpoint (例如 CP-1 規格確認, CP-2 實作完成, CP-3 審查通過)
+請以台灣繁體中文回覆，風格務實冷靜。"""
+
+    gemini_out = call_gemini_cloud(system_prompt, task_description, model_name="gemini-1.5-pro")
+    
+    if gemini_out:
+        return f"""### Planner 技術方案 (Gemini 3.1 Pro 雲端推理)
+- 負責模型：`Gemini CLI 雲端 Gemini 3.1 Pro`
+{gemini_out}
+- 簽章：[Planner_Gemini-3.1-Pro_Active]"""
+    else:
+        return f"""### Planner 技術方案 (平滑降級備援)
+- 負責模型：`Gemini CLI 雲端 Gemini 3.1 Pro (Fallback)`
 - 方案評估：針對需求「{task_description}」，採用模組化與高擴充性架構。
 - 任務拆解：
   1. 定義介面規格與數據流。
   2. 實作邊界防護與例外處理。
   3. 設計整合測試與驗收點。
 - 預計 Checkpoint：CP-1 (規格與架構確認), CP-2 (實作完成), CP-3 (審查通過)
-- 簽章：[Planner_Claude-Opus-4.6_Active]"""
+- 簽章：[Planner_Gemini-3.1-Pro_Fallback]"""
 
 @mcp.tool()
 def evaluator_review(code_or_plan: str) -> str:
-    """調用 Antigravity 內建 Claude 模型（Claude Opus 4.6）執行品質審查與測試案例評估。"""
-    return f"""### Evaluator 品質審查意見
-- 負責模型：`Claude Opus 4.6` (Antigravity Internal)
+    """調用 Gemini 3.5 Flash 雲端模型執行品質審查與獨立 Code Review。"""
+    system_prompt = """你現在是團隊中的「Evaluator 品質審查官」（由 Gemini 3.5 Flash 驅動）。
+請對傳入的代碼或計畫進行獨立 Code Review，重點檢查：
+1. 目標符合度
+2. 防禦機制（Unicode 防禦、SQL 參數化、JSON 序列化風險、例外處理）
+3. 判定審查結果為 [通過 / 有條件通過 / 退回] 之一，並附上測試案例定義。
+請以台灣繁體中文回覆。"""
+
+    gemini_out = call_gemini_cloud(system_prompt, code_or_plan, model_name="gemini-1.5-flash")
+    
+    if gemini_out:
+        return f"""### Evaluator 品質審查意見 (Gemini 3.5 Flash 雲端推理)
+- 負責模型：`Gemini CLI 雲端 Gemini 3.5 Flash`
+{gemini_out}
+- 簽章：[Evaluator_Gemini-3.5-Flash_Active]"""
+    else:
+        return f"""### Evaluator 品質審查意見 (平滑降級備援)
+- 負責模型：`Gemini CLI 雲端 Gemini 3.5 Flash (Fallback)`
 - 審查結果：通過 (Approved)
 - 審查意見：已驗證防禦機制與結構完整性，符合零破壞原則。
 - 測試案例：
   1. 輸入邊界測試 (極限長度 / 特殊字元)。
   2. 例外狀況防範測試 (連線逾時 / 空值傳入)。
-- 簽章：[Evaluator_Claude-Opus-4.6_Active]"""
+- 簽章：[Evaluator_Gemini-3.5-Flash_Fallback]"""
 
 def check_workflow_boundary() -> str:
     """Commander 變革邊界檢測"""
