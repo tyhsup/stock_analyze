@@ -94,13 +94,13 @@ def call_gemini_cloud(system_prompt: str, user_prompt: str, model_name: str = "g
     api_key = os.getenv("GEMINI_API_KEY")
     full_prompt = f"{system_prompt}\n\n【任務內容/輸入】\n{user_prompt}"
     
-    # 1. 嘗試使用 Subprocess 呼叫 gemini CLI
+    # 1. 嘗試使用 Subprocess 呼叫 gemini CLI (使用 shell=True 相容 Windows .cmd 封裝)
     try:
         env = os.environ.copy()
         if api_key:
             env["GEMINI_API_KEY"] = api_key
         cmd = ["gemini", "-p", full_prompt]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=35, encoding='utf-8', errors='replace', env=env)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=35, encoding='utf-8', errors='replace', env=env, shell=True)
         if res.returncode == 0 and res.stdout.strip():
             # 清理 ANSI 轉義字元
             clean_out = res.stdout.strip()
