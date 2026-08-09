@@ -140,12 +140,14 @@ class ValuationService:
             
             price_base = implied_price_dcf
 
-            # 7. Run Relative Valuation
+            # 7. Run Relative Valuation (若採用 Exit Multiple 法，將調校乘數注入相對估值)
             rel_valuator = RelativeValuator(ticker_symbol, start_data, current_price, currency)
             hist_multiples = loader.get_historical_multiples()
+            target_ev_ebitda = exit_multiple if (tv_method == 'exit_multiple' and exit_multiple > 0) else hist_multiples['ev_ebitda']
+            
             rel_results = rel_valuator.calculate_implied_fair_value(
                 target_pe=hist_multiples['pe'], 
-                target_ev_ebitda=hist_multiples['ev_ebitda']
+                target_ev_ebitda=target_ev_ebitda
             )
             
             pe_price = rel_results.get('pe_approach', {}).get('implied_price', current_price)
@@ -217,6 +219,9 @@ class ValuationService:
                 ]
             }
 
+            # 確保 wacc_premium_pct 正確顯示為百分比數字 (例如 1.5)，避免被二次乘 100 溢位
+            wacc_premium_pct = wacc_results.get('WACC Premium Pct', float(wacc_premium))
+
             results = {
                 "symbol": ticker_symbol,
                 "current_price": round(current_price, 2),
@@ -224,7 +229,7 @@ class ValuationService:
                 "upside": float(upside),
                 "currency": currency,
                 "institutional_tuning": {
-                    "wacc_premium_pct": round(wacc_premium * 100, 2),
+                    "wacc_premium_pct": round(wacc_premium_pct, 2),
                     "discount_convention": discount_convention,
                     "tv_method": tv_method,
                     "exit_multiple": exit_multiple,
