@@ -125,16 +125,17 @@ class WACCCalculator:
         
         return 0.045 # 預設值
 
-    def calculate_wacc(self, custom_tax_rate=0.21):
+    def calculate_wacc(self, custom_tax_rate=0.21, wacc_premium=0.0):
         mcap = self.info.get('marketCap', 10e9)
         debt = self.info.get('totalDebt', 0)
         v = mcap + debt
         
         if v <= 0:
-            return {"WACC": 0.08, "Cost of Debt (Rd)": 0.045}
+            return {"WACC": 0.08 + wacc_premium, "Cost of Debt (Rd)": 0.045}
 
         re = self.calculate_cost_of_equity()
         rd = self.calculate_cost_of_debt()
-        wacc = (mcap/v * re) + (debt/v * rd * (1 - custom_tax_rate))
+        base_wacc = (mcap/v * re) + (debt/v * rd * (1 - custom_tax_rate))
+        wacc = base_wacc + wacc_premium
         
-        return {"WACC": wacc, "Cost of Debt (Rd)": rd}
+        return {"WACC": wacc, "Cost of Debt (Rd)": rd, "Base WACC": base_wacc, "WACC Premium": wacc_premium}

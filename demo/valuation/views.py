@@ -17,12 +17,11 @@ def valuation_root(request):
 
 def valuation_view(request, symbol):
     """
-    Renders the valuation page for a specific stock.
+    Renders the valuation page for a specific stock with institutional tuning options.
     """
     # Fix: Handle ticker search from the page search bar
     query_ticker = request.GET.get('ticker')
     if query_ticker and query_ticker.upper() != symbol.upper():
-        # Preserve weights if present
         params = request.GET.copy()
         if 'ticker' in params: del params['ticker']
         url = reverse('valuation_detail', kwargs={'symbol': query_ticker.upper()})
@@ -32,12 +31,10 @@ def valuation_view(request, symbol):
     context = {'symbol': symbol, 'ticker': symbol}
     if symbol:
         try:
-            # Extract weights from GET parameters (default 50/50)
+            # Extract weights
             try:
                 dcf_weight_val = float(request.GET.get('dcf_weight', 50))
                 market_weight_val = float(request.GET.get('market_weight', 50))
-                
-                # Normalize if they don't sum to 100
                 total = dcf_weight_val + market_weight_val
                 if total > 0:
                     dcf_weight = dcf_weight_val / total
@@ -49,8 +46,40 @@ def valuation_view(request, symbol):
 
             context['dcf_weight_pct'] = round(dcf_weight * 100)
             context['market_weight_pct'] = round(market_weight * 100)
-            
-            results = ValuationService.calculate_valuation(symbol, dcf_weight=dcf_weight, market_weight=market_weight)
+
+            # 提取機構調校參數（支援 GET/POST 覆寫與 Session 持久化）
+            try:
+                wacc_premium = float(request.GET.get('wacc_premium', request.session.get('wacc_premium', 0.0)))
+            except (ValueError, TypeError): wacc_premium = 0.0
+
+            discount_convention = request.GET.get('discount_convention', request.session.get('discount_convention', 'end_of_year'))
+            tv_method = request.GET.get('tv_method', request.session.get('tv_method', 'perpetuity'))
+
+            try:
+                exit_multiple = float(request.GET.get('exit_multiple', request.session.get('exit_multiple', 10.0)))
+            except (ValueError, TypeError): exit_multiple = 10.0
+
+            try:
+                debt_like_items = float(request.GET.get('debt_like_items', request.session.get('debt_like_items', 0.0)))
+            except (ValueError, TypeError): debt_like_items = 0.0
+
+            # 寫入 Session 實現跨股票持久化
+            request.session['wacc_premium'] = wacc_premium
+            request.session['discount_convention'] = discount_convention
+            request.session['tv_method'] = tv_method
+            request.session['exit_multiple'] = exit_multiple
+            request.session['debt_like_items'] = debt_like_items
+
+            results = ValuationService.calculate_valuation(
+                symbol, 
+                dcf_weight=dcf_weight, 
+                market_weight=market_weight,
+                wacc_premium=wacc_premium,
+                discount_convention=discount_convention,
+                tv_method=tv_method,
+                exit_multiple=exit_multiple,
+                debt_like_items=debt_like_items
+            )
             
             if results.get('is_etf'):
                 context['etf'] = results
@@ -86,10 +115,29 @@ def valuation_view(request, symbol):
 
 def valuation_api(request, symbol):
     """
-    Returns valuation data as JSON.
+    Returns valuation data as JSON with institutional tuning options.
     """
     try:
-        results = ValuationService.calculate_valuation(symbol)
+        try: wacc_premium = float(request.GET.get('wacc_premium', request.session.get('wacc_premium', 0.0)))
+        except (ValueError, TypeError): wacc_premium = 0.0
+
+        discount_convention = request.GET.get('discount_convention', request.session.get('discount_convention', 'end_of_year'))
+        tv_method = request.GET.get('tv_method', request.session.get('tv_method', 'perpetuity'))
+
+        try: exit_multiple = float(request.GET.get('exit_multiple', request.session.get('exit_multiple', 10.0)))
+        except (ValueError, TypeError): exit_multiple = 10.0
+
+        try: debt_like_items = float(request.GET.get('debt_like_items', request.session.get('debt_like_items', 0.0)))
+        except (ValueError, TypeError): debt_like_items = 0.0
+
+        results = ValuationService.calculate_valuation(
+            symbol,
+            wacc_premium=wacc_premium,
+            discount_convention=discount_convention,
+            tv_method=tv_method,
+            exit_multiple=exit_multiple,
+            debt_like_items=debt_like_items
+        )
         return JsonResponse(results)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

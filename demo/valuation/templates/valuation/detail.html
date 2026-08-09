@@ -33,16 +33,16 @@
     </div>
 </div>
 
-<!-- Weight Adjustment UI -->
+<!-- Weight & Institutional Tuning Adjustment UI -->
 <div class="row mb-4 container mx-auto">
     <div class="col-12">
         <div class="card shadow-sm border-0 bg-light">
             <div class="card-body py-3">
-                <form id="weightForm" action="" method="get" class="row g-3 align-items-center">
+                <form id="valuationForm" action="" method="get" class="row g-3 align-items-center">
                     <div class="col-md-auto">
                         <span class="fw-bold text-muted small"><i class="bi bi-sliders me-1"></i> METHOD WEIGHTS:</span>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-5">
                         <div class="d-flex justify-content-between mb-1 small">
                             <span>DCF: <span id="dcfLabel" class="fw-bold">{{ dcf_weight_pct }}%</span></span>
                             <span>Market: <span id="marketLabel" class="fw-bold">{{ market_weight_pct }}%</span></span>
@@ -50,15 +50,101 @@
                         <input type="range" class="form-range" id="weightRange" min="0" max="100" step="5"
                             value="{{ dcf_weight_pct|default:50 }}" oninput="updateWeights(this.value)">
                     </div>
-                    <div class="col-md-3">
-                        <input type="hidden" name="ticker" value="{{ ticker }}">
-                        <input type="hidden" name="dcf_weight" id="dcf_weight_input"
-                            value="{{ dcf_weight_pct|default:50 }}">
-                        <input type="hidden" name="market_weight" id="market_weight_input"
-                            value="{{ market_weight_pct|default:50 }}">
-                        <button type="submit" class="btn btn-primary btn-sm w-100 py-2">
-                            <i class="bi bi-arrow-repeat me-1"></i> Apply & Recalculate
+                    <div class="col-md-3 text-end">
+                        <button class="btn btn-outline-primary btn-sm w-100 py-2" type="button" data-bs-toggle="collapse" data-bs-target="#institutionalTuningPanel" aria-expanded="false">
+                            <i class="bi bi-briefcase me-1"></i> 機構級估值調校 (Advanced)
+                            <i class="bi bi-chevron-down ms-1"></i>
                         </button>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="hidden" name="ticker" value="{{ ticker }}">
+                        <input type="hidden" name="dcf_weight" id="dcf_weight_input" value="{{ dcf_weight_pct|default:50 }}">
+                        <input type="hidden" name="market_weight" id="market_weight_input" value="{{ market_weight_pct|default:50 }}">
+                        <button type="submit" class="btn btn-primary btn-sm w-100 py-2">
+                            <i class="bi bi-arrow-repeat me-1"></i> 套用並重算
+                        </button>
+                    </div>
+
+                    <!-- Collapsible Institutional Tuning Drawer -->
+                    <div class="collapse col-12 mt-3" id="institutionalTuningPanel">
+                        <div class="p-3 bg-white rounded-3 border shadow-sm">
+                            <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
+                                <h6 class="fw-bold mb-0 text-primary">
+                                    <i class="bi bi-sliders2 me-2"></i> 機構級估值參數調校 (Institutional Tuning Controls)
+                                </h6>
+                                <span class="badge bg-secondary">Session & LocalStorage 雙重持久化生效中</span>
+                            </div>
+                            <div class="row g-3">
+                                <!-- WACC Risk Premium -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold text-muted mb-1">
+                                        WACC 主觀風險貼水 (Hurdle Premium)
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="wacc_premium" id="wacc_premium_input" step="0.5" min="-2.0" max="5.0" value="{{ valuation.institutional_tuning.wacc_premium_pct|default:0.0 }}">
+                                        <span class="input-group-text">%</span>
+                                    </div>
+                                    <div class="form-text small">加計投行主觀要求之 Hurdle Rate 風險溢價。</div>
+                                </div>
+
+                                <!-- Discounting Convention -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold text-muted mb-1">
+                                        折現時間慣例 (Discounting Convention)
+                                    </label>
+                                    <select class="form-select form-select-sm" name="discount_convention" id="discount_convention_input">
+                                        <option value="end_of_year" {% if valuation.institutional_tuning.discount_convention == 'end_of_year' or not valuation.institutional_tuning.discount_convention %}selected{% endif %}>年底折現 (End-of-Year)</option>
+                                        <option value="mid_year" {% if valuation.institutional_tuning.discount_convention == 'mid_year' %}selected{% endif %}>期中折現平移 (Mid-Year)</option>
+                                    </select>
+                                    <div class="form-text small">期中折現假設現金流於全年中均勻產生。</div>
+                                </div>
+
+                                <!-- Terminal Value Method -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold text-muted mb-1">
+                                        終值方法 (Terminal Value Method)
+                                    </label>
+                                    <select class="form-select form-select-sm" name="tv_method" id="tv_method_input" onchange="toggleExitMultipleInput(this.value)">
+                                        <option value="perpetuity" {% if valuation.institutional_tuning.tv_method == 'perpetuity' or not valuation.institutional_tuning.tv_method %}selected{% endif %}>永續成長率法 (Perpetuity Growth)</option>
+                                        <option value="exit_multiple" {% if valuation.institutional_tuning.tv_method == 'exit_multiple' %}selected{% endif %}>退出倍數法 (Exit EV/EBITDA Multiple)</option>
+                                    </select>
+                                    <div class="form-text small">選擇永續增長模型或 Exit EBITDA 乘數法。</div>
+                                </div>
+
+                                <!-- Exit Multiple Input -->
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold text-muted mb-1">
+                                        退出 EBITDA 倍數 (Exit Multiple)
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="exit_multiple" id="exit_multiple_input" step="0.5" min="3.0" max="30.0" value="{{ valuation.institutional_tuning.exit_multiple|default:10.0 }}">
+                                        <span class="input-group-text">x</span>
+                                    </div>
+                                    <div class="form-text small">僅於採用「退出倍數法」時生效。</div>
+                                </div>
+
+                                <!-- Debt-like Items Adjustment -->
+                                <div class="col-md-4 mt-3">
+                                    <label class="form-label small fw-bold text-muted mb-1">
+                                        類債務項目調整 (Debt-Like Items Adjustment)
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">{{ valuation.currency }}</span>
+                                        <input type="number" class="form-control" name="debt_like_items" id="debt_like_items_input" step="1000000" value="{{ valuation.institutional_tuning.debt_like_items|default:0.0 }}">
+                                    </div>
+                                    <div class="form-text small">如租賃負債、未提撥退休金赤字或合約調整項。</div>
+                                </div>
+
+                                <div class="col-md-8 mt-4 text-end align-self-end">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" onclick="resetInstitutionalParams()">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i> 恢復預設值
+                                    </button>
+                                    <button type="submit" class="btn btn-success btn-sm">
+                                        <i class="bi bi-check-circle me-1"></i> 儲存並應用調校風格
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -74,6 +160,59 @@
         document.getElementById('dcf_weight_input').value = val;
         document.getElementById('market_weight_input').value = marketVal;
     }
+
+    function toggleExitMultipleInput(val) {
+        const exitInput = document.getElementById('exit_multiple_input');
+        if (val === 'exit_multiple') {
+            exitInput.removeAttribute('disabled');
+        } else {
+            exitInput.setAttribute('disabled', 'disabled');
+        }
+    }
+
+    function resetInstitutionalParams() {
+        document.getElementById('wacc_premium_input').value = 0.0;
+        document.getElementById('discount_convention_input').value = 'end_of_year';
+        document.getElementById('tv_method_input').value = 'perpetuity';
+        document.getElementById('exit_multiple_input').value = 10.0;
+        document.getElementById('debt_like_items_input').value = 0.0;
+        localStorage.removeItem('fairvalue_institutional_params');
+        document.getElementById('valuationForm').submit();
+    }
+
+    // LocalStorage 持久化同步邏輯
+    document.addEventListener('DOMContentLoaded', function() {
+        const storageKey = 'fairvalue_institutional_params';
+        const form = document.getElementById('valuationForm');
+        
+        // 綁定表單提交，自動寫入 LocalStorage
+        form.addEventListener('submit', function() {
+            const params = {
+                wacc_premium: document.getElementById('wacc_premium_input').value,
+                discount_convention: document.getElementById('discount_convention_input').value,
+                tv_method: document.getElementById('tv_method_input').value,
+                exit_multiple: document.getElementById('exit_multiple_input').value,
+                debt_like_items: document.getElementById('debt_like_items_input').value
+            };
+            localStorage.setItem(storageKey, JSON.stringify(params));
+        });
+
+        // 初始載入：若 URL 無特定 GET 參數但 LocalStorage 有值，提示自動載入
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.has('wacc_premium') && localStorage.getItem(storageKey)) {
+            try {
+                const saved = JSON.parse(localStorage.getItem(storageKey));
+                if (saved.wacc_premium) document.getElementById('wacc_premium_input').value = saved.wacc_premium;
+                if (saved.discount_convention) document.getElementById('discount_convention_input').value = saved.discount_convention;
+                if (saved.tv_method) {
+                    document.getElementById('tv_method_input').value = saved.tv_method;
+                    toggleExitMultipleInput(saved.tv_method);
+                }
+                if (saved.exit_multiple) document.getElementById('exit_multiple_input').value = saved.exit_multiple;
+                if (saved.debt_like_items) document.getElementById('debt_like_items_input').value = saved.debt_like_items;
+            } catch(e) {}
+        }
+    });
 </script>
 
 <div class="container">
@@ -107,7 +246,6 @@
     </div>
     
     <script>
-        // 每 3 秒發送一次 AJAX 請求，確認更新狀態
         const pollInterval = setInterval(function() {
             fetch("{% url 'valuation_refresh_status_api' symbol=symbol %}")
                 .then(response => response.json())
@@ -226,8 +364,8 @@
                         <h6 class="small fw-bold text-uppercase text-muted mb-2">Key Assumptions (Next 5Y)</h6>
                         <div class="row g-2 text-center">
                             <div class="col-4">
-                                <div class="small text-muted">WACC</div>
-                                <div class="fw-bold">{{ assumptions.wacc|default:0.1|to_percentage:1 }}</div>
+                                <div class="small text-muted">WACC (w/ Premium)</div>
+                                <div class="fw-bold text-primary">{{ dcf.wacc|default:0.1|to_percentage:1 }}</div>
                             </div>
                             <div class="col-4">
                                 <div class="small text-muted">Ex-Growth</div>
@@ -245,15 +383,77 @@
         </div>
     </div>
 
+    <!-- 足球場估值範圍圖與三情境比較表 (Football Field Chart & Scenario Analysis) -->
+    <div class="row mb-4">
+        <!-- Football Field Chart -->
+        <div class="col-lg-7 mb-4 mb-lg-0">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="m-0 fw-bold"><i class="bi bi-bar-chart-steps me-2"></i> 足球場估值矩陣圖 (Football Field Valuation Chart)</h5>
+                    <span class="badge bg-warning text-dark">Institutional Consensus</span>
+                </div>
+                <div class="card-body">
+                    <div id="footballFieldChart" style="min-height: 280px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scenario Comparison Matrix Table -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-secondary text-white py-3">
+                    <h5 class="m-0 fw-bold"><i class="bi bi-grid-3x3-gap me-2"></i> 三情境敏感度分析 (Scenario Matrix)</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle text-center">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>情境 Scenario</th>
+                                    <th>估算價格</th>
+                                    <th>相對當前價潛力</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="table-danger">
+                                    <td class="fw-bold text-danger"><i class="bi bi-arrow-down-circle me-1"></i> 保守情境 (Bear)</td>
+                                    <td class="fw-bold fs-6">{{ valuation.scenarios.bear|floatformat:2 }} {{ valuation.currency }}</td>
+                                    <td>
+                                        {% with bear_up=valuation.scenarios.bear|add:0 %}
+                                        <span class="badge bg-danger">Low Case</span>
+                                        {% endwith %}
+                                    </td>
+                                </tr>
+                                <tr class="table-primary">
+                                    <td class="fw-bold text-primary"><i class="bi bi-dash-circle me-1"></i> 基準情境 (Base)</td>
+                                    <td class="fw-bold fs-5 text-primary">{{ valuation.scenarios.base|floatformat:2 }} {{ valuation.currency }}</td>
+                                    <td><span class="badge bg-primary">Base Case</span></td>
+                                </tr>
+                                <tr class="table-success">
+                                    <td class="fw-bold text-success"><i class="bi bi-arrow-up-circle me-1"></i> 樂觀情境 (Bull)</td>
+                                    <td class="fw-bold fs-6 text-success">{{ valuation.scenarios.bull|floatformat:2 }} {{ valuation.currency }}</td>
+                                    <td><span class="badge bg-success">High Case</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-white py-3 text-muted small">
+                    <i class="bi bi-info-circle me-1"></i> 保守與樂觀情境分別反映 WACC $\pm 1.5\%$、增長率 $\pm 30\%$ 之波動範圍。
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% if valuation.twse_valuation %}
-    <!-- TWSE Official Metrics Card (台股專屬) -->
+    <!-- Exchange Official Metrics Card (交易所官方指標卡片) -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card shadow-sm border-0" style="border-left: 4px solid #0d6efd !important;">
                 <div class="card-header py-3" style="background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);">
                     <h5 class="m-0 fw-bold text-white">
                         <i class="bi bi-bank me-2"></i>
-                        TWSE Official Metrics
+                        Exchange Official Metrics
                         <span class="badge bg-warning text-dark ms-2 small">{{ valuation.twse_valuation.source }}</span>
                     </h5>
                 </div>
@@ -334,7 +534,12 @@
                                     {% endfor %}
                                 </tr>
                                 <tr class="table-info">
-                                    <td class="fw-bold">Discounted FCF</td>
+                                    <td class="fw-bold">
+                                        Discounted FCF 
+                                        {% if valuation.institutional_tuning.discount_convention == 'mid_year' %}
+                                            <span class="badge bg-warning text-dark ms-1">Mid-Year</span>
+                                        {% endif %}
+                                    </td>
                                     {% for val in dcf.projected_fcf.discounted_fcfs %}
                                     <td class="text-end">{{ val|sci_notation }}</td>
                                     {% endfor %}
@@ -355,4 +560,130 @@
     {% endwith %}
     {% endif %}
 </div>
+
+{% if valuation and valuation.football_field %}
+{{ valuation.football_field|json_script:"football-data" }}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('football-data');
+        var chartEl = document.querySelector("#footballFieldChart");
+        if (!el || !chartEl) return;
+        var rawData = JSON.parse(el.textContent);
+        var currentPrice = {{ valuation.current_price|default:0 }};
+        var currency = "{{ valuation.currency|default:'USD' }}";
+
+        function getChartOptions(isDark) {
+            return {
+                series: [{
+                    name: 'Valuation Range (' + currency + ')',
+                    data: [
+                        { x: 'DCF 三情境區間 (Bear-Bull)', y: rawData.dcf_range || [0, 0] },
+                        { x: 'P/E 歷史相對估值', y: rawData.pe_range || [0, 0] },
+                        { x: 'EV/EBITDA 相對估值', y: rawData.ev_ebitda_range || [0, 0] },
+                        { x: '法人與新聞共識目標價', y: rawData.target_consensus_range || [0, 0] }
+                    ]
+                }],
+                chart: {
+                    type: 'rangeBar',
+                    height: 280,
+                    toolbar: { show: false },
+                    background: 'transparent',
+                    foreColor: isDark ? '#e0e0e0' : '#495057'
+                },
+                theme: {
+                    mode: isDark ? 'dark' : 'light'
+                },
+                plotOptions: {
+                    bar: {
+                        horizontal: true,
+                        barHeight: '50%',
+                        rangeBarGroupRows: true
+                    }
+                },
+                colors: isDark ? ['#3d8bfd', '#0dcaf0', '#8f5fe8', '#ffc107'] : ['#0d6efd', '#0dcaf0', '#6610f2', '#ffc107'],
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shade: isDark ? 'dark' : 'light',
+                        type: 'horizontal',
+                        shadeIntensity: 0.25,
+                        inverseColors: false,
+                        opacityFrom: 0.85,
+                        opacityTo: 0.85
+                    }
+                },
+                xaxis: {
+                    labels: {
+                        style: {
+                            colors: isDark ? '#adb5bd' : '#495057',
+                            fontSize: '12px'
+                        },
+                        formatter: function(val) {
+                            return val ? (val + ' ' + currency) : '';
+                        }
+                    },
+                    axisBorder: {
+                        color: isDark ? '#495057' : '#dee2e6'
+                    },
+                    axisTicks: {
+                        color: isDark ? '#495057' : '#dee2e6'
+                    }
+                },
+                yaxis: {
+                    labels: {
+                        style: {
+                            colors: isDark ? '#e0e0e0' : '#212529',
+                            fontSize: '13px',
+                            fontWeight: 600
+                        }
+                    }
+                },
+                grid: {
+                    borderColor: isDark ? '#373b3e' : '#e9ecef',
+                    strokeDashArray: 4
+                },
+                annotations: {
+                    xaxis: [{
+                        x: currentPrice,
+                        borderColor: '#dc3545',
+                        borderWidth: 2,
+                        label: {
+                            borderColor: '#dc3545',
+                            style: {
+                                color: '#ffffff',
+                                background: '#dc3545',
+                                fontWeight: 'bold'
+                            },
+                            text: '當前市價: ' + currentPrice + ' ' + currency
+                        }
+                    }]
+                },
+                tooltip: {
+                    theme: isDark ? 'dark' : 'light',
+                    y: {
+                        formatter: function(val) {
+                            return val + ' ' + currency;
+                        }
+                    }
+                }
+            };
+        }
+
+        var isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        var chart = new ApexCharts(chartEl, getChartOptions(isDark));
+        chart.render();
+
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'data-bs-theme') {
+                    var newIsDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+                    chart.updateOptions(getChartOptions(newIsDark), false, true);
+                }
+            });
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
+    });
+</script>
+{% endif %}
 {% endblock %}

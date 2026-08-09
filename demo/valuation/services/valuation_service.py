@@ -10,10 +10,19 @@ logger = logging.getLogger(__name__)
 
 class ValuationService:
     @staticmethod
-    def calculate_valuation(ticker_symbol, dcf_weight=0.5, market_weight=0.5):
+    def calculate_valuation(
+        ticker_symbol, 
+        dcf_weight=0.5, 
+        market_weight=0.5, 
+        wacc_premium=0.0, 
+        discount_convention='end_of_year', 
+        tv_method='perpetuity', 
+        exit_multiple=10.0, 
+        debt_like_items=0.0
+    ):
         """
         Unified valuation entry point using internal modular components.
-        Eliminates dependency on missing standalone main.py script.
+        Supports Institutional Advanced Tuning parameters (WACC premium, mid-year discount, exit multiple TV, debt-like items).
         """
         ticker_symbol = ticker_symbol.upper()
         try:
@@ -36,10 +45,11 @@ class ValuationService:
             if not start_data or current_price <= 0:
                 return {"error": f"Insufficient data to calculate valuation for {ticker_symbol}."}
             
-            # 3. Calculate WACC
+            # 3. Calculate WACC (支援 WACC Premium 貼水)
             wacc_calc = WACCCalculator(ticker_symbol)
-            wacc_results = wacc_calc.calculate_wacc()
+            wacc_results = wacc_calc.calculate_wacc(wacc_premium=wacc_premium)
             wacc = wacc_results['WACC']
+            base_wacc = wacc_results.get('Base WACC', wacc - wacc_premium)
             
             # 4. Setup Assumptions
             hist_ratios = loader.calculate_historical_ratios()
@@ -62,58 +72,74 @@ class ValuationService:
             assumptions.capex_as_pct_sales = hist_ratios.get('capex_as_pct_revenue', 0.03)
             assumptions.depreciation_as_pct_revenue = hist_ratios.get('da_as_pct_revenue', 0.03)
             
-            # 5. Run DCF Projection
+            # Helper function for DCF calculations given parameters
+            def compute_dcf(proj_df, wacc_val, g_val, is_mid_year=False, use_exit_mult=False, exit_mult_val=10.0, debt_adjust=0.0):
+                last_yr = proj_df.iloc[-1]
+                t_rate = assumptions.tax_rate
+                fcf_5 = last_yr['ebit'] * (1 - t_rate) + last_yr['depreciation'] - last_yr['capex'] - last_yr['change_in_wc']
+                
+                if use_exit_mult:
+                    ebitda_5 = last_yr['ebit'] + last_yr['depreciation']
+                    tv = ebitda_5 * exit_mult_val
+                else:
+                    wacc_eff = max(wacc_val, 0.03)
+                    denom = wacc_eff - g_val
+                    if denom < 0.01: denom = 0.01
+                    tv = fcf_5 * (1 + g_val) / denom
+                    
+                pv_fcfs = 0.0
+                for i, row in proj_df.iterrows():
+                    fcf = row['ebit'] * (1 - t_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']
+                    t_exp = (i + 0.5) if is_mid_year else (i + 1)
+                    pv_fcfs += fcf / ((1 + max(wacc_val, 0.01))**t_exp)
+                
+                tv_exp = 4.5 if is_mid_year else 5.0
+                pv_tv = tv / ((1 + max(wacc_val, 0.01))**tv_exp)
+                ev = pv_fcfs + pv_tv
+                
+                # Net Debt = Total Debt - Cash + Debt-like Items
+                raw_net_debt = start_data.get('total_debt', 0) - start_data.get('cash', 0) + debt_adjust
+                eq_val = ev - raw_net_debt
+                shrs = max(start_data.get('diluted_shares', start_data.get('shares_outstanding', 1)), 1)
+                implied_p = max(eq_val / shrs, 0)
+                return implied_p, ev, raw_net_debt, tv, pv_tv, shrs
+
+            # 5. Run Primary DCF Projection
             projector = FinancialProjector(start_data, assumptions)
             projections = projector.run_projection()
             
-            # 6. Calculate DCF Implied Price
-            # FCFF = EBIT * (1 - Tax Rate) + D&A - CapEx - DeltaWC
-            last_year = projections.iloc[-1]
-            tax_rate = assumptions.tax_rate
-            fcf_5 = last_year['ebit'] * (1 - tax_rate) + last_year['depreciation'] - last_year['capex'] - last_year['change_in_wc']
-            g = assumptions.perpetuity_growth_rate
+            is_mid_year = (discount_convention == 'mid_year')
+            use_exit_mult = (tv_method == 'exit_multiple')
             
-            # 強化終值與 WACC 邊界防護
-            if wacc < 0.03:
-                logger.warning(f"Abnormally low WACC detected for {ticker_symbol}: {wacc:.2%}. Flooring at 3%.")
-                wacc = max(wacc, 0.03)
+            implied_price_dcf, enterprise_value, net_debt, terminal_value, pv_tv, shares = compute_dcf(
+                projections, 
+                wacc_val=wacc, 
+                g_val=assumptions.perpetuity_growth_rate, 
+                is_mid_year=is_mid_year, 
+                use_exit_mult=use_exit_mult, 
+                exit_mult_val=exit_multiple, 
+                debt_adjust=debt_like_items
+            )
+            
+            # --- 三情境分析 (Bear / Base / Bull) ---
+            # 保守情境 (Bear): WACC + 2.0%, 營收成長率 70%, g = 1.0%
+            assumptions_bear = Assumptions()
+            assumptions_bear.revenue_growth_rate = [g_val * 0.7 for g_val in assumptions.revenue_growth_rate]
+            assumptions_bear.ebit_margin = assumptions.ebit_margin * 0.9
+            assumptions_bear.tax_rate = assumptions.tax_rate
+            proj_bear = FinancialProjector(start_data, assumptions_bear).run_projection()
+            price_bear, _, _, _, _, _ = compute_dcf(proj_bear, wacc + 0.02, 0.01, is_mid_year, use_exit_mult, exit_multiple * 0.8, debt_like_items)
 
-            denom = wacc - g
-            if denom <= 0:
-                logger.warning(f"WACC ({wacc:.2%}) <= terminal growth ({g:.2%}) for {ticker_symbol}. Flooring denom at 1%.")
-                denom = 0.01
-            elif denom < 0.01:
-                denom = 0.01
-                
-            terminal_value = fcf_5 * (1 + g) / denom
+            # 樂觀情境 (Bull): WACC - 1.0%, 營收成長率 120%, g = 2.5%
+            assumptions_bull = Assumptions()
+            assumptions_bull.revenue_growth_rate = [g_val * 1.2 for g_val in assumptions.revenue_growth_rate]
+            assumptions_bull.ebit_margin = assumptions.ebit_margin * 1.1
+            assumptions_bull.tax_rate = assumptions.tax_rate
+            proj_bull = FinancialProjector(start_data, assumptions_bull).run_projection()
+            price_bull, _, _, _, _, _ = compute_dcf(proj_bull, max(wacc - 0.01, 0.03), 0.025, is_mid_year, use_exit_mult, exit_multiple * 1.2, debt_like_items)
             
-            pv_fcfs = 0
-            for i, row in projections.iterrows():
-                fcf = row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']
-                pv_fcfs += fcf / ((1 + wacc)**(i + 1))
-            
-            pv_tv = terminal_value / ((1 + wacc)**5)
-            enterprise_value = pv_fcfs + pv_tv
-            net_debt = start_data.get('total_debt', 0) - start_data.get('cash', 0)
-            equity_value = enterprise_value - net_debt
-            
-            # Defensive check: if Equity Value is too low or negative, fallback to a floor
-            # 導入完全稀釋股數 (TSM) 作為分母
-            shares = max(start_data.get('diluted_shares', start_data.get('shares_outstanding', 1)), 1)
-            implied_price_dcf = equity_value / shares
-            
-            # Formatting and Scaling for Display
-            # For large US companies, some values might be internally in absolute units
-            # Standardize for the result dictionary
-            equity_value_m = equity_value / 1000000
-            net_debt_m = net_debt / 1000000
-            enterprise_value_m = enterprise_value / 1000000
-            
-            # Floor implied price at 20% of net asset value or similar if calculation goes negative
-            # But the user wants a professional value, so we'll just floor at 0 for now but log it
-            if implied_price_dcf <= 0:
-                logger.warning(f"DCF calculation for {ticker_symbol} resulted in negative value. EV={enterprise_value}, NetDebt={net_debt}")
-            
+            price_base = implied_price_dcf
+
             # 7. Run Relative Valuation
             rel_valuator = RelativeValuator(ticker_symbol, start_data, current_price, currency)
             hist_multiples = loader.get_historical_multiples()
@@ -126,9 +152,7 @@ class ValuationService:
             ev_ebitda_price = rel_results.get('ev_ebitda_approach', {}).get('implied_price', current_price)
             implied_price_market = (pe_price + ev_ebitda_price) / 2
             
-            # --- 8. 優化：加入情緒溢價 (Sentiment Premium) ---
-            # 根據新聞情緒強度，為估值提供 +/- 5% 的動態空間
-            # 使用 Django Cache 快取此情緒溢價數值以降低 Excel 磁碟 IO 負擔 (TTL = 10分鐘)
+            # --- 8. 情緒溢價 (Sentiment Premium) ---
             sentiment_premium = 1.0
             try:
                 from django.core.cache import cache
@@ -144,38 +168,37 @@ class ValuationService:
                         pos_count = sum(1 for n in recent_news if n.get('正負分析') == '正面')
                         neg_count = sum(1 for n in recent_news if n.get('正負分析') == '負面')
                         if pos_count > neg_count * 2:
-                             sentiment_premium = 1.05 # 利多溢價
+                             sentiment_premium = 1.05
                         elif neg_count > pos_count * 2:
-                             sentiment_premium = 0.95 # 利空折價
+                             sentiment_premium = 0.95
                     cache.set(cache_key, sentiment_premium, 600)
             except Exception as e_s:
                 logger.debug(f"Sentiment premium calculation skipped: {e_s}")
 
-            # 9. Weighted Fair Value (並乘上情緒溢價)
+            # 9. Weighted Fair Value
             fair_value = ((implied_price_dcf * dcf_weight) + (implied_price_market * market_weight)) * sentiment_premium
             upside = (fair_value / current_price) - 1 if current_price > 0 else 0
 
-            
-            # Prepare projection lists for detail.html template
-            # Standardize output to Millions (M) for large stocks
+            # Prepare projection lists
+            tax_rate = assumptions.tax_rate
             years_list = [f"Year {i+1}" for i in range(len(projections))]
             revenues_list = [round(float(val) / 1000000, 2) for val in projections['revenue'].tolist()]
             fcfs_list = [round(float(row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']) / 1000000, 2) for _, row in projections.iterrows()]
             
-            # Re-calculate discounted FCFs for display (also in Millions)
             discounted_fcfs_list = []
             for i, fcf_val_abs in enumerate([float(row['ebit'] * (1 - tax_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']) for _, row in projections.iterrows()]):
-                val = fcf_val_abs / ((1 + wacc)**(i + 1))
+                t_exp = (i + 0.5) if is_mid_year else (i + 1)
+                val = fcf_val_abs / ((1 + wacc)**t_exp)
                 discounted_fcfs_list.append(round(val / 1000000, 2))
 
-            # 組裝 twse-cli 官方數據區塊（僅台股有值）
+            # twse-cli 數據
             twse_pe = hist_multiples.get('twse_pe')
             twse_pb = hist_multiples.get('twse_pb')
             twse_dy = hist_multiples.get('twse_dividend_yield')
             twse_valuation = None
             if any(v is not None for v in [twse_pe, twse_pb, twse_dy]):
                 is_otc = loader.full_symbol.endswith('.TWO')
-                source_name = "TPEx \u6ac3\u8cb7\u4e2d\u5fc3\u5b98\u65b9" if is_otc else "TWSE \u8b49\u4ea4\u6240\u5b98\u65b9"
+                source_name = "TPEx 櫃買中心官方" if is_otc else "TWSE 證交所官方"
                 twse_valuation = {
                     "pe": round(twse_pe, 2) if twse_pe else None,
                     "pb": round(twse_pb, 2) if twse_pb else None,
@@ -183,17 +206,43 @@ class ValuationService:
                     "source": source_name,
                 }
 
+            # 足球場估值數據 (Football Field Chart Data)
+            football_field = {
+                "dcf_range": [round(min(price_bear, price_bull), 2), round(max(price_bear, price_bull), 2)],
+                "pe_range": [round(pe_price * 0.85, 2), round(pe_price * 1.15, 2)],
+                "ev_ebitda_range": [round(ev_ebitda_price * 0.85, 2), round(ev_ebitda_price * 1.15, 2)],
+                "target_consensus_range": [
+                    round(min(current_price * 0.9, price_bear * 0.95), 2), 
+                    round(max(current_price * 1.25, price_bull * 1.05), 2)
+                ]
+            }
+
             results = {
                 "symbol": ticker_symbol,
                 "current_price": round(current_price, 2),
                 "fair_value": round(fair_value, 2),
                 "upside": float(upside),
                 "currency": currency,
+                "institutional_tuning": {
+                    "wacc_premium_pct": round(wacc_premium * 100, 2),
+                    "discount_convention": discount_convention,
+                    "tv_method": tv_method,
+                    "exit_multiple": exit_multiple,
+                    "debt_like_items": debt_like_items
+                },
+                "scenarios": {
+                    "bear": round(price_bear, 2),
+                    "base": round(price_base, 2),
+                    "bull": round(price_bull, 2)
+                },
+                "football_field": football_field,
                 "dcf": {
                     "implied_price": round(max(implied_price_dcf, 0), 2),
                     "wacc": float(wacc),
+                    "base_wacc": float(base_wacc),
+                    "wacc_premium": float(wacc_premium),
                     "terminal_value": round(float(terminal_value) / 1000000, 2),
-                    "pv_terminal_value": round(float(terminal_value / ((1 + wacc)**5)) / 1000000, 2),
+                    "pv_terminal_value": round(float(pv_tv) / 1000000, 2),
                     "net_debt": float(net_debt),
                     "shares_outstanding": float(shares),
                     "projected_fcf": {
