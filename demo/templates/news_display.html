@@ -278,13 +278,17 @@
             
             // AI Intelligence Insight Block
             let aiInsightHTML = '';
-            if (item.分析摘要 && item.分析摘要.indexOf('分析未啟用') === -1 && item.分析摘要.indexOf('本地評分') === -1) {
+            if (item.分析摘要 && item.分析摘要.indexOf('分析未啟用') === -1) {
+                const isLocalOnly = item.分析摘要.indexOf('本地') !== -1 || item.分析摘要.indexOf('評分完成') !== -1;
                 const impactClass = item.影響範疇 === '短期' ? 'text-primary' : (item.影響範疇 === '中期' ? 'text-warning' : 'text-danger');
+                const titleText = isLocalOnly ? '本地快速洞察' : 'AI 智能洞察';
+                const iconClass = isLocalOnly ? 'bi-cpu text-secondary' : 'bi-robot text-primary';
+                
                 aiInsightHTML = `
                     <div class="mt-3 p-3 rounded ai-insight-card">
                         <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-robot text-primary fs-5 me-2"></i>
-                            <span class="fw-bold text-dark me-3">AI 智能洞察</span>
+                            <i class="bi ${iconClass} fs-5 me-2"></i>
+                            <span class="fw-bold text-dark me-3">${titleText}</span>
                             <span class="badge bg-white border ${impactClass} me-2"><i class="bi bi-clock-history me-1"></i>影響時間：${item.影響範疇 || '短期'}</span>
                             <span class="badge bg-white border text-secondary"><i class="bi bi-check-circle me-1"></i>信心度：${item.信心度 || 'N/A'}</span>
                         </div>

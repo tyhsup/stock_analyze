@@ -221,18 +221,32 @@ class AgentNewsAnalyzer:
         # Stage 1: 本地雙語評分
         score_res = self.scorer.analyze(title, content, language=language)
         
+        # 清理並計算長度
+        clean_content = content.strip() if content else ""
+        if language == 'en':
+            # 英文新聞：採單字數 (>= 30 words) 或字元數 (>= 80 chars) 判定
+            word_count = len(clean_content.split())
+            char_count = len(clean_content)
+            has_sufficient_length = word_count >= 30 or char_count >= 80
+        else:
+            # 中文新聞：採字元數 (>= 150 chars) 或標題+內文總長 (>= 200 chars)
+            has_sufficient_length = len(clean_content) >= 150 or (len(title) + len(clean_content)) >= 200
+
         # 升級判斷 (重要新聞篩選機制)：
-        # 僅在本地判定為「非中立」且「長度大於 200 字 (英文單字/中文數)」且「新聞屬於 7 天內 (is_recent=True)」時升級至雲端
+        # 僅在本地判定為「非中立」、長度符合要求且「新聞屬於 7 天內 (is_recent=True)」時升級至雲端 LLM
         is_neutral = score_res["positive_negative_analysis"] == "中立"
         should_upgrade = force_llm or (
             not is_neutral 
-            and len(content) > 200 
+            and has_sufficient_length
             and is_recent
         )
         
         gemini_res = {}
         if should_upgrade:
             gemini_res = self._call_gemini(title, content, score_res) or {}
+
+        # 預設本地摘要說明
+        default_summary = f"本地 FinBERT/Roberta 評分完成：{score_res['positive_negative_analysis']} (情緒得分: {score_res['sentiment_score']}, 信心度: {score_res['confidence']:.0%})"
 
         # 合併
         return {
@@ -247,7 +261,7 @@ class AgentNewsAnalyzer:
             "confidence": score_res["confidence"],
             "market": gemini_res.get("market", self._infer_market(source, content)),
             "impact_scope": gemini_res.get("impact_scope", "短期"),
-            "reasoning_summary": gemini_res.get("reasoning_summary", f"本地評分完成 (信心度 {score_res['confidence']:.0%})")
+            "reasoning_summary": gemini_res.get("reasoning_summary", default_summary)
         }
 
     def _call_gemini(self, title: str, content: str, score_res: dict) -> Optional[dict]:
