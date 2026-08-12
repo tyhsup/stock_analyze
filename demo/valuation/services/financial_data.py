@@ -973,9 +973,11 @@ class FinancialDataLoader:
         }
 
     def _get_metrics_from_db(self) -> dict:
-        """從 MySQL stock_metrics 表格中取得本益比、股價淨值比與殖利率數據。"""
+        """從 MySQL stock_metrics 表格中取得本益比、股價淨值比與殖利率數據。
+        包含新鮮度檢查 (24 小時)，若過期或無資料則備援透過 CLI 取得最新數據並自動寫回 DB。
+        """
         query = text("""
-            SELECT pe, pb, dividend_yield 
+            SELECT pe, pb, dividend_yield, updated_at 
             FROM stock_metrics 
             WHERE market = :market AND symbol = :symbol
         """)
@@ -983,13 +985,61 @@ class FinancialDataLoader:
             with self.op.engine.connect() as conn:
                 row = conn.execute(query, {"market": self.market, "symbol": self.symbol}).fetchone()
                 if row:
-                    return {
-                        "pe": float(row[0]) if row[0] is not None else None,
-                        "pb": float(row[1]) if row[1] is not None else None,
-                        "dividend_yield": float(row[2]) if row[2] is not None else None
-                    }
+                    pe_val = float(row[0]) if row[0] is not None else None
+                    pb_val = float(row[1]) if row[1] is not None else None
+                    dy_val = float(row[2]) if row[2] is not None else None
+                    updated_at = row[3] if len(row) > 3 else None
+
+                    is_stale = False
+                    if updated_at is None:
+                        is_stale = True
+                    else:
+                        from datetime import datetime, timedelta
+                        if datetime.now() - updated_at > timedelta(hours=24):
+                            is_stale = True
+
+                    if not is_stale and (pe_val is not None or pb_val is not None):
+                        return {
+                            "pe": pe_val,
+                            "pb": pb_val,
+                            "dividend_yield": dy_val
+                        }
         except Exception as e:
             logger.error(f"Error fetching from stock_metrics: {e}")
+
+        # 若 DB 無資料或資料已過期 (> 24 小時)，自動透過 CLI 取得即時 TWSE/TPEx 數據
+        cli_info = {}
+        if self.market == 'tw':
+            if self.full_symbol.endswith('.TWO'):
+                cli_info = self._get_tpex_cli_info()
+            else:
+                cli_info = self._get_twse_cli_info()
+
+        if cli_info and any(v is not None for v in cli_info.values()):
+            # 同步更新回寫至 stock_metrics 資料表
+            try:
+                upsert_query = text("""
+                    INSERT INTO stock_metrics (market, symbol, pe, pb, dividend_yield, updated_at)
+                    VALUES (:market, :symbol, :pe, :pb, :dy, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        pe = VALUES(pe), 
+                        pb = VALUES(pb), 
+                        dividend_yield = VALUES(dividend_yield),
+                        updated_at = NOW()
+                """)
+                with self.op.engine.begin() as conn:
+                    conn.execute(upsert_query, {
+                        "market": self.market,
+                        "symbol": self.symbol,
+                        "pe": cli_info.get("pe"),
+                        "pb": cli_info.get("pb"),
+                        "dy": cli_info.get("dividend_yield")
+                    })
+                logger.info(f"[Metrics] Auto-synced live CLI metrics for {self.symbol} into stock_metrics DB.")
+            except Exception as e_upsert:
+                logger.warning(f"[Metrics] Failed to auto-upsert CLI metrics into stock_metrics: {e_upsert}")
+            return cli_info
+
         return {}
 
     def get_historical_multiples(self):

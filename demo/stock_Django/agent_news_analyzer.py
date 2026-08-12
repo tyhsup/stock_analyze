@@ -223,23 +223,22 @@ class AgentNewsAnalyzer:
         
         # 清理並計算長度
         clean_content = content.strip() if content else ""
-        if language == 'en':
-            # 英文新聞：採單字數 (>= 30 words) 或字元數 (>= 80 chars) 判定
-            word_count = len(clean_content.split())
-            char_count = len(clean_content)
-            has_sufficient_length = word_count >= 30 or char_count >= 80
-        else:
-            # 中文新聞：採字元數 (>= 150 chars) 或標題+內文總長 (>= 200 chars)
-            has_sufficient_length = len(clean_content) >= 150 or (len(title) + len(clean_content)) >= 200
+        clean_title = title.strip() if title else ""
+        combined_len = len(clean_title) + len(clean_content)
 
-        # 升級判斷 (重要新聞篩選機制)：
-        # 僅在本地判定為「非中立」、長度符合要求且「新聞屬於 7 天內 (is_recent=True)」時升級至雲端 LLM
-        is_neutral = score_res["positive_negative_analysis"] == "中立"
-        should_upgrade = force_llm or (
-            not is_neutral 
-            and has_sufficient_length
-            and is_recent
-        )
+        if language == 'en':
+            # 英文新聞：解除 is_neutral 強制攔截。只要標題與內文總長度 >= 20 字元且屬於近期新聞，即升級 LLM
+            has_sufficient_length = combined_len >= 20 or len(clean_content.split()) >= 5
+            should_upgrade = force_llm or (has_sufficient_length and is_recent)
+        else:
+            # 中文新聞：維持本地判定為「非中立」且長度符合要求 (>= 150/200 字元) 且 7 天內條件
+            has_sufficient_length = len(clean_content) >= 150 or combined_len >= 200
+            is_neutral = score_res["positive_negative_analysis"] == "中立"
+            should_upgrade = force_llm or (
+                not is_neutral 
+                and has_sufficient_length
+                and is_recent
+            )
         
         gemini_res = {}
         if should_upgrade:
