@@ -549,8 +549,14 @@ def gemini_advisor_analysis(request, ticker):
             ma_features=ma_features
         )
         
-        # 快取 24 小時 (86400 秒)
-        cache.set(cache_key, advice, 86400)
+        # 區分成功與 fallback 快取時間
+        if advice.get("model_name") == "N/A":
+            # 失敗 fallback 僅快取 60 秒（防止高頻重試擊垮後端，但不污染 24 小時快取）
+            cache.set(cache_key, advice, 60)
+        else:
+            # 成功分析結果快取 24 小時 (86400 秒)
+            cache.set(cache_key, advice, 86400)
+            
         return JsonResponse({"status": "success", "report": advice, "cached": False})
     except Exception as e_ai:
         logger.error(f"Failed to generate Gemini advice: {e_ai}")

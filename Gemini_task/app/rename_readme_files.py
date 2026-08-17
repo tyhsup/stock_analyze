@@ -2,7 +2,7 @@ import os
 import glob
 import re
 
-VAULT_DIR = r"C:\Users\許廷宇\.gemini\config\knowledge"
+VAULT_DIR = r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge"
 
 def rename_readmes(changed_files=None):
     """

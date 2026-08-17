@@ -3,7 +3,7 @@ import glob
 import frontmatter
 from datetime import datetime
 
-VAULT_DIR = r"C:\Users\許廷宇\.gemini\config\knowledge"
+VAULT_DIR = r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge"
 
 def ensure_vault_exists():
     if not os.path.exists(VAULT_DIR):

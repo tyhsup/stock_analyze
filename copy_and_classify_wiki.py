@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 
 # 全域資料庫路徑
-VAULT_DIR = r"C:\Users\許廷宇\.gemini\config\knowledge"
+VAULT_DIR = r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge"
 
 # 專案根目錄
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))

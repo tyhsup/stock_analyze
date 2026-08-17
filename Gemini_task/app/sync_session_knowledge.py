@@ -7,7 +7,7 @@ from datetime import datetime
 
 # 設定常數路徑
 BRAIN_BASE_DIR = r"C:\Users\許廷宇\.gemini\antigravity-ide\brain"
-VAULT_DIR = r"C:\Users\許廷宇\.gemini\config\knowledge"
+VAULT_DIR = r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge"
 
 def get_latest_brain_dir():
     """

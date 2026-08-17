@@ -1,47 +1,91 @@
-本專案目前在爬蟲模組的設計上，對於瀏覽器驅動程式（WebDriver）的版本管理機制，尚未達到「自動檢測並下載最新版本」的完整循環。當目標網站或底層瀏覽器發布重大更新時，若 WebDriver 版本與實際運行環境不匹配，系統將會直接拋出 `SessionNotCreatedException` 或類似的執行錯誤，導致爬蟲流程中斷。
+針對您提出的 `2408.TW` Dashboard 與 Fair Value Calculator 中 PE/PB 數據不匹配（Mismatch）的修復策略，這是一個典型的金融模型層面問題，通常不是單純公式錯誤，而是**數據輸入、計算範圍定義或產業調整因子 (Industry Adjustment Factors)** 的缺失。
 
-為確保系統的穩定性與持續運作能力（Self-healing），必須建立一個專門的「依賴管理層」（Dependency Management Layer）。
-
-以下是針對此問題制定的修改計畫，目的在於使系統能夠自主地更新和初始化所需的瀏覽器驅動程式。
+作為核心推理助理，我將從「診斷」、「邏輯修正」與「系統架構防禦」三個面向提供一套完整的修復方案。
 
 ---
 
-### 🛠️ 修改目標：實現 WebDriver 的自動版本檢測與下載機制
+### 📊 I. PE/PB Mismatch 根本原因診斷 (Diagnosis)
 
-**核心概念：** 不應直接依賴本地預設的 `chromedriver.exe` 或 `geckodriver.exe` 路徑，而必須將其升級為一個可運行、可驗證版本的資源。
+在進行代碼修改前，必須先確定不匹配的根源：
 
-### 📋 修改計畫步驟 (Modification Plan)
+1.  **數據範圍定義錯誤 (Scope Error):**
+    *   **問題點:** 計算 PE 時，是否僅使用了會計年度（GAAP）的淨利？如果公司有大量非經常性收益或損失（Non-recurring Items），這些項目必須從計算基礎中排除。
+    *   **修正方向:** 引入「調整後淨利 (Adjusted Net Income)」的概念，而非直接使用原始 `Net Income`。
 
-#### Step 1: 建立版本檢測與下載模組 (`WebDriverManager`)
+2.  **時點差異與預估模型問題 (Timing/Forecasting):**
+    *   **問題點:** PB 通常是基於期末的帳面價值（Book Value），而 PE 則需要未來某個時間點的盈餘預測。如果計算週期不一致，必然產生偏差。
+    *   **修正方向:** 確保所有估值指標都錨定在同一「分析視角」的時間點 (例如：T+1 年預估)。
 
-*   **功能描述：** 新增一個獨立的 Python Class 或 Module，專門負責管理 WebDriver 的生命週期。
-*   **實作細節：**
-    1.  **目標識別 (Target Identification)：** 定義當前爬蟲所依賴的瀏覽器類型（例如：Chrome, Firefox）及其版本範圍。
-    2.  **版本查詢機制 (Version Query)：** 該模組必須能夠透過 API 或官方文件，獲取目前穩定版瀏覽器的最新建議驅動程式版本號。
-    3.  **本地比對與檢查 (Local Check)：** 比較「所需版本」與「本地已存在版本」。若不匹配或不存在，則觸發下載流程。
-
-#### Step 2: 實作自動下載與路徑管理
-
-*   **功能描述：** 當檢測到版本落後時，執行安全、可靠的下載操作並將驅動程式放置於專案可讀寫的緩存目錄（Cache Directory）。
-*   **技術考量 (Technical Consideration)：**
-    1.  **下載來源：** 應使用官方推薦或業界標準的 WebDriver 管理庫（例如 `webdriver-manager` 或類似機制）來處理下載，避免手動爬取驅動程式連結帶來的風險。
-    2.  **路徑管理：** 下載後的驅動程式必須被放置在專案根目錄下的特定資料夾 (e.g., `./cache/drivers/`)，並確保所有爬蟲初始化時都指向此絕對路徑。
-
-#### Step 3: 重構爬蟲啟動流程 (Integration Point)
-
-*   **修改點：** 所有執行 `webdriver.Chrome()` 或 `webdriver.Firefox()` 的地方，必須將其初始化邏輯包裹在一個新的「環境準備函數」中。
-*   **流程順序 (Execution Flow)：**
-    1.  `[Start]` $\rightarrow$ 呼叫 `WebDriverManager.initialize_driver(browser_type)`。
-    2.  `WebDriverManager` 執行版本檢測、下載（若需要）。
-    3.  `WebDriverManager` 返回一個已驗證的 WebDriver Session Object。
-    4.  爬蟲核心邏輯開始運行，使用該穩定的 Session Object。
+3.  **產業特性忽略 (Industry Specificity):**
+    *   **問題點:** 不同產業的資產結構差異極大。例如，科技業的無形資產（Goodwill, IP）可能在帳面價值中被低估或無法反映其真實市場價值。單純使用 PB 容易產生誤導性結果。
+    *   **修正方向:** 引入行業特定的乘數調整因子 (Industry Multiplier)。
 
 ---
 
-### ✅ 專案歷史踩坑防禦要點提醒 (Mandatory Safety Checks)
+### 🛠️ II. 邏輯與代碼層面的修復策略 (Implementation Fix)
 
-在實作此自動化依賴管理模組時，請務必注意以下開發規範：
+我們不應直接修改原始的 PE/PB 計算公式，而是要在計算流程中增加一個 **`Valuation Adjustment Service`** 層。
 
-1.  **【Unicode 防禦】:** 若 `WebDriverManager` 需要讀取本地的配置或環境變數檔案（如 `.env`），所有 I/O 操作必須明確指定編碼處理，例如使用 `open(file_path, encoding='utf-8', errors='ignore')`。
-2.  **【零破壞原則】:** 此依賴管理模組應作為一個獨立的服務層 (Service Layer) 運行，不應修改或干擾現有的 K 線圖繪製邏輯 (`ApexCharts`) 或任何計算金融指標的核心業務函數。它只負責提供穩定的執行環境。
-3.  **【JSON 序列化保護】:** 若在爬蟲過程中需要將抓取的結構化數據（如日期、浮點數）回傳給後端 API，請務必使用標準化的資料轉換器 (Data Transformer)，確保所有 `datetime` 和 `decimal.Decimal` 類型都被格式化為 ISO 8601 字串或 Python 標準的 `float`/`str`。
+#### A. 核心修正步驟：調整後指標計算
+
+| 指標 | 原本邏輯 (Potential Flaw) | 修復後的邏輯 (Recommended Fix) |
+| :--- | :--- | :--- |
+| **Adjusted E** (用於 PE) | `Net Income` | `Net Income` $\pm$ 非經常性項目調整值。必須在 Service 層計算，並記錄此調整過程（Thought Signature）。 |
+| **Adjusted B** (用於 PB) | `Total Equity` | `Total Equity` $\times$ 產業風險因子 $(1 \pm R_{industry})$。適用於資產重估的行業。 |
+| **Final Ratio** | $P / E$ 或 $P / B$ | 使用調整後的指標：$\text{PE}_{\text{adj}} = P / \text{Adjusted E}$； $\text{PB}_{\text{adj}} = P / \text{Adjusted B}$。 |
+
+#### B. 程式碼結構建議 (Pseudocode Focus)
+
+在 `FairValueCalculatorService` 中，應新增一個方法：
+
+```python
+def calculate_adjusted_metrics(data: dict, industry_profile: str) -> dict:
+    # Step 1: Data Cleansing & Adjustment
+    adj_net_income = data['Net Income'] - data.get('NonRecurringItems', 0)
+    
+    # Step 2: Apply Industry Multiplier (Example logic)
+    if industry_profile == 'Tech':
+        industry_multiplier = 1.15  # Tech sector often undervalued by Book Value
+    elif industry_profile == 'Finance':
+        industry_multiplier = 0.95 # Finance might have specific regulatory write-downs
+    else:
+        industry_multiplier = 1.0
+
+    adj_book_value = data['Total Equity'] * industry_multiplier
+    
+    # Step 3: Final Calculation
+    pe_adjusted = data['Market Price'] / adj_net_income if adj_net_income != 0 else float('inf')
+    pb_adjusted = data['Market Price'] / adj_book_value if adj_book_value != 0 else float('inf')
+
+    return {
+        "Adjusted E": adj_net_income,
+        "Adjusted B": adj_book_value,
+        "PE_Adj": pe_adjusted,
+        "PB_Adj": pb_adjusted
+    }
+```
+
+---
+
+### 🛡️ III. 專案歷史踩坑防禦要點執行 (Mandatory Defense Points)
+
+在實作上述邏輯修正時，必須嚴格遵守以下四個核心原則，以確保系統的穩定性與可維護性：
+
+#### 1. 【Unicode 防禦】(File I/O Safety)
+當從本地讀取包含財務報表或產業數據的 CSV/Excel 文件時，無論是 `read_csv()` 或其他文件操作，必須明確指定編碼。
+*   **實施要求:** 所有涉及檔案輸入的操作，請使用 `encoding='utf-8'` 搭配 `errors='ignore'` (若無法確定編碼) 或 `errors='replace'` (建議用於日誌記錄)。
+
+#### 2. 【JSON 序列化保護】(Data Transfer Safety)
+當從 MySQL 資料庫查詢原始數據（如包含日期或貨幣數值）後，傳遞給 API 層進行計算時，必須在資料轉換層執行強制類型轉換。
+*   **實施要求:** 任何 `datetime.date`、`datetime.datetime` 或 `decimal.Decimal` 類型的物件，在序列化為 JSON 字典前，必須手動格式化為標準的 **ISO 8601 string** (日期時間) 與 **float/string** (貨幣數值)。
+
+#### 3. 【Gemini API 400 兼容】(Function Calling Integrity)
+如果此計算流程需要呼叫外部 AI 模型（如 Gemini）來進行「非結構化文本分析」（例如：閱讀年報的管理層討論，判斷是否存在重大風險），並將其作為調整因子輸入模型。
+*   **實施要求:** 必須確保在接收到模型的 `functionResponse` 後，第二次呼叫 API 時，將第一次獲取的完整 `parts`（包含所有推理思維 `thoughtSignature`）原封不動地回傳給 Google API，以避免 HTTP 400 錯誤。
+
+#### 4. 【零破壞原則】(UI/UX Isolation)
+由於我們增加了複雜的調整邏輯和新的指標 (`PE_Adj`, `PB_Adj`)，這些新增的功能必須隔離開發。
+*   **實施要求:** 新增的「調整因子計算」介面或按鈕（例如：點擊一個 "Calculate Adjusted Value" 按鈕）必須作為獨立的 App Component 實現。它只能在不遮擋現有 ApexCharts K 線圖和基礎 Blended Valuation 計算結果的前提下，提供額外的分析視角。
+
+---
+**總結:** 修復 PE/PB Mismatch 的核心是將計算邏輯從單純的「公式應用」提升到「數據調整與模型判斷」層面，並在整個資料流（I/O $\rightarrow$ DB $\rightarrow$ Service $\rightarrow$ API）中嵌入上述防禦機制。

@@ -406,10 +406,11 @@ class IntegratedStockPredModel:
         if not gemini_api_key:
             from dotenv import load_dotenv
             dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
-            load_dotenv(dotenv_path)
+            load_dotenv(dotenv_path, override=True)
             gemini_api_key = os.getenv("GEMINI_API_KEY")
             
         env = os.environ.copy()
+        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
         if gemini_api_key:
             env["GEMINI_API_KEY"] = gemini_api_key
             
@@ -417,14 +418,23 @@ class IntegratedStockPredModel:
         if custom_model:
             models_to_try = [custom_model]
         else:
-            models_to_try = ["gemini-3.1-pro-preview", "gemma-4-31b-it"]
+            models_to_try = ["gemini-3.1-pro-preview", "gemini-2.5-flash", "gemma-4-31b-it"]
             
         for model in models_to_try:
             try:
-                args = [gemini_path, "-m", model, "--skip-trust", "-p", full_prompt]
-                result = subprocess.run(args, capture_output=True, env=env, shell=False)
+                args = [gemini_path, "-m", model, "--skip-trust"]
+                result = subprocess.run(
+                    args, 
+                    input=full_prompt, 
+                    text=True, 
+                    encoding="utf-8", 
+                    capture_output=True, 
+                    env=env, 
+                    shell=False, 
+                    timeout=120
+                )
                 if result.returncode == 0:
-                    res_text = result.stdout.decode("utf-8", errors="replace").strip()
+                    res_text = (result.stdout or "").strip()
                     if res_text:
                         if "{" in res_text and "response" in res_text:
                             try:
@@ -434,6 +444,8 @@ class IntegratedStockPredModel:
                             except:
                                 pass
                         return res_text[:120]
+            except subprocess.TimeoutExpired:
+                logger.warning(f"[MacroAgent] 呼叫 {model} 總經分析超時 (120s)")
             except Exception as e:
                 logger.error(f"[MacroAgent] 呼叫 {model} 總經分析異常: {e}")
                 
@@ -589,10 +601,12 @@ class IntegratedStockPredModel:
         if not gemini_api_key:
             from dotenv import load_dotenv
             dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
-            load_dotenv(dotenv_path)
+            load_dotenv(dotenv_path, override=True)
             gemini_api_key = os.getenv("GEMINI_API_KEY")
+            logger.debug(f"[GeminiAdvisor] 從 {dotenv_path} 載入 GEMINI_API_KEY: {'成功' if gemini_api_key else '失敗'}")
             
         env = os.environ.copy()
+        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
         if gemini_api_key:
             env["GEMINI_API_KEY"] = gemini_api_key
             
@@ -601,29 +615,33 @@ class IntegratedStockPredModel:
         if custom_model:
             models_to_try = [custom_model]
         else:
-            models_to_try = ["gemini-3.1-pro-preview", "gemma-4-31b-it"]
+            models_to_try = ["gemini-3.1-pro-preview", "gemini-2.5-flash", "gemma-4-31b-it"]
 
         last_error = "所有模型呼叫皆失敗"
         
         for model in models_to_try:
             try:
                 logger.info(f"[GeminiAdvisor] 正在呼叫雲端 Gemini.CLI {model} 分析股票 {self.stock_number}...")
-                args = [gemini_path, "-m", model, "--skip-trust", "-o", "json", "-p", full_prompt]
+                args = [gemini_path, "-m", model, "--skip-trust", "-o", "json"]
                 
                 result = subprocess.run(
                     args,
+                    input=full_prompt,
+                    text=True,
+                    encoding="utf-8",
                     capture_output=True,
                     env=env,
-                    shell=False
+                    shell=False,
+                    timeout=120
                 )
                 
                 if result.returncode != 0:
-                    stderr_msg = result.stderr.decode("utf-8", errors="replace")
+                    stderr_msg = result.stderr or ""
                     logger.warning(f"[GeminiAdvisor] Gemini CLI {model} 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
                     last_error = f"{model} 執行失敗: {result.returncode}"
                     continue
                     
-                stdout_decoded = result.stdout.decode("utf-8", errors="replace")
+                stdout_decoded = (result.stdout or "").strip()
                 
                 if "{" in stdout_decoded:
                     json_start = stdout_decoded.index("{")
@@ -649,7 +667,14 @@ class IntegratedStockPredModel:
                                 parsed_response['recommendation'] = '觀望'
                             
                             # 填入具可讀性的模型名稱
-                            friendly_model_name = "Gemini 3.1 Pro" if "gemini-3.1" in model else ("Gemma-4-31B" if "gemma-4" in model else model)
+                            if "gemini-3.1" in model:
+                                friendly_model_name = "Gemini 3.1 Pro"
+                            elif "gemini-2.5" in model:
+                                friendly_model_name = "Gemini 2.5 Flash"
+                            elif "gemma-4" in model:
+                                friendly_model_name = "Gemma-4-31B"
+                            else:
+                                friendly_model_name = model
                             parsed_response['model_name'] = friendly_model_name
                             return parsed_response
                     except Exception as je:
@@ -659,6 +684,9 @@ class IntegratedStockPredModel:
                     logger.warning(f"[GeminiAdvisor] 模型 {model} 輸出不符合預期 JSON 格式。原始輸出: {stdout_decoded}")
                     last_error = f"{model} 輸出格式錯誤"
                     
+            except subprocess.TimeoutExpired:
+                logger.warning(f"[GeminiAdvisor] 呼叫 Gemini CLI ({model}) 超時 (120s)")
+                last_error = f"{model} 執行超時 (120s)"
             except Exception as e:
                 logger.error(f"[GeminiAdvisor] 呼叫 Gemini CLI ({model}) 異常: {e}")
                 last_error = f"{model} 系統異常: {str(e)}"

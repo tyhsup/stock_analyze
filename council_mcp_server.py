@@ -229,11 +229,11 @@ def check_workflow_boundary() -> str:
     """Commander 變革邊界檢測"""
     cwd = os.getcwd()
     return f"""### Commander 邊界分析
-- 負責模型：`Gemini 3.6 Flash` (Antigravity Cloud)
+- 負責模型：`Gemini 3.7 Flash` (Antigravity Cloud)
 - 當前工作區：{cwd}
 - 系統安全邊界：核心業務邏輯與既有流程保護中，無非預期檔案異動。
 - 風險等級：低
-- 簽章：[Commander_Gemini-3.6-Flash_Active]"""
+- 簽章：[Commander_Gemini-3.7-Flash_Active]"""
 
 @mcp.tool()
 def council_orchestrator(task_description: str) -> str:
@@ -250,11 +250,11 @@ def council_orchestrator(task_description: str) -> str:
 - 簽章：[Generator_Gemma4-e4b_Active]"""
 
     final_decision = f"""### Commander 最終決議
-- 負責模型：`Gemini 3.6 Flash` (Antigravity Cloud)
+- 負責模型：`Gemini 3.7 Flash` (Antigravity Cloud)
 - 執行方案：核准 Planner 提出的技術架構與 Generator 之防禦性代碼設計。
 - Checkpoint 清單：[CP-1 規格確認, CP-2 代碼生成完成, CP-3 Quality Review]
 - 回滾條件：若整合測試或邊界檢測失敗，執行 git checkout 回滾。
-- 簽章：[Commander_Gemini-3.6-Flash_Approved]"""
+- 簽章：[Commander_Gemini-3.7-Flash_Approved]"""
 
     council_minutes = f"""## 四 Agent 開會紀錄
 

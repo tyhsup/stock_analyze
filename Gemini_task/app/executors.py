@@ -283,7 +283,7 @@ def execute_sync_notebooklm(remarks: str = None):
     logger.info(f"成功取得雲端筆記本清單，共 {len(notebooks)} 個筆記本")
     
     # 本地狀態檔案，紀錄上次同步的修改時間與已同步的 sources 對照
-    state_file = r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm\sync_state.json"
+    state_file = r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge\references\notebooklm\sync_state.json"
     os.makedirs(os.path.dirname(state_file), exist_ok=True)
     
     state = {}
@@ -365,7 +365,7 @@ def execute_sync_notebooklm(remarks: str = None):
                 clean_title = re.sub(r'[\\/*?:"<>|#]', "", src_title).strip()
                 clean_title = clean_title.replace(" ", "_")
                 dest_filename = f"{clean_title}.md"
-                dest_path = os.path.join(r"C:\Users\許廷宇\.gemini\config\knowledge\references\notebooklm", dest_filename)
+                dest_path = os.path.join(r"E:\Obsidian_knowledge\antigravity_knowledge\knowledge\references\notebooklm", dest_filename)
                 
                 # 方案 B：如果該 source_id 已經存在於同步狀態中，且本地實體檔案確實存在，則直接跳過下載
                 if src_id in synced_sources and os.path.exists(dest_path):
