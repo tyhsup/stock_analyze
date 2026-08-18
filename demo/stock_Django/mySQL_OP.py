@@ -590,18 +590,32 @@ class OP_Fun:
             df_cost['symbol_clean'] = df_cost['number'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
             df_cost = df_cost.drop(columns=['number'])
             
-            # 5. 讀取融資融券資料 (已限制日期範圍)
+            # 5. 讀取融資融券資料 (包含餘額與每日買賣欄位)
             df_margin = pd.read_sql(
-                text("SELECT date, number, margin_balance, short_balance FROM stock_margin_balance WHERE date IN :dates"),
+                text("SELECT date, number, margin_purchase, margin_sales, margin_balance, short_sale, short_covering, short_balance FROM stock_margin_balance WHERE date IN :dates"),
                 con=self.engine,
                 params={'dates': tuple(recent_dates_str)}
             )
             df_margin['date_str'] = df_margin['date'].astype(str)
             
+            # 建立每檔個股最新一筆有效融資融券資料庫快照 (作為跨日期或單日降級映射)
+            df_margin_latest_all = pd.read_sql(
+                text("""
+                    SELECT m.number, m.margin_purchase, m.margin_sales, m.margin_balance, 
+                           m.short_sale, m.short_covering, m.short_balance
+                    FROM stock_margin_balance m
+                    INNER JOIN (
+                        SELECT number, MAX(date) as max_date FROM stock_margin_balance GROUP BY number
+                    ) latest ON m.number = latest.number AND m.date = latest.max_date
+                """),
+                con=self.engine
+            )
+            latest_margin_map = df_margin_latest_all.set_index('number')
+            
             # 6. 在 Pandas 中進行合併 (避免資料庫無索引導致 full table JOIN 效能瓶頸)
             df_merged = pd.merge(df_investor, df_table_tw, left_on='number', right_on='symbol', how='inner')
             df_merged = pd.merge(df_merged, df_cost, left_on=['number', 'date_str'], right_on=['symbol_clean', 'date_str'], how='inner')
-            df_merged = pd.merge(df_merged, df_margin, left_on=['number', 'date_str'], right_on=['number', 'date_str'], how='left')
+            df_merged = pd.merge(df_merged, df_margin.drop(columns=['date']), left_on=['number', 'date_str'], right_on=['number', 'date_str'], how='left')
             
             if df_merged.empty:
                 return pd.DataFrame()
@@ -640,14 +654,38 @@ class OP_Fun:
             consec_buys = df_sorted.groupby('number')['三大法人買賣超股數'].apply(calc_consecutive_buys)
             consec_sells = df_sorted.groupby('number')['三大法人買賣超股數'].apply(calc_consecutive_sells)
             
-            # 計算資券變動 (最新 - 最舊)
-            margin_latest = df_sorted.groupby('number')['margin_balance'].last()
-            margin_earliest = df_sorted.groupby('number')['margin_balance'].first()
-            margin_change = margin_latest - margin_earliest
-            
-            short_latest = df_sorted.groupby('number')['short_balance'].last()
-            short_earliest = df_sorted.groupby('number')['short_balance'].first()
-            short_change = short_latest - short_earliest
+            # 計算資券變動 (有效多日首尾差額 + 當日融資淨買賣降級演算法)
+            def get_margin_metrics(num, group):
+                valid_m = group[group['margin_balance'] > 0]
+                if len(valid_m) >= 2:
+                    m_change = float(valid_m['margin_balance'].iloc[-1] - valid_m['margin_balance'].iloc[0])
+                elif num in latest_margin_map.index:
+                    row = latest_margin_map.loc[num]
+                    m_pur = float(row.get('margin_purchase', 0)) if pd.notna(row.get('margin_purchase')) else 0.0
+                    m_sal = float(row.get('margin_sales', 0)) if pd.notna(row.get('margin_sales')) else 0.0
+                    m_change = float(m_pur - m_sal)
+                else:
+                    m_change = 0.0
+
+                valid_s = group[group['short_balance'] > 0]
+                if len(valid_s) >= 2:
+                    s_change = float(valid_s['short_balance'].iloc[-1] - valid_s['short_balance'].iloc[0])
+                elif num in latest_margin_map.index:
+                    row = latest_margin_map.loc[num]
+                    s_sale = float(row.get('short_sale', 0)) if pd.notna(row.get('short_sale')) else 0.0
+                    s_cov = float(row.get('short_covering', 0)) if pd.notna(row.get('short_covering')) else 0.0
+                    s_change = float(s_sale - s_cov)
+                else:
+                    s_change = 0.0
+
+                return m_change, s_change
+
+            margin_changes = {}
+            short_changes = {}
+            for num, g in df_sorted.groupby('number'):
+                mc, sc = get_margin_metrics(num, g)
+                margin_changes[num] = mc
+                short_changes[num] = sc
             
             # 計算期間法人買賣超總金額 (三大法人買賣超股數 * Close / 1000)
             df_sorted['net_flow'] = df_sorted['三大法人買賣超股數'] * df_sorted['Close'] / 1000
@@ -659,20 +697,19 @@ class OP_Fun:
             total_volume = df_sorted.groupby('number')['Volume'].sum()
             
             # 取最後一天的股價與基本資料
-            latest_rows = df_sorted.groupby('number').last().copy()
+            latest_rows = df_sorted.groupby('number').last().copy().reset_index()
             
-            # 替換為累計與衍生欄位
-            latest_rows['consec_buys'] = consec_buys
-            latest_rows['consec_sells'] = consec_sells
-            latest_rows['margin_change'] = margin_change
-            latest_rows['short_change'] = short_change
-            latest_rows['accum_net_flow'] = net_flow_sum
-            latest_rows['accum_volume_value'] = volume_value_sum
-            latest_rows['total_net_buy'] = total_net_buy
-            latest_rows['total_volume'] = total_volume
+            # 替換為累計與衍生欄位 (使用 .map 確保索引安全對齊，防範 NaN)
+            latest_rows['consec_buys'] = latest_rows['number'].map(consec_buys).fillna(0).astype(int)
+            latest_rows['consec_sells'] = latest_rows['number'].map(consec_sells).fillna(0).astype(int)
+            latest_rows['margin_change'] = latest_rows['number'].map(margin_changes).fillna(0.0)
+            latest_rows['short_change'] = latest_rows['number'].map(short_changes).fillna(0.0)
+            latest_rows['accum_net_flow'] = latest_rows['number'].map(net_flow_sum).fillna(0.0)
+            latest_rows['accum_volume_value'] = latest_rows['number'].map(volume_value_sum).fillna(0.0)
+            latest_rows['total_net_buy'] = latest_rows['number'].map(total_net_buy).fillna(0.0)
+            latest_rows['total_volume'] = latest_rows['number'].map(total_volume).fillna(0.0)
             
-            # 重設索引以方便後續處理
-            return latest_rows.reset_index()
+            return latest_rows
             
         except Exception as e:
             logger.error(f"get_industry_investor_summary 執行失敗: {e}")

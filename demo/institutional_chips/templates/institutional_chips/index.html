@@ -2179,7 +2179,7 @@
                                 <td><span class="fw-bold text-primary">${item.symbol}</span> <span class="small text-muted">${item.name}</span></td>
                                 <td class="fw-bold">$${item.close}</td>
                                 <td><span class="badge bg-success px-2 py-1">${item.consec_buys} 天連買</span></td>
-                                <td><span class="text-success fw-bold">${item.margin_change} 張</span></td>
+                                <td><span class="${item.margin_change <= 0 ? 'text-success fw-bold' : 'text-secondary'}">${item.margin_change > 0 ? '+' : ''}${item.margin_change} 張</span></td>
                                 <td class="text-end pe-3 fw-bold text-success">+$${item.net_flow_m}M</td>
                             </tr>
                         `).join('') || '<tr><td colspan="5" class="text-center py-3 text-muted">無強勢手資料</td></tr>';
