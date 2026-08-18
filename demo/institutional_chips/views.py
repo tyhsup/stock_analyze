@@ -378,19 +378,34 @@ def api_chip_deconstruction(request):
         # 強勢手 (Strong Hands): 法人連買 >= 2天, 融資減少或持平, 淨買超金額 > 0
         df_strong = df[(df['consec_buys'] >= 2) & (df['margin_change'] <= 0) & (df['accum_net_flow'] > 0)].sort_values('accum_net_flow', ascending=False).head(10)
         
-        # 弱勢手/誘多警告 (Weak Hands Warning): 三大法人淨賣超 < 0, 融資暴增 > 0
-        df_weak = df[(df['accum_net_flow'] < 0) & (df['margin_change'] > 0)].sort_values('margin_change', ascending=False).head(10)
+        # 弱勢手/誘多警告 (Weak Hands Warning): 三大法人連賣 >= 2 天 且 累計淨賣超 < 0
+        # 排序策略：若有融資暴增 (margin_change > 0) 則優先加權，並依法人累計淨賣出金額由大到小排序
+        df_weak_candidates = df[(df['consec_sells'] >= 2) & (df['accum_net_flow'] < 0)].copy()
+        if not df_weak_candidates.empty:
+            # 加權分數：以累計淨賣出金額 (負值越大代表賣超越重) 為基礎，若融資暴增則再加權
+            df_weak_candidates['risk_weight'] = df_weak_candidates['accum_net_flow'] - (df_weak_candidates['margin_change'].clip(lower=0) * 1000.0)
+            df_weak = df_weak_candidates.sort_values('risk_weight', ascending=True).head(10)
+        else:
+            # 備援：若無連賣 >= 2 天，取全市場法人淨賣超最大的前 10 檔
+            df_weak = df[df['accum_net_flow'] < 0].sort_values('accum_net_flow', ascending=True).head(10)
 
         def format_list(dataframe):
             res = []
             for _, row in dataframe.iterrows():
+                close_val = row.get('Close', 0)
+                consec_buys_val = row.get('consec_buys', 0)
+                consec_sells_val = row.get('consec_sells', 0)
+                margin_change_val = row.get('margin_change', 0)
+                net_flow_val = row.get('accum_net_flow', 0)
+                
                 res.append({
                     'symbol': str(row.get('number', '')),
                     'name': str(row.get('證券名稱', row.get('number', ''))),
-                    'close': float(row.get('Close', 0)),
-                    'consec_buys': int(row.get('consec_buys', 0)),
-                    'margin_change': int(row.get('margin_change', 0)),
-                    'net_flow_m': round(float(row.get('accum_net_flow', 0)) / 1000.0, 2), # 單位：百萬
+                    'close': float(close_val) if pd.notna(close_val) else 0.0,
+                    'consec_buys': int(consec_buys_val) if pd.notna(consec_buys_val) else 0,
+                    'consec_sells': int(consec_sells_val) if pd.notna(consec_sells_val) else 0,
+                    'margin_change': int(margin_change_val) if pd.notna(margin_change_val) else 0,
+                    'net_flow_m': round(float(net_flow_val) / 1000.0, 2) if pd.notna(net_flow_val) else 0.0, # 單位：百萬
                     'industry': str(row.get('industry', '其他'))
                 })
             return res

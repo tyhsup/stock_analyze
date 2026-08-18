@@ -203,7 +203,7 @@
                                     <tr>
                                         <th>股票代碼/名稱</th>
                                         <th>股價</th>
-                                        <th>連買天數</th>
+                                        <th>連賣天數</th>
                                         <th>融資暴增</th>
                                         <th>淨賣出(百萬)</th>
                                     </tr>
@@ -2190,8 +2190,8 @@
                             <tr>
                                 <td><span class="fw-bold text-danger">${item.symbol}</span> <span class="small text-muted">${item.name}</span></td>
                                 <td class="fw-bold">$${item.close}</td>
-                                <td><span class="badge bg-secondary px-2 py-1">${item.consec_buys} 天</span></td>
-                                <td><span class="text-danger fw-bold">+${item.margin_change} 張</span></td>
+                                <td><span class="badge bg-danger px-2 py-1">${item.consec_sells || 0} 天連賣</span></td>
+                                <td><span class="${item.margin_change > 0 ? 'text-danger fw-bold' : 'text-muted'}">${item.margin_change > 0 ? '+' : ''}${item.margin_change} 張</span></td>
                                 <td class="text-end pe-3 fw-bold text-danger">-$${Math.abs(item.net_flow_m)}M</td>
                             </tr>
                         `).join('') || '<tr><td colspan="5" class="text-center py-3 text-muted">無高風險警示資料</td></tr>';

@@ -618,7 +618,7 @@ class OP_Fun:
             # 8. 排序並計算時間序列指標
             df_sorted = df_merged.sort_values(by=['number', 'date_str'], ascending=True)
             
-            # 計算連續買超天數 (三大法人買賣超股數 > 0)
+            # 計算連續買超與連續賣超天數 (三大法人買賣超股數 > 0 或 < 0)
             def calc_consecutive_buys(series):
                 count = 0
                 for val in reversed(series.tolist()):
@@ -627,8 +627,18 @@ class OP_Fun:
                     else:
                         break
                 return count
+
+            def calc_consecutive_sells(series):
+                count = 0
+                for val in reversed(series.tolist()):
+                    if val < 0:
+                        count += 1
+                    else:
+                        break
+                return count
                 
             consec_buys = df_sorted.groupby('number')['三大法人買賣超股數'].apply(calc_consecutive_buys)
+            consec_sells = df_sorted.groupby('number')['三大法人買賣超股數'].apply(calc_consecutive_sells)
             
             # 計算資券變動 (最新 - 最舊)
             margin_latest = df_sorted.groupby('number')['margin_balance'].last()
@@ -653,6 +663,7 @@ class OP_Fun:
             
             # 替換為累計與衍生欄位
             latest_rows['consec_buys'] = consec_buys
+            latest_rows['consec_sells'] = consec_sells
             latest_rows['margin_change'] = margin_change
             latest_rows['short_change'] = short_change
             latest_rows['accum_net_flow'] = net_flow_sum
