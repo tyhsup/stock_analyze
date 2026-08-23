@@ -2098,7 +2098,13 @@
                             roeStr = (item.roe * 100).toFixed(2) + '%';
                             gmStr = (item.gross_margin * 100).toFixed(2) + '%';
                             debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
-                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                            
+                            // 業界標準表示：成長率達到或超過 300% 上限時標示為 > 300%
+                            if (item.net_income_growth >= 3.0) {
+                                growthStr = '> 300%';
+                            } else {
+                                growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                            }
                         } 
                         else if (master === 'lynch') {
                             roeClass = item.roe >= 0.10 ? 'text-success fw-bold' : (item.roe >= 0.05 ? 'text-warning fw-bold' : 'text-danger fw-bold');
@@ -2110,7 +2116,7 @@
                             roeStr = (item.roe * 100).toFixed(2) + '%';
                             gmStr = (item.gross_margin * 100).toFixed(2) + '%';
                             debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
-                            growthStr = peg.toFixed(2);
+                            growthStr = peg >= 99.0 ? 'N/A' : (peg >= 5.0 ? '> 5.0' : peg.toFixed(2));
                         } 
                         else if (master === 'oneil') {
                             roeClass = item.roe > 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
@@ -2119,9 +2125,11 @@
                             growthClass = item.net_income_growth >= 0.15 ? 'text-success fw-bold' : (item.net_income_growth > 0 ? 'text-warning fw-bold' : 'text-danger fw-bold');
 
                             roeStr = (item.roe * 100).toFixed(2) + '%';
-                            gmStr = (item.gross_margin * 100).toFixed(2) + '%';
+                            // 歐尼爾模式：當季淨利成長
+                            gmStr = item.gross_margin >= 3.0 ? '> 300%' : (item.gross_margin * 100).toFixed(2) + '%';
                             debtStr = (item.debt_ratio * 100).toFixed(2) + '%';
-                            growthStr = (item.net_income_growth * 100).toFixed(2) + '%';
+                            // 歐尼爾模式：年度淨利成長
+                            growthStr = item.net_income_growth >= 3.0 ? '> 300%' : (item.net_income_growth * 100).toFixed(2) + '%';
                         }
 
                         const row = `

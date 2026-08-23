@@ -1,10 +1,13 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import pandas as pd
 import logging
 import os
 import sys
 import time
+import random
 import re
 from datetime import datetime
 from sqlalchemy import text
@@ -42,6 +45,17 @@ class USStockInvestorManager:
             'Accept-Language': 'en-US,en;q=0.5',
             'Connection': 'keep-alive',
         }
+        # 設定帶有 5xx 重試策略與指數退避之 Session
+        self.session = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            raise_on_status=False
+        )
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def get_shares_outstanding(self, ticker: str) -> int:
         """
@@ -213,20 +227,29 @@ class USStockInvestorManager:
 
     def fetch_institutional_holders(self, ticker: str) -> pd.DataFrame:
         """
-        Fetch institutional holders from Stockzoa.com using requests and BeautifulSoup.
-        Stockzoa is confirmed to be scrapable with simple requests.
+        Fetch institutional holders from Stockzoa.com using requests.Session with Retry and BeautifulSoup.
+        Stockzoa is confirmed to be scrapable with requests.
         """
         ticker = ticker.upper()
         # Stockzoa uses lowercase ticker in URL
         url = f"https://stockzoa.com/ticker/{ticker.lower()}/"
         
+        # 隨機延遲 2-5 秒防爬蟲限制
+        time.sleep(random.uniform(2.0, 5.0))
+        
         try:
             logger.info(f"Fetching Stockzoa data for {ticker}...")
-            response = requests.get(url, headers=self.headers, timeout=15)
+            response = self.session.get(url, headers=self.headers, timeout=(5, 15))
             
-            if response.status_code != 200:
-                logger.error(f"{ticker}: HTTP {response.status_code} error.")
+            if response.status_code == 404:
+                logger.warning(f"{ticker}: HTTP 404 Not Found (該標的無機構持股資料)")
                 return pd.DataFrame()
+            
+            # 設定正確編碼防止 Unicode 解碼問題
+            response.encoding = response.apparent_encoding or 'utf-8'
+            
+            # 若為 5xx 或其他 HTTP 異常狀態碼，拋出 HTTPError 以便重試或觸發自癒
+            response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
             # Look for the table. Stockzoa's main table is usually the first one or has a header 'Top investors'
@@ -265,30 +288,20 @@ class USStockInvestorManager:
             for row in rows[1:]: # Skip header
                 cols = row.find_all('td')
                 if len(cols) >= 5:
-                    # Stockzoa Columns:
-                    # 0: Fund or Company Name
-                    # 1: Shares Held
-                    # 2: Valued At
-                    # 3: Change in Shares
-                    # 4: As Of
-                    
-                    owner = cols[0].get_text(strip=True)
-                    shares_str = cols[1].get_text(strip=True)
-                    value_str = cols[2].get_text(strip=True)
-                    change_pct_str = cols[3].get_text(strip=True)
-                    date_str = cols[4].get_text(strip=True)
-                    
-                    # Basic date parsing: "Dec 2025" -> "2025-12-31"
-                    # We'll handle this in the update method.
+                    owner = cols[0].get_text(strip=True).replace('\xa0', ' ')
+                    shares_str = cols[1].get_text(strip=True).replace('\xa0', ' ')
+                    value_str = cols[2].get_text(strip=True).replace('\xa0', ' ')
+                    change_pct_str = cols[3].get_text(strip=True).replace('\xa0', ' ')
+                    date_str = cols[4].get_text(strip=True).replace('\xa0', ' ')
                     
                     extracted_data.append({
                         'holder_name': owner,
                         'date_str': date_str,
                         'shares': int(parse_val(shares_str)),
                         'value_usd': int(parse_val(value_str)),
-                        'change_shares': 0, # Stockzoa only shows pct change in this table
+                        'change_shares': 0,
                         'change_pct': parse_val(change_pct_str) / 100.0,
-                        'pct_out': 0  # Will be computed in update_investor_db
+                        'pct_out': 0
                     })
             
             if not extracted_data:
@@ -296,12 +309,20 @@ class USStockInvestorManager:
                 return pd.DataFrame()
                 
             df = pd.DataFrame(extracted_data)
+            # 防禦 NaN 序列化問題
+            df = df.where(pd.notnull(df), None)
             logger.info(f"{ticker}: Successfully extracted {len(df)} holders.")
             return df
 
+        except requests.exceptions.HTTPError as http_err:
+            logger.error(f"{ticker}: HTTP 錯誤 (已重試 3 次失敗): {http_err}")
+            raise RuntimeError(f"{ticker} HTTP 錯誤，觸發 Scheduler 自癒重試: {http_err}") from http_err
+        except requests.exceptions.RequestException as req_err:
+            logger.error(f"{ticker}: 網路連線異常 (已重試 3 次失敗): {req_err}")
+            raise RuntimeError(f"{ticker} 網路連線異常: {req_err}") from req_err
         except Exception as e:
             logger.error(f"{ticker}: Scraper error: {e}")
-            return pd.DataFrame()
+            raise
 
     def get_latest_holders(self, ticker: str, top_n: int = 15) -> pd.DataFrame:
         """

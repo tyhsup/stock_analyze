@@ -108,7 +108,9 @@ class MasterSelectionService:
                 continue
                 
             # 去年同期 TTM 區間 (往回推第 5 到第 8 季)
-            pre_ttm_periods = unique_periods[max(0, latest_idx - 7): max(0, latest_idx - 3)]
+            pre_start_idx = max(0, latest_idx - 7)
+            pre_end_idx = max(0, latest_idx - 3)
+            pre_ttm_periods = unique_periods[pre_start_idx: pre_end_idx] if pre_end_idx > pre_start_idx else []
             
             # 定位去年同期的單季 (用於 CANSLIM 的 C)
             pre_quarter_p = None
@@ -135,7 +137,18 @@ class MasterSelectionService:
             revenue_ttm = get_ttm_sum(group_ttm, 'revenue')
             gross_profit_ttm = get_ttm_sum(group_ttm, 'gross_profit')
             net_income_ttm = get_ttm_sum(group_ttm, 'net_income')
-            net_income_pre_ttm = get_ttm_sum(group_pre_ttm, 'net_income') if not group_pre_ttm.empty else 0.0
+
+            # 前期 TTM 淨利計算（防禦切片不足 4 季之等比年化）
+            num_pre_quarters = len(pre_ttm_periods)
+            if num_pre_quarters == 4:
+                net_income_pre_ttm = get_ttm_sum(group_pre_ttm, 'net_income')
+            elif 2 <= num_pre_quarters < 4:
+                # 介於 2~3 季時，做等比年化縮放 (Annualization Scale)
+                raw_pre_sum = get_ttm_sum(group_pre_ttm, 'net_income')
+                net_income_pre_ttm = raw_pre_sum * (4.0 / num_pre_quarters)
+            else:
+                # 少於 2 季視為無有效前期 TTM 基準
+                net_income_pre_ttm = 0.0
 
             # 單季淨利與去年同期單季淨利
             net_income_latest = get_latest_val(group_latest, 'net_income')
@@ -174,19 +187,51 @@ class MasterSelectionService:
         for _, row in df_base.iterrows():
             symbol = row['symbol']
             
-            roe = row['net_income_ttm'] / row['equity_latest']
-            gross_margin = row['gross_profit_ttm'] / row['revenue_ttm'] if row['gross_profit_ttm'] > 0 else 0.0
+            # 1. 股東權益報酬率 (ROE)
+            roe = row['net_income_ttm'] / row['equity_latest'] if row['equity_latest'] > 0 else 0.0
             
+            # 2. 營業毛利率 (Gross Margin) 與金融股路由
+            if row['gross_profit_ttm'] > 0 and row['revenue_ttm'] > 0:
+                gross_margin = row['gross_profit_ttm'] / row['revenue_ttm']
+            else:
+                # 金融/保險業等無毛利科目防禦：若淨利率或 ROA 表現優異，以淨利率或 ROA 替代
+                if row['revenue_ttm'] > 0 and row['net_income_ttm'] > 0:
+                    net_margin = row['net_income_ttm'] / row['revenue_ttm']
+                    roa = row['net_income_ttm'] / row['assets_latest'] if row['assets_latest'] > 0 else 0.0
+                    if roa >= 0.01:  # 金融機構 ROA >= 1% 屬優質水準
+                        gross_margin = max(net_margin, 0.30)
+                    else:
+                        gross_margin = net_margin
+                else:
+                    gross_margin = 0.0
+            
+            # 3. 負債比率 (Debt Ratio)
             liab = row['liabilities_latest']
             if liab <= 0 and row['assets_latest'] > row['equity_latest']:
                 liab = row['assets_latest'] - row['equity_latest']
-            debt_ratio = liab / row['assets_latest']
+            debt_ratio = liab / row['assets_latest'] if row['assets_latest'] > 0 else 1.0
             
+            # 4. 淨利年成長率 (YoY) 與獲利門檻約束 (Profitability Gate)
             pre_income = row['net_income_pre_ttm']
-            if pre_income != 0:
-                net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
+            curr_income = row['net_income_ttm']
+            
+            if curr_income <= 0:
+                # 巴菲特第一原則：不要賠錢。當前 TTM 實質虧損，成長得分強制歸零
+                if pre_income != 0:
+                    net_income_growth = (curr_income - pre_income) / abs(pre_income)
+                else:
+                    net_income_growth = -0.5
+                score_growth = 0.0
             else:
-                net_income_growth = 0.05
+                # 當前獲利為正
+                if pre_income <= 0:
+                    # 轉虧為盈 (Turnaround)：前期虧損但當期轉正
+                    net_income_growth = 1.0  # 標註為 100% 成長代表轉虧為盈
+                    score_growth = 80.0      # 給予 80 分鼓勵分
+                else:
+                    net_income_growth = (curr_income - pre_income) / pre_income
+                    # 目標年增率 10% 達到滿分 100 分
+                    score_growth = min(net_income_growth / 0.10, 1.0) * 100.0 if net_income_growth > 0 else 0.0
 
             # 限制範圍
             roe = max(min(roe, 1.5), -0.5)
@@ -194,13 +239,12 @@ class MasterSelectionService:
             debt_ratio = max(min(debt_ratio, 1.0), 0.0)
             net_income_growth = max(min(net_income_growth, 3.0), -1.0)
 
-            # 計算巴菲特得分 (總分 100)
-            score_roe = min(roe / 0.15, 1.0) * 100 if roe > 0 else 0
-            score_gm = min(gross_margin / 0.30, 1.0) * 100
-            score_debt = (1.0 - debt_ratio) * 100
+            # 5. 計算巴菲特得分 (總分 100)
+            score_roe = min(roe / 0.15, 1.0) * 100.0 if roe > 0 else 0.0
+            score_gm = min(gross_margin / 0.30, 1.0) * 100.0
+            score_debt = (1.0 - debt_ratio) * 100.0
             if debt_ratio > 0.5:
-                score_debt = max(score_debt - (debt_ratio - 0.5) * 100, 0)
-            score_growth = min(net_income_growth / 0.10, 1.0) * 100 if net_income_growth > 0 else 0
+                score_debt = max(score_debt - (debt_ratio - 0.5) * 100.0, 0.0)
 
             total_score = (score_roe * 0.4) + (score_gm * 0.3) + (score_debt * 0.2) + (score_growth * 0.1)
 
@@ -246,31 +290,35 @@ class MasterSelectionService:
             symbol = row['symbol']
             
             # 計算基本指標
-            roe = row['net_income_ttm'] / row['equity_latest']
-            gross_margin = row['gross_profit_ttm'] / row['revenue_ttm'] if row['gross_profit_ttm'] > 0 else 0.0
+            roe = row['net_income_ttm'] / row['equity_latest'] if row['equity_latest'] > 0 else 0.0
+            gross_margin = row['gross_profit_ttm'] / row['revenue_ttm'] if (row['gross_profit_ttm'] > 0 and row['revenue_ttm'] > 0) else 0.0
             
             liab = row['liabilities_latest']
             if liab <= 0 and row['assets_latest'] > row['equity_latest']:
                 liab = row['assets_latest'] - row['equity_latest']
-            debt_ratio = liab / row['assets_latest']
+            debt_ratio = liab / row['assets_latest'] if row['assets_latest'] > 0 else 1.0
             
             pre_income = row['net_income_pre_ttm']
-            if pre_income != 0:
-                net_income_growth = (row['net_income_ttm'] - pre_income) / abs(pre_income)
-            else:
-                net_income_growth = 0.05
-                
+            curr_income = row['net_income_ttm']
+            
             pe = pe_dict.get(symbol, 15.0)
             if pe <= 0:
                 pe = 15.0
 
-            # 計算 PEG = PE / (淨利成長率 * 100)
-            # 若淨利成長率為負或極低，PEG 設為較大值（代表不理想）
-            growth_pct = net_income_growth * 100
-            if growth_pct > 0:
+            if curr_income <= 0:
+                net_income_growth = -0.5
+                peg = 99.0
+            elif pre_income <= 0:
+                net_income_growth = 0.5
+                growth_pct = net_income_growth * 100.0
                 peg = pe / growth_pct
             else:
-                peg = 99.0 # 無意義或負成長，給予極差值
+                net_income_growth = (curr_income - pre_income) / pre_income
+                growth_pct = net_income_growth * 100.0
+                if growth_pct > 0:
+                    peg = pe / growth_pct
+                else:
+                    peg = 99.0
 
             # 限制範圍
             roe = max(min(roe, 1.5), -0.5)
@@ -511,24 +559,32 @@ class MasterSelectionService:
         return res_df
 
     def _format_output(self, df_top, extra_fields=[]):
-        """將 DataFrame 轉換為前台統一的 dict list"""
+        """將 DataFrame 轉換為前台統一的 dict list，確保嚴格的型別安全與防禦"""
         output = []
         for i, row in enumerate(df_top.to_dict(orient='records'), 1):
+            def safe_num(val, precision=4):
+                if val is None or pd.isna(val) or np.isinf(val):
+                    return 0.0
+                try:
+                    return round(float(val), precision)
+                except (ValueError, TypeError):
+                    return 0.0
+
             item = {
-                'rank': i,
-                'symbol': row['symbol'],
-                'name': row['name'],
-                'close_price': float(row['close_price']),
-                'roe': float(row['roe']),
-                'gross_margin': float(row['gross_margin']),
-                'debt_ratio': float(row['debt_ratio']),
-                'net_income_growth': float(row['net_income_growth']),
-                'score': float(row['score'])
+                'rank': int(i),
+                'symbol': str(row.get('symbol', '')),
+                'name': str(row.get('name', row.get('symbol', ''))),
+                'close_price': safe_num(row.get('close_price', 0.0), 2),
+                'roe': safe_num(row.get('roe', 0.0), 4),
+                'gross_margin': safe_num(row.get('gross_margin', 0.0), 4),
+                'debt_ratio': safe_num(row.get('debt_ratio', 0.0), 4),
+                'net_income_growth': safe_num(row.get('net_income_growth', 0.0), 4),
+                'score': safe_num(row.get('score', 0.0), 2)
             }
             # 加入額外指標 (如彼得林區的 PE/PEG)
             for f in extra_fields:
                 if f in row:
-                    item[f] = float(row[f])
+                    item[f] = safe_num(row.get(f, 0.0), 4)
             output.append(item)
         return output
 

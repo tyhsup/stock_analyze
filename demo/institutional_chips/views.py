@@ -1,4 +1,4 @@
-"""institutional_chips/views.py — Dedicated institutional investor chips dashboard."""
+"""institutional_chips/views.py — Dedicated institutional investor chips dashboard. Updated: 2026-08-19."""
 
 from django.shortcuts import render
 from stock_Django import mySQL_OP, stock_chart
@@ -309,7 +309,17 @@ def api_master_selection(request):
 
         data = []
         for r in records:
-            # 針對彼得林區模式特別傳回 PE 和 PEG 以利前台渲染 (雖然數值也是在原有欄位映射)
+            growth_val = float(r.net_income_growth) if r.net_income_growth else 0.0
+            
+            # 生成標準化的 display 字串 (防範 >= 300% 誤判)
+            growth_display = f"{growth_val * 100:.2f}%"
+            if master == 'buffett' and growth_val >= 3.0:
+                growth_display = "> 300%"
+            elif master == 'lynch':
+                growth_display = "N/A" if growth_val >= 99.0 else ("> 5.0" if growth_val >= 5.0 else f"{growth_val:.2f}")
+            elif master == 'oneil' and growth_val >= 3.0:
+                growth_display = "> 300%"
+
             item_data = {
                 'rank': r.rank,
                 'symbol': r.symbol,
@@ -318,7 +328,8 @@ def api_master_selection(request):
                 'roe': float(r.roe) if r.roe else 0.0,
                 'gross_margin': float(r.gross_margin) if r.gross_margin else 0.0,
                 'debt_ratio': float(r.debt_ratio) if r.debt_ratio else 0.0,
-                'net_income_growth': float(r.net_income_growth) if r.net_income_growth else 0.0,
+                'net_income_growth': growth_val,
+                'net_income_growth_display': growth_display,
                 'score': float(r.score) if r.score else 0.0,
                 'industry': industry_map.get(r.symbol, '其他/未分類')
             }
