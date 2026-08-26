@@ -13,12 +13,11 @@ from app.llm_parser import parse_natural_language_task, get_current_usage_count,
 
 logger = logging.getLogger("scheduler.views")
 
+from django.shortcuts import render
+
 def scheduler_home(request):
-    """回傳排程器首頁 (index.html)"""
-    index_path = os.path.join(settings.BASE_DIR.parent, "Gemini_task", "app", "static", "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(open(index_path, 'rb'))
-    return JsonResponse({"detail": "靜態 Dashboard 檔案尚未建立。請確認 Gemini_task/app/static/index.html 存在。"}, status=404)
+    """回傳排程器首頁 (scheduler.html)"""
+    return render(request, "scheduler.html")
 
 def list_jobs(request):
     """列出所有任務，以 trigger_time 降序排列。支援 status 狀態過濾。"""

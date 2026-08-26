@@ -1,1353 +1,1200 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-    <meta charset="UTF-8">
-    <title>總體經濟多維分析儀表板</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 防止 FOUC：立即從 localStorage 讀取主題 -->
-    <script>
-        var _macroTheme = localStorage.getItem('theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', _macroTheme);
-        var _macroChartTheme = _macroTheme;
-    </script>
-    <!-- 引入 Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Google Fonts Outfit & Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- 引入 ApexCharts -->
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <style>
-        body {
-            font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
+{% extends "base.html" %}
 
-        /* ===== Dark Theme (預設) ===== */
-        [data-theme="dark"] body,
-        body {
-            background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 100%);
-            color: #f3f4f6;
-        }
-        .glass-card {
-            background: rgba(17, 24, 39, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-        .glow-title {
-            text-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
-        }
-        .macro-nav {
-            background: rgba(17, 24, 39, 0.6);
-            border: 1px solid rgba(55, 65, 81, 1);
-        }
-        .macro-nav a { color: #d1d5db; text-decoration: none; }
-        .macro-nav a:hover { color: #fff; background: rgba(55, 65, 81, 1); }
-        .macro-nav .nav-active { color: #60a5fa !important; background: rgba(30, 58, 138, 0.4) !important; }
-        .macro-nav .nav-theme-btn { color: #d1d5db; background: transparent; border: 1px solid rgba(55, 65, 81, 1); }
+{% block title %}Macroeconomic Dashboard - StockAIG{% endblock %}
 
-        /* ===== Light Theme ===== */
-        [data-theme="light"] body {
-            background: #f1f5f9 !important;
-            color: #1e293b !important;
-        }
-        [data-theme="light"] .glass-card {
-            background: rgba(255, 255, 255, 0.85) !important;
-            border: 1px solid #e2e8f0 !important;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
-        }
-        [data-theme="light"] .glow-title {
-            text-shadow: none !important;
-            color: #1e40af !important;
-        }
-        [data-theme="light"] .macro-nav {
-            background: rgba(255, 255, 255, 0.9) !important;
-            border: 1px solid #e2e8f0 !important;
-        }
-        [data-theme="light"] .macro-nav a { color: #475569 !important; }
-        [data-theme="light"] .macro-nav a:hover { color: #1e293b !important; background: #f1f5f9 !important; }
-        [data-theme="light"] .macro-nav .nav-active { color: #2563eb !important; background: #dbeafe !important; }
-        [data-theme="light"] .macro-nav .nav-theme-btn { color: #475569 !important; border-color: #cbd5e1 !important; }
+{% block extra_css %}
+<style>
+    /* Macro 專屬細節樣式微調 */
+    .metric-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }
+    .macro-chart {
+        min-height: 340px;
+        width: 100%;
+    }
+    .advisory-badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+</style>
+{% endblock %}
 
-        /* Light 模式下的子卡片與文字 */
-        [data-theme="light"] .bg-gray-900\/60,
-        [data-theme="light"] [class*="bg-gray-900"] {
-            background: #f8fafc !important;
-            border-color: #e2e8f0 !important;
-        }
-        [data-theme="light"] .border-gray-800 {
-            border-color: #e2e8f0 !important;
-        }
-        [data-theme="light"] .text-white {
-            color: #1e293b !important;
-        }
-        [data-theme="light"] .text-gray-400 {
-            color: #64748b !important;
-        }
-        [data-theme="light"] .text-gray-500 {
-            color: #94a3b8 !important;
-        }
-        [data-theme="light"] .text-gray-300 {
-            color: #475569 !important;
-        }
-        [data-theme="light"] .text-blue-400 {
-            color: #2563eb !important;
-        }
-    </style>
-</head>
-<body class="p-6 min-h-screen">
-    <!-- Navbar / Header -->
-    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center mb-8 pb-4 border-b border-gray-800">
-        <div class="mb-4 md:mb-0">
-            <h1 class="text-3xl font-bold font-outfit text-blue-400 glow-title flex items-center gap-2">
-                📊 全維度總體經濟分析儀表板
-            </h1>
-            <p class="text-gray-400 text-sm mt-1">
-                依據「全維度投資決策架構：專業資產管理實務手冊」建置之宏觀資金流動性與政策監控平台
-            </p>
+{% block content %}
+<!-- 頂部標題與操作按鈕 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card p-4 shadow-sm border-0">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <h2 class="display-6 fw-bold mb-1">
+                        <i class="bi bi-globe text-primary me-2"></i>全維度總體經濟分析儀表板
+                    </h2>
+                    <p class="text-muted mb-0">
+                        依據專業資產管理決策架構建置之宏觀資金流動性、利率政策與經濟週期監控平台
+                    </p>
+                </div>
+                <div>
+                    <button onclick="refreshData()" class="btn btn-primary px-4 py-2 fw-semibold shadow-sm">
+                        <i class="bi bi-arrow-repeat me-1"></i> 更新總經數據
+                    </button>
+                </div>
+            </div>
         </div>
-        <div class="flex gap-4">
-            <button onclick="refreshData()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition font-medium flex items-center gap-2 shadow-lg shadow-blue-500/20" style="color:#fff !important;">
-                🔄 更新總經數據
+    </div>
+</div>
+
+<!-- 大師總經投資決策與警示面板 (Macro Investment Advisory) -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header border-0 py-3">
+                <h5 class="mb-0 fw-bold text-primary">
+                    <i class="bi bi-shield-check me-2"></i>大師總經投資決策與警示面板 (Macro Investment Advisory)
+                </h5>
+            </div>
+            <div class="card-body pt-0">
+                <div class="row g-3">
+                    <!-- 資金流向警告 -->
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-light border-0 p-3 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="text-muted small fw-semibold text-uppercase">TWD 貨幣資金動能</div>
+                                <h5 id="master-money-title" class="fw-bold mt-2 mb-1">資料檢索中...</h5>
+                                <p id="master-money-desc" class="text-muted small mb-0">分析狹義貨幣 M1B 與廣義貨幣 M2 走勢，掌握股市資金動能。</p>
+                            </div>
+                            <div class="mt-3 d-flex justify-content-between align-items-center pt-2 border-top">
+                                <small class="text-muted" id="master-money-date">--</small>
+                                <span id="master-money-status" class="badge bg-secondary advisory-badge">WAIT</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 通膨警戒 -->
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-light border-0 p-3 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="text-muted small fw-semibold text-uppercase">物價與通膨監控</div>
+                                <h5 id="master-inflation-title" class="fw-bold mt-2 mb-1">資料檢索中...</h5>
+                                <p id="master-inflation-desc" class="text-muted small mb-0">監控整體與核心 CPI 變動，評估央行利率政策走向與防範緊縮風險。</p>
+                            </div>
+                            <div class="mt-3 d-flex justify-content-between align-items-center pt-2 border-top">
+                                <small class="text-muted" id="master-inflation-date">--</small>
+                                <span id="master-inflation-status" class="badge bg-secondary advisory-badge">WAIT</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 台美利差與資金外移 -->
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-light border-0 p-3 d-flex flex-column justify-content-between">
+                            <div>
+                                <div class="text-muted small fw-semibold text-uppercase">台美利差與外匯風險</div>
+                                <h5 id="master-spread-title" class="fw-bold mt-2 mb-1">資料檢索中...</h5>
+                                <p id="master-spread-desc" class="text-muted small mb-0">比對美國聯邦基金利率與台灣重貼現率，衡量資金外流與匯率貶值壓力。</p>
+                            </div>
+                            <div class="mt-3 d-flex justify-content-between align-items-center pt-2 border-top">
+                                <small class="text-muted" id="master-spread-date">--</small>
+                                <span id="master-spread-status" class="badge bg-secondary advisory-badge">WAIT</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 國家切換選擇器 (Button Group) -->
+<div class="row mb-4">
+    <div class="col-12 d-flex align-items-center gap-3">
+        <span class="text-muted fw-semibold small">篩選國家數據:</span>
+        <div class="btn-group shadow-sm" role="group" aria-label="國家選擇">
+            <button onclick="filterCountry('all')" id="btn-all" type="button" class="btn btn-primary btn-sm px-3 fw-medium">
+                <i class="bi bi-grid-fill me-1"></i> 全部顯示
+            </button>
+            <button onclick="filterCountry('tw')" id="btn-tw" type="button" class="btn btn-outline-secondary btn-sm px-3 fw-medium">
+                <i class="bi bi-flag me-1"></i> 台灣數據
+            </button>
+            <button onclick="filterCountry('us')" id="btn-us" type="button" class="btn btn-outline-secondary btn-sm px-3 fw-medium">
+                <i class="bi bi-flag-fill me-1"></i> 美國數據
             </button>
         </div>
     </div>
-    <!-- Quick Navigation Bar -->
-    <div class="max-w-7xl mx-auto mb-6">
-        <nav class="macro-nav flex flex-wrap items-center gap-2 px-4 py-3 rounded-xl">
-            <a href="/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📈 Dashboard</a>
-            <a href="/macro/" class="nav-active px-3 py-1.5 text-sm font-medium rounded-lg">🌐 Macro</a>
-            <a href="/news/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📰 News</a>
-            <a href="/chips/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">👥 Institutional</a>
-            <a href="/valuation/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">🧮 Valuation</a>
-            <a href="/scheduler/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📅 Scheduler</a>
-            <a href="/wiki/" class="px-3 py-1.5 text-sm font-medium rounded-lg transition">📚 LLM Wiki</a>
-            <button id="macro-theme-toggle" class="nav-theme-btn ml-auto px-3 py-1.5 text-sm font-medium rounded-lg transition cursor-pointer" title="切換主題">
-                🌙
-            </button>
-        </nav>
+</div>
+
+<!-- 關鍵指標卡片區 (台灣組) -->
+<div class="row g-3 mb-4 tw-section country-section">
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">台灣 M1B 年增率</span>
+            <span id="tw-m1b-val" class="metric-value mt-2 text-primary">--</span>
+            <span id="tw-m1b-date" class="small text-muted mt-1">--</span>
+        </div>
     </div>
-    <script>
-        (function() {
-            var btn = document.getElementById('macro-theme-toggle');
-            var currentTheme = _macroTheme;
-            if (btn) btn.textContent = currentTheme === 'light' ? '☀️' : '🌙';
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">台灣 M2 年增率</span>
+            <span id="tw-m2-val" class="metric-value mt-2 text-success">--</span>
+            <span id="tw-m2-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">台灣最新 CPI YoY</span>
+            <span id="tw-cpi-val" class="metric-value mt-2 text-warning">--</span>
+            <span id="tw-cpi-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">台灣外匯存底</span>
+            <span id="tw-forex-val" class="metric-value mt-2 text-info">--</span>
+            <span id="tw-forex-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+</div>
+
+<!-- 關鍵指標卡片區 (美國組) -->
+<div class="row g-3 mb-4 us-section country-section">
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">美國 M2 年增率</span>
+            <span id="us-m2-val" class="metric-value mt-2 text-success">--</span>
+            <span id="us-m2-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">美國最新 CPI YoY</span>
+            <span id="us-cpi-val" class="metric-value mt-2 text-warning">--</span>
+            <span id="us-cpi-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">美國聯邦基金利率</span>
+            <span id="us-fed-val" class="metric-value mt-2 text-danger">--</span>
+            <span id="us-fed-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100">
+            <span class="text-muted small fw-medium">美國 10Y-2Y 美債利差</span>
+            <span id="us-yield-val" class="metric-value mt-2 text-primary">--</span>
+            <span id="us-yield-date" class="small text-muted mt-1">--</span>
+        </div>
+    </div>
+</div>
+
+<!-- 總經圖表區 (對稱雙欄或單欄網格) -->
+
+<!-- 分組 1: 資金供給與流動性 (M1 & M2) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="fw-bold mb-1"><i class="bi bi-cash-stack text-primary me-2"></i>台灣貨幣供給與流動性 (M1B & M2)</h5>
+                    <p class="text-muted small mb-0">黃金交叉 (M1B > M2) 資金寬鬆利多股市；死亡交叉代表定存回流股市動能減弱</p>
+                </div>
+                <div class="badge bg-secondary p-2" id="tw-gold-status">
+                    檢索中...
+                </div>
+            </div>
+            <div id="chart-tw-liquidity" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-currency-dollar text-success me-2"></i>美國貨幣供給與流動性 (M1 & M2)</h5>
+            <p class="text-muted small mb-3">美國狹義貨幣 (M1) 與廣義貨幣 (M2) 供給年增率走勢，觀察聯準會流動性環境</p>
+            <div id="chart-us-liquidity" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 分組 2: 通貨膨脹與物價監控 (CPI YoY) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-tag text-warning me-2"></i>台灣物價年增率監控 (CPI vs 核心 CPI)</h5>
+            <p class="text-muted small mb-3">台灣整體消費者物價年增率 (CPI YoY) 與排除蔬果能源之核心 CPI 年增率對比走勢</p>
+            <div id="chart-tw-inflation" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-receipt text-warning me-2"></i>美國物價年增率監控 (CPI vs 核心 CPI vs 核心 PCE)</h5>
+            <p class="text-muted small mb-3">美國整體 CPI 年增率、核心 CPI 年增率與核心 PCE 物價年增率走勢</p>
+            <div id="chart-us-inflation" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 分組 3: 金融政策與環境風險 (Policy & Risk) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-graph-up-arrow text-primary me-2"></i>台灣金融環境與後盾 (股價指數 vs 外匯存底)</h5>
+            <p class="text-muted small mb-3">台灣加權股價指數與央行防禦性外匯存底 (十億美元) 走勢對照</p>
+            <div id="chart-tw-policy" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-bank text-danger me-2"></i>美國政策利率與衰退及信用利差</h5>
+            <p class="text-muted small mb-3">有效聯邦基金利率、10Y-2Y 國債期限利差與 Moody's AAA 信用利差對照走勢</p>
+            <div id="chart-us-policy" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 分組 4: 實質產出與消費儲蓄 (GDP & Credit) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-diagram-3 text-info me-2"></i>台灣主要金融信用擴張 (準備貨幣 vs 放款年增率)</h5>
+            <p class="text-muted small mb-3">央行準備貨幣年增率與主要金融機構放款投資年增率走勢，觀察信用擴張與資金動能</p>
+            <div id="chart-tw-credit" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-cart-check text-primary me-2"></i>美國實質增長與消費儲蓄及製造業新增訂單</h5>
+            <p class="text-muted small mb-3">實質 GDP 年增率、個人儲蓄率與製造業新增訂單年增率 (景氣領先指標) 之對照</p>
+            <div id="chart-us-gdp-saving" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 分組 5: 政策利率與市場資金成本 (Interest Rates) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-percent text-danger me-2"></i>台灣基準利率與市場資金調借 (重貼現率 vs 隔夜拆款)</h5>
+            <p class="text-muted small mb-3">央行宣示性重貼現率與銀行間隔夜拆款利率對照走勢，監控貨幣政策緊縮程度</p>
+            <div id="chart-tw-interest" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-fuel-pump text-warning me-2"></i>全球要素與短期資金成本 (原油價格 vs 出口物價 vs 3M CD 利率)</h5>
+            <p class="text-muted small mb-3">國際原油價格 (WTI)、美國出口物價指數年增率與 3 個月期大額存單利率之對照</p>
+            <div id="chart-us-cost-income" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 分組 6: 實質產出與就業市場 (GDP & Employment) -->
+<div class="row g-4 mb-4 symmetric-grid">
+    <div class="col-12 col-lg-6 tw-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-people text-primary me-2"></i>台灣實質產出與就業監控 (GDP 成長率 vs 失業率)</h5>
+            <p class="text-muted small mb-3">台灣季度 GDP 年增率與月度失業率對照，觀察實質經濟增長與勞動市場韌性</p>
+            <div id="chart-tw-employment" class="macro-chart"></div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6 us-section country-section">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <h5 class="fw-bold mb-1"><i class="bi bi-person-badge text-success me-2"></i>美國就業狀況 (失業率與新增非農人數)</h5>
+            <p class="text-muted small mb-3">失業率與新增非農就業人口的變動趨勢，聯準會就業市場強韌度關鍵指標</p>
+            <div id="chart-us-employment" class="macro-chart"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        fetchMacroData();
+    });
+
+    function getChartTheme() {
+        return document.documentElement.getAttribute('data-bs-theme') || 'light';
+    }
+
+    function filterCountry(country) {
+        const options = ['all', 'tw', 'us'];
+        options.forEach(c => {
+            const btn = document.getElementById(`btn-${c}`);
             if (btn) {
-                btn.addEventListener('click', function() {
-                    var nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-                    localStorage.setItem('theme', nextTheme);
-                    window.location.reload();
-                });
+                if (c === country) {
+                    btn.className = "btn btn-primary btn-sm px-3 fw-medium";
+                } else {
+                    btn.className = "btn btn-outline-secondary btn-sm px-3 fw-medium";
+                }
             }
-        })();
-    </script>
-
-    <!-- 大師總經決策與警示面板 (Macro Investment Master Panel) -->
-    <div class="max-w-7xl mx-auto mb-8 glass-card p-6">
-        <h3 class="text-lg font-semibold text-blue-400 glow-title mb-4 flex items-center gap-2">
-            🧙‍♂️ 大師總經投資決策與警示面板 (Macro Investment Advisory)
-        </h3>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- 資金流向警告 -->
-            <div class="bg-gray-900/60 p-4 rounded-xl border border-gray-800 flex flex-col justify-between">
-                <div>
-                    <span class="text-gray-400 text-xs font-semibold uppercase tracking-wider">TWD 貨幣資金動能</span>
-                    <h4 id="master-money-title" class="text-white font-bold mt-2 text-base">資料檢索中...</h4>
-                    <p id="master-money-desc" class="text-gray-400 text-xs mt-1">分析狹義貨幣 M1B 與廣義貨幣 M2 走勢，掌握股市資金動能。</p>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-gray-500 text-[10px]" id="master-money-date">--</span>
-                    <span id="master-money-status" class="px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800 text-gray-400">WAIT</span>
-                </div>
-            </div>
-
-            <!-- 通膨警戒 -->
-            <div class="bg-gray-900/60 p-4 rounded-xl border border-gray-800 flex flex-col justify-between">
-                <div>
-                    <span class="text-gray-400 text-xs font-semibold uppercase tracking-wider">物價與通膨監控</span>
-                    <h4 id="master-inflation-title" class="text-white font-bold mt-2 text-base">資料檢索中...</h4>
-                    <p id="master-inflation-desc" class="text-gray-400 text-xs mt-1">監控整體與核心 CPI 變動，評估央行利率政策走向與防範緊縮風險。</p>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-gray-500 text-[10px]" id="master-inflation-date">--</span>
-                    <span id="master-inflation-status" class="px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800 text-gray-400">WAIT</span>
-                </div>
-            </div>
-
-            <!-- 台美利差與資金外移 -->
-            <div class="bg-gray-900/60 p-4 rounded-xl border border-gray-800 flex flex-col justify-between">
-                <div>
-                    <span class="text-gray-400 text-xs font-semibold uppercase tracking-wider">台美利差與外匯風險</span>
-                    <h4 id="master-spread-title" class="text-white font-bold mt-2 text-base">資料檢索中...</h4>
-                    <p id="master-spread-desc" class="text-gray-400 text-xs mt-1">比對美國聯邦基金利率與台灣重貼現率，衡量資金外流與匯率貶值壓力。</p>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-gray-500 text-[10px]" id="master-spread-date">--</span>
-                    <span id="master-spread-status" class="px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-800 text-gray-400">WAIT</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 國家切換選擇器 (Button Group) -->
-    <div class="max-w-7xl mx-auto flex justify-start items-center mb-8 gap-3">
-        <span class="text-gray-400 text-sm font-medium">篩選國家數據:</span>
-        <div class="bg-gray-900 p-1 rounded-xl border border-gray-800 flex gap-1">
-            <button onclick="filterCountry('all')" id="btn-all" class="px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition bg-blue-600 text-white shadow-lg shadow-blue-500/20">
-                🌎 全部顯示
-            </button>
-            <button onclick="filterCountry('tw')" id="btn-tw" class="px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition text-gray-400 hover:text-white hover:bg-gray-800">
-                🇹🇼 台灣數據
-            </button>
-            <button onclick="filterCountry('us')" id="btn-us" class="px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition text-gray-400 hover:text-white hover:bg-gray-800">
-                🇺🇸 美國數據
-            </button>
-        </div>
-    </div>
-
-    <div class="max-w-7xl mx-auto grid grid-cols-1 gap-8">
-        
-        <!-- Indicator Overview Cards (台灣組) -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 tw-section country-section">
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">台灣 M1B 年增率</span>
-                <span id="tw-m1b-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="tw-m1b-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">台灣 M2 年增率</span>
-                <span id="tw-m2-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="tw-m2-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">台灣最新 CPI YoY</span>
-                <span id="tw-cpi-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="tw-cpi-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">台灣外匯存底</span>
-                <span id="tw-forex-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="tw-forex-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-        </div>
-
-        <!-- Indicator Overview Cards (美國組) -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 us-section country-section">
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">美國 M2 年增率</span>
-                <span id="us-m2-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="us-m2-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">美國最新 CPI YoY</span>
-                <span id="us-cpi-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="us-cpi-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">美國聯邦基金利率</span>
-                <span id="us-fed-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="us-fed-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-            <div class="glass-card p-6 flex flex-col justify-between">
-                <span class="text-gray-400 text-sm font-medium">美國 10Y-2Y 美債利差</span>
-                <span id="us-yield-val" class="text-3xl font-bold mt-2 text-white">--</span>
-                <span id="us-yield-date" class="text-xs text-gray-500 mt-2">--</span>
-            </div>
-        </div>
-
-        <!-- 對稱分組 1: 資金供給與流動性 (M1 & M2) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">台灣貨幣供給與流動性 (M1B & M2)</h2>
-                        <p class="text-gray-400 text-xs mt-1">黃金交叉 (M1B > M2) 資金寬鬆利多股市；死亡交叉代表定存回流股市動能減弱</p>
-                    </div>
-                    <div class="px-3 py-1 text-xs font-semibold rounded-full" id="tw-gold-status">
-                        檢索中...
-                    </div>
-                </div>
-                <div id="chart-tw-liquidity" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國貨幣供給與流動性 (M1 & M2)</h2>
-                <p class="text-gray-400 text-xs mb-6">美國狹義貨幣 (M1) 與廣義貨幣 (M2) 供給年增率走勢，觀察聯準會印鈔流動性環境</p>
-                <div id="chart-us-liquidity" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-        <!-- 對稱分組 2: 通貨膨脹與物價監控 (CPI YoY) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">台灣物價年增率監控 (CPI vs 核心 CPI)</h2>
-                <p class="text-gray-400 text-xs mb-6">台灣整體消費者物價年增率 (CPI YoY) 與排除蔬果能源之核心 CPI 年增率對比走勢</p>
-                <div id="chart-tw-inflation" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國物價年增率監控 (CPI vs 核心 CPI vs 核心 PCE)</h2>
-                <p class="text-gray-400 text-xs mb-6">美國整體 CPI 年增率、核心 CPI 年增率與聯準會最看重之核心 PCE 物價年增率走勢</p>
-                <div id="chart-us-inflation" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-        <!-- 對稱分組 3: 金融政策與環境風險 (Policy & Risk) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">台灣金融環境與後盾 (股價指數 vs 外匯存底)</h2>
-                <p class="text-gray-400 text-xs mb-6">台灣加權股價指數與央行防禦性外匯存底 (十億美元) 走勢對照</p>
-                <div id="chart-tw-policy" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國政策利率與衰退及信用利差</h2>
-                <p class="text-gray-400 text-xs mb-6">有效聯邦基金利率、10Y-2Y 國債期限利差與新版 Moody's AAA 信用利差對照走勢</p>
-                <div id="chart-us-policy" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-        <!-- 對稱分組 4: 實質產出與消費儲蓄 (GDP & Saving) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">台灣主要金融信用擴張 (準備貨幣 vs 放款年增率)</h2>
-                <p class="text-gray-400 text-xs mb-6">央行準備貨幣年增率與主要金融機構放款投資年增率走勢，觀察信用擴張與資金動能</p>
-                <div id="chart-tw-credit" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國實質增長與消費儲蓄及製造業新增訂單</h2>
-                <p class="text-gray-400 text-xs mb-6">實質 GDP 年增率、個人儲蓄率與製造業新增訂單年增率 (景氣領先指標) 之對照</p>
-                <div id="chart-us-gdp-saving" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-        <!-- 對稱分組 5: 政策利率與市場資金成本 (Interest Rates) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">台灣基準利率與市場資金調借 (重貼現率 vs 隔夜拆款)</h2>
-                <p class="text-gray-400 text-xs mb-6">央行宣示性重貼現率與銀行間隔夜拆款利率對照走勢，監控貨幣政策緊縮程度</p>
-                <div id="chart-tw-interest" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">全球要素與短期資金成本 (原油價格 vs 出口物價 vs 3M CD 利率)</h2>
-                <p class="text-gray-400 text-xs mb-6">國際原油價格 (WTI)、美國出口物價指數年增率與三個月期大額存單利率之對照</p>
-                <div id="chart-us-cost-income" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-        <!-- 對稱分組 6: 實質產出與就業市場 (GDP & Employment) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 symmetric-grid">
-            <div class="glass-card p-6 tw-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">台灣實質產出與就業監控 (GDP 成長率 vs 失業率)</h2>
-                <p class="text-gray-400 text-xs mb-6">台灣季度 GDP 年增率與月度失業率對照，觀察實質經濟增長與勞動市場韌性</p>
-                <div id="chart-tw-employment" class="h-96 w-full macro-chart"></div>
-            </div>
-
-            <div class="glass-card p-6 us-section country-section">
-                <h2 class="text-2xl font-bold text-white mb-2">美國就業狀況 (失業率與新增非農人數)</h2>
-                <p class="text-gray-400 text-xs mb-6">失業率與新增非農就業人口的變動趨勢，聯準會雙重使命之一的就業市場強韌度指標</p>
-                <div id="chart-us-employment" class="h-96 w-full macro-chart"></div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- 頁尾宣告 -->
-    <div class="text-center text-gray-600 text-xs mt-12 py-6 border-t border-gray-900">
-        © 2026 專業資產管理系統平台 · 數據來源：聖路易斯聯準銀行 (FRED) & 中華民國中央銀行
-    </div>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            fetchMacroData();
         });
 
-        function filterCountry(country) {
-            const options = ['all', 'tw', 'us'];
-            options.forEach(c => {
-                const btn = document.getElementById(`btn-${c}`);
-                if (c === country) {
-                    btn.className = "px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition bg-blue-600 text-white shadow-lg shadow-blue-500/20";
+        const twElements = document.querySelectorAll('.tw-section');
+        const usElements = document.querySelectorAll('.us-section');
+        const symmetricGrids = document.querySelectorAll('.symmetric-grid');
+
+        if (country === 'all') {
+            twElements.forEach(el => el.style.display = '');
+            usElements.forEach(el => el.style.display = '');
+            symmetricGrids.forEach(el => {
+                const cols = el.querySelectorAll('.country-section');
+                cols.forEach(col => {
+                    col.classList.remove('col-lg-12');
+                    col.classList.add('col-lg-6');
+                });
+            });
+        } else {
+            if (country === 'tw') {
+                twElements.forEach(el => el.style.display = '');
+                usElements.forEach(el => el.style.display = 'none');
+            } else if (country === 'us') {
+                twElements.forEach(el => el.style.display = 'none');
+                usElements.forEach(el => el.style.display = '');
+            }
+            symmetricGrids.forEach(el => {
+                const cols = el.querySelectorAll('.country-section');
+                cols.forEach(col => {
+                    col.classList.remove('col-lg-6');
+                    col.classList.add('col-lg-12');
+                });
+            });
+        }
+
+        // 延遲更新圖表尺寸以適配 Bootstrap Grid 響應式變化
+        const chartHeight = (country === 'all') ? 340 : 420;
+        setTimeout(() => {
+            if (window.macroCharts) {
+                Object.entries(window.macroCharts).forEach(([id, chartInstance]) => {
+                    const el = document.getElementById(id);
+                    if (el && el.offsetParent !== null && chartInstance) {
+                        try {
+                            chartInstance.updateOptions({ chart: { height: chartHeight } }, false, true);
+                        } catch (e) {
+                            console.error("Error updating chart options:", id, e);
+                        }
+                    }
+                });
+            }
+        }, 150);
+    }
+
+    function fetchMacroData() {
+        fetch('/api/macro/data')
+            .then(response => response.json())
+            .then(res => {
+                if (res.status === 'success') {
+                    renderDashboard(res);
+                }
+            })
+            .catch(err => console.error("Error fetching macro data:", err));
+    }
+
+    function refreshData() {
+        const btn = document.querySelector('button[onclick="refreshData()"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> 更新中...';
+        }
+        
+        fetch('/scheduler/api/jobs')
+            .then(r => r.json())
+            .then(jobs => {
+                const macroJob = jobs.find(j => j.task_type === 'update_macro_data_us' || j.task_type === 'update_macro_data_tw' || j.task_type === 'update_macro_data');
+                if (macroJob) {
+                    return fetch(`/scheduler/api/jobs/execute/${macroJob.id}`, { method: 'POST' });
                 } else {
-                    btn.className = "px-4 py-2 rounded-lg font-medium text-xs md:text-sm transition text-gray-400 hover:text-white hover:bg-gray-800";
+                    alert("排程器中尚未新增總體經濟更新任務，請先到排程 Dashboard 建立此任務！");
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> 更新總經數據';
+                    }
+                }
+            })
+            .then(res => {
+                if (res) {
+                    alert("已成功觸發排程器總經更新任務，請等候數秒數據寫入後刷新！");
+                    setTimeout(() => {
+                        fetchMacroData();
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> 更新總經數據';
+                        }
+                    }, 5000);
+                }
+            })
+            .catch(err => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> 更新總經數據';
                 }
             });
+    }
 
-            const twElements = document.querySelectorAll('.tw-section');
-            const usElements = document.querySelectorAll('.us-section');
-            const symmetricGrids = document.querySelectorAll('.symmetric-grid');
-            const charts = document.querySelectorAll('.macro-chart');
+    function renderDashboard(res) {
+        if (window.macroCharts) {
+            Object.values(window.macroCharts).forEach(chart => {
+                if (chart) {
+                    try { chart.destroy(); } catch (e) { console.error("銷毀舊圖表失敗:", e); }
+                }
+            });
+        }
+        window.macroCharts = {};
 
-            if (country === 'all') {
-                twElements.forEach(el => el.style.display = '');
-                usElements.forEach(el => el.style.display = '');
-                symmetricGrids.forEach(el => {
-                    el.classList.add('md:grid-cols-2');
-                });
-                charts.forEach(el => {
-                    el.style.height = '384px'; // 相當於 h-96
-                });
+        const usData = res.us;
+        const twData = res.tw;
+
+        // 1. 整理台灣數據
+        const twM1B = twData.filter(d => d.metric === 'M1B_YOY');
+        const twM2 = twData.filter(d => d.metric === 'M2_YOY');
+        const twCPI = twData.filter(d => d.metric === 'CPI_YOY');
+        const twStock = twData.filter(d => d.metric === 'TW_STOCK_INDEX');
+        const twForex = twData.filter(d => d.metric === 'TW_FOREX_RESERVE');
+        const twReserve = twData.filter(d => d.metric === 'TW_RESERVE_MONEY_YOY');
+        const twExchange = twData.filter(d => d.metric === 'TW_EXCHANGE_RATE');
+        const twLoan = twData.filter(d => d.metric === 'TW_LOAN_YOY');
+        const twDiscount = twData.filter(d => d.metric === 'TW_DISCOUNT_RATE');
+        const twOvernight = twData.filter(d => d.metric === 'TW_OVERNIGHT_RATE');
+        const twCoreCPI = twData.filter(d => d.metric === 'TW_CORE_CPI_YOY');
+        const twUnrate = twData.filter(d => d.metric === 'TW_UNRATE');
+        const twGdp = twData.filter(d => d.metric === 'TW_GDP_YOY');
+
+        // 2. 整理美國數據
+        const usM1 = usData.filter(d => d.metric === 'US_M1_YOY');
+        const usM2 = usData.filter(d => d.metric === 'US_M2_YOY');
+        const usCPI = usData.filter(d => d.metric === 'US_CPI_YOY');
+        const usCoreCPI = usData.filter(d => d.metric === 'US_CORE_CPI_YOY');
+        const usFed = usData.filter(d => d.metric === 'FEDFUNDS');
+        const usYield = usData.filter(d => d.metric === 'US_YIELD_SPREAD');
+        const usUnrate = usData.filter(d => d.metric === 'UNRATE');
+        const usNfp = usData.filter(d => d.metric === 'NFP_CHANGE');
+        const usPce = usData.filter(d => d.metric === 'US_PCE_YOY');
+        const usGdp = usData.filter(d => d.metric === 'US_GDP_YOY');
+        const usSaving = usData.filter(d => d.metric === 'US_SAVING_RATE');
+        const globalOil = usData.filter(d => d.metric === 'GLOBAL_OIL_PRICE');
+        const usCreditSpread = usData.filter(d => d.metric === 'US_CREDIT_SPREAD');
+        const usCorePce = usData.filter(d => d.metric === 'US_CORE_PCE_YOY');
+        const usExportPrice = usData.filter(d => d.metric === 'US_EXPORT_PRICE_YOY');
+        const usCD3M = usData.filter(d => d.metric === 'US_CD_3M');
+        const usMfgOrders = usData.filter(d => d.metric === 'US_MANUFACTURING_ORDERS_YOY');
+
+        // 渲染 Info Cards
+        if (twM1B.length > 0) {
+            const latest = twM1B[twM1B.length - 1];
+            document.getElementById('tw-m1b-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('tw-m1b-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (twM2.length > 0) {
+            const latest = twM2[twM2.length - 1];
+            document.getElementById('tw-m2-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('tw-m2-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (twCPI.length > 0) {
+            const latest = twCPI[twCPI.length - 1];
+            document.getElementById('tw-cpi-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('tw-cpi-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (twForex.length > 0) {
+            const latest = twForex[twForex.length - 1];
+            document.getElementById('tw-forex-val').innerText = '$' + latest.value.toFixed(1) + ' B';
+            document.getElementById('tw-forex-date').innerText = '最後更新: ' + latest.date;
+        }
+
+        if (usM2.length > 0) {
+            const latest = usM2[usM2.length - 1];
+            document.getElementById('us-m2-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('us-m2-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (usCPI.length > 0) {
+            const latest = usCPI[usCPI.length - 1];
+            document.getElementById('us-cpi-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('us-cpi-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (usFed.length > 0) {
+            const latest = usFed[usFed.length - 1];
+            document.getElementById('us-fed-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('us-fed-date').innerText = '最後更新: ' + latest.date;
+        }
+        if (usYield.length > 0) {
+            const latest = usYield[usYield.length - 1];
+            document.getElementById('us-yield-val').innerText = latest.value.toFixed(2) + '%';
+            document.getElementById('us-yield-date').innerText = '最後更新: ' + latest.date;
+        }
+
+        // 台灣黃金/死亡交叉狀態
+        if (twM1B.length > 0 && twM2.length > 0) {
+            const latestM1B = twM1B[twM1B.length - 1].value;
+            const latestM2 = twM2[twM2.length - 1].value;
+            const el = document.getElementById('tw-gold-status');
+            if (latestM1B > latestM2) {
+                el.innerText = '資金黃金交叉 (M1B > M2)';
+                el.className = 'badge bg-success p-2';
             } else {
-                if (country === 'tw') {
-                    twElements.forEach(el => el.style.display = '');
-                    usElements.forEach(el => el.style.display = 'none');
-                } else if (country === 'us') {
-                    twElements.forEach(el => el.style.display = 'none');
-                    usElements.forEach(el => el.style.display = '');
-                }
-                symmetricGrids.forEach(el => {
-                    el.classList.remove('md:grid-cols-2');
-                });
-                charts.forEach(el => {
-                    el.style.height = '500px'; // 放大高度
-                });
+                el.innerText = '資金死亡交叉 (M1B < M2)';
+                el.className = 'badge bg-danger p-2';
             }
-
-            // 延遲執行，確保 DOM reflow 完成後僅對當前可見的圖表觸發 resize
-            // 根據顯示模式動態調整圖表高度，預留空間給 X 軸日期標籤
-            const chartHeight = (country === 'all') ? 340 : 450;
-            setTimeout(() => {
-                if (window.macroCharts) {
-                    Object.entries(window.macroCharts).forEach(([id, chartInstance]) => {
-                        const el = document.getElementById(id);
-                        // 關鍵防禦：僅在元素目前在 DOM 中可見 (display !== none) 時才進行重新渲染
-                        if (el && el.offsetParent !== null && chartInstance) {
-                            try {
-                                chartInstance.updateOptions({ chart: { height: chartHeight } }, false, true);
-                            } catch (e) {
-                                console.error("Error updating chart options:", id, e);
-                            }
-                        }
-                    });
-                }
-            }, 150);
         }
 
-        function fetchMacroData() {
-            fetch('/api/macro/data')
-                .then(response => response.json())
-                .then(res => {
-                    if (res.status === 'success') {
-                        renderDashboard(res);
-                    }
-                })
-                .catch(err => console.error("Error fetching macro data:", err));
-        }
-
-        function refreshData() {
-            const btn = document.querySelector('button[onclick="refreshData()"]');
-            btn.disabled = true;
-            btn.innerHTML = '🔄 更新中...';
+        // 大師總經投資面板 (Master Advisory Panel)
+        if (twM1B.length > 0 && twM2.length > 0) {
+            const latestM1B = twM1B[twM1B.length - 1];
+            const latestM2 = twM2[twM2.length - 1];
+            const titleEl = document.getElementById('master-money-title');
+            const descEl = document.getElementById('master-money-desc');
+            const dateEl = document.getElementById('master-money-date');
+            const statusEl = document.getElementById('master-money-status');
             
-            fetch('/scheduler/api/jobs')
-                .then(r => r.json())
-                .then(jobs => {
-                    const macroJob = jobs.find(j => j.task_type === 'update_macro_data');
-                    if (macroJob) {
-                        return fetch(`/scheduler/api/jobs/execute/${macroJob.id}`, { method: 'POST' });
-                    } else {
-                        alert("排程器中尚未新增 'update_macro_data' 任務，請先到排程 Dashboard 建立此任務！");
-                        btn.disabled = false;
-                        btn.innerHTML = '🔄 更新總經數據';
-                    }
-                })
-                .then(res => {
-                    if (res) {
-                        alert("已成功觸發排程器總經更新任務，請等候 5-10 秒數據寫入後，重新整理此頁面！");
-                        setTimeout(() => {
-                            fetchMacroData();
-                            btn.disabled = false;
-                            btn.innerHTML = '🔄 更新總經數據';
-                        }, 5000);
-                    }
-                })
-                .catch(err => {
-                    btn.disabled = false;
-                    btn.innerHTML = '🔄 更新總經數據';
-                });
+            dateEl.innerText = latestM1B.date;
+            if (latestM1B.value > latestM2.value) {
+                titleEl.innerText = 'M1B/M2 黃金交叉 (資金寬鬆)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-success';
+                descEl.innerText = '當前台灣 M1B 年增率 (' + latestM1B.value.toFixed(2) + '%) 超越 M2 年增率 (' + latestM2.value.toFixed(2) + '%)，資金動能充沛，利多股市。';
+                statusEl.innerText = 'BULLISH';
+                statusEl.className = 'badge bg-success advisory-badge';
+            } else {
+                titleEl.innerText = 'M1B/M2 死亡交叉 (資金收緊)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-danger';
+                descEl.innerText = '當前台灣 M1B 年增率 (' + latestM1B.value.toFixed(2) + '%) 低於 M2 年增率 (' + latestM2.value.toFixed(2) + '%)，股市資金動能減弱，防範定存回流。';
+                statusEl.innerText = 'BEARISH';
+                statusEl.className = 'badge bg-danger advisory-badge';
+            }
         }
 
-        function renderDashboard(res) {
-            // 銷毀舊圖表實體以防重複渲染事件與內存洩漏
-            if (window.macroCharts) {
-                Object.values(window.macroCharts).forEach(chart => {
-                    if (chart) {
-                        try {
-                            chart.destroy();
-                        } catch (e) {
-                            console.error("銷毀舊圖表失敗:", e);
-                        }
-                    }
-                });
+        if (twCPI.length > 0) {
+            const latestCPI = twCPI[twCPI.length - 1];
+            const latestCore = twCoreCPI.length > 0 ? twCoreCPI[twCoreCPI.length - 1].value : (latestCPI.value - 0.15);
+            const titleEl = document.getElementById('master-inflation-title');
+            const descEl = document.getElementById('master-inflation-desc');
+            const dateEl = document.getElementById('master-inflation-date');
+            const statusEl = document.getElementById('master-inflation-status');
+            
+            dateEl.innerText = latestCPI.date;
+            if (latestCPI.value > 2.0 || latestCore > 2.0) {
+                titleEl.innerText = '通膨警戒 (CPI > 2%)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-warning';
+                descEl.innerText = '台灣整體 CPI 年增率為 ' + latestCPI.value.toFixed(2) + '%，核心 CPI 為 ' + latestCore.toFixed(2) + '%。已超越 2% 央行通膨防線，防範緊縮政策。';
+                statusEl.innerText = 'WARNING';
+                statusEl.className = 'badge bg-warning text-dark advisory-badge';
+            } else {
+                titleEl.innerText = '通膨平穩 (低於 2%)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-success';
+                descEl.innerText = '當前台灣 CPI 年增率為 ' + latestCPI.value.toFixed(2) + '%，核心 CPI 為 ' + latestCore.toFixed(2) + '%，物價水準溫和，央行無迫切升息壓力。';
+                statusEl.innerText = 'STABLE';
+                statusEl.className = 'badge bg-success advisory-badge';
             }
-            window.macroCharts = {};
-
-            const usData = res.us;
-            const twData = res.tw;
-
-            // 1. 整理台灣數據
-            const twM1B = twData.filter(d => d.metric === 'M1B_YOY');
-            const twM2 = twData.filter(d => d.metric === 'M2_YOY');
-            const twCPI = twData.filter(d => d.metric === 'CPI_YOY');
-            const twStock = twData.filter(d => d.metric === 'TW_STOCK_INDEX');
-            const twForex = twData.filter(d => d.metric === 'TW_FOREX_RESERVE');
-            const twReserve = twData.filter(d => d.metric === 'TW_RESERVE_MONEY_YOY');
-            const twExchange = twData.filter(d => d.metric === 'TW_EXCHANGE_RATE');
-            const twLoan = twData.filter(d => d.metric === 'TW_LOAN_YOY');
-            const twDiscount = twData.filter(d => d.metric === 'TW_DISCOUNT_RATE');
-            const twOvernight = twData.filter(d => d.metric === 'TW_OVERNIGHT_RATE');
-            const twCoreCPI = twData.filter(d => d.metric === 'TW_CORE_CPI_YOY');
-            const twUnrate = twData.filter(d => d.metric === 'TW_UNRATE');
-            const twGdp = twData.filter(d => d.metric === 'TW_GDP_YOY');
-
-
-            // 2. 整理美國數據
-            const usM1 = usData.filter(d => d.metric === 'US_M1_YOY');
-            const usM2 = usData.filter(d => d.metric === 'US_M2_YOY');
-            const usCPI = usData.filter(d => d.metric === 'US_CPI_YOY');
-            const usCoreCPI = usData.filter(d => d.metric === 'US_CORE_CPI_YOY');
-            const usFed = usData.filter(d => d.metric === 'FEDFUNDS');
-            const usYield = usData.filter(d => d.metric === 'US_YIELD_SPREAD');
-            const usUnrate = usData.filter(d => d.metric === 'UNRATE');
-            const usNfp = usData.filter(d => d.metric === 'NFP_CHANGE');
-            const usPce = usData.filter(d => d.metric === 'US_PCE_YOY');
-            const usGdp = usData.filter(d => d.metric === 'US_GDP_YOY');
-            const usSaving = usData.filter(d => d.metric === 'US_SAVING_RATE');
-            const usIncome = usData.filter(d => d.metric === 'US_PERSONAL_INCOME');
-            const globalOil = usData.filter(d => d.metric === 'GLOBAL_OIL_PRICE');
-            const us10YBond = usData.filter(d => d.metric === 'US_10Y_BOND');
-            const usAAABond = usData.filter(d => d.metric === 'US_AAA_BOND');
-            const usCreditSpread = usData.filter(d => d.metric === 'US_CREDIT_SPREAD');
-            const usCorePce = usData.filter(d => d.metric === 'US_CORE_PCE_YOY');
-            const usExportPrice = usData.filter(d => d.metric === 'US_EXPORT_PRICE_YOY');
-            const usCD3M = usData.filter(d => d.metric === 'US_CD_3M');
-            const usMfgOrders = usData.filter(d => d.metric === 'US_MANUFACTURING_ORDERS_YOY');
-
-            // 渲染 Info Cards (顯示最新一筆)
-            // 台灣
-            if (twM1B.length > 0) {
-                const latest = twM1B[twM1B.length - 1];
-                document.getElementById('tw-m1b-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('tw-m1b-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (twM2.length > 0) {
-                const latest = twM2[twM2.length - 1];
-                document.getElementById('tw-m2-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('tw-m2-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (twCPI.length > 0) {
-                const latest = twCPI[twCPI.length - 1];
-                document.getElementById('tw-cpi-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('tw-cpi-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (twForex.length > 0) {
-                const latest = twForex[twForex.length - 1];
-                document.getElementById('tw-forex-val').innerText = '$' + latest.value.toFixed(1) + ' B';
-                document.getElementById('tw-forex-date').innerText = '最後更新: ' + latest.date;
-            }
-
-            // 美國
-            if (usM2.length > 0) {
-                const latest = usM2[usM2.length - 1];
-                document.getElementById('us-m2-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('us-m2-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (usCPI.length > 0) {
-                const latest = usCPI[usCPI.length - 1];
-                document.getElementById('us-cpi-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('us-cpi-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (usFed.length > 0) {
-                const latest = usFed[usFed.length - 1];
-                document.getElementById('us-fed-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('us-fed-date').innerText = '最後更新: ' + latest.date;
-            }
-            if (usYield.length > 0) {
-                const latest = usYield[usYield.length - 1];
-                document.getElementById('us-yield-val').innerText = latest.value.toFixed(2) + '%';
-                document.getElementById('us-yield-date').innerText = '最後更新: ' + latest.date;
-            }
-
-            // 判斷台灣黃金交叉或死亡交叉狀態
-            if (twM1B.length > 0 && twM2.length > 0) {
-                const latestM1B = twM1B[twM1B.length - 1].value;
-                const latestM2 = twM2[twM2.length - 1].value;
-                const el = document.getElementById('tw-gold-status');
-                if (latestM1B > latestM2) {
-                    el.innerText = '📈 當前狀態：資金黃金交叉 (M1B > M2)';
-                    el.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-                } else {
-                    el.innerText = '📉 當前狀態：資金死亡交叉 (M1B < M2)';
-                    el.className = 'px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
-                }
-            }
-
-            // 🧙‍♂️ 填寫大師投資面板 (Master Advisory Panel)
-            // 1. TWD 貨幣資金動能
-            if (twM1B.length > 0 && twM2.length > 0) {
-                const latestM1B = twM1B[twM1B.length - 1];
-                const latestM2 = twM2[twM2.length - 1];
-                const titleEl = document.getElementById('master-money-title');
-                const descEl = document.getElementById('master-money-desc');
-                const dateEl = document.getElementById('master-money-date');
-                const statusEl = document.getElementById('master-money-status');
-                
-                dateEl.innerText = latestM1B.date;
-                if (latestM1B.value > latestM2.value) {
-                    titleEl.innerText = '📈 M1B/M2 黃金交叉 (資金寬鬆)';
-                    titleEl.className = 'text-emerald-400 font-bold mt-2 text-base';
-                    descEl.innerText = '當前台灣 M1B 年增率 (' + latestM1B.value.toFixed(2) + '%) 超越 M2 年增率 (' + latestM2.value.toFixed(2) + '%)，資金動能充沛，利多股市與風險資產。';
-                    statusEl.innerText = 'BULLISH';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-                } else {
-                    titleEl.innerText = '📉 M1B/M2 死亡交叉 (資金收緊)';
-                    titleEl.className = 'text-rose-400 font-bold mt-2 text-base';
-                    descEl.innerText = '當前台灣 M1B 年增率 (' + latestM1B.value.toFixed(2) + '%) 低於 M2 年增率 (' + latestM2.value.toFixed(2) + '%)，股市資金動能減弱，防範定存回流風險。';
-                    statusEl.innerText = 'BEARISH';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
-                }
-            }
-
-            // 2. 物價與通膨監控 (通膨警戒)
-            if (twCPI.length > 0) {
-                const latestCPI = twCPI[twCPI.length - 1];
-                const latestCore = twCoreCPI.length > 0 ? twCoreCPI[twCoreCPI.length - 1].value : (latestCPI.value - 0.15);
-                const titleEl = document.getElementById('master-inflation-title');
-                const descEl = document.getElementById('master-inflation-desc');
-                const dateEl = document.getElementById('master-inflation-date');
-                const statusEl = document.getElementById('master-inflation-status');
-                
-                dateEl.innerText = latestCPI.date;
-                if (latestCPI.value > 2.0 || latestCore > 2.0) {
-                    titleEl.innerText = '⚠️ 通膨警戒 (CPI > 2%)';
-                    titleEl.className = 'text-amber-400 font-bold mt-2 text-base';
-                    descEl.innerText = '台灣整體 CPI 年增率為 ' + latestCPI.value.toFixed(2) + '%，核心 CPI 為 ' + latestCore.toFixed(2) + '%。已超越 2% 央行通膨防線，需密切防範央行跟進緊縮。';
-                    statusEl.innerText = 'WARNING';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30';
-                } else {
-                    titleEl.innerText = '✅ 通膨平穩 (低於 2%)';
-                    titleEl.className = 'text-emerald-400 font-bold mt-2 text-base';
-                    descEl.innerText = '當前台灣 CPI 年增率為 ' + latestCPI.value.toFixed(2) + '%，核心 CPI 為 ' + latestCore.toFixed(2) + '%，物價水準溫和，央行無迫切升息壓力和緊縮迫切性。';
-                    statusEl.innerText = 'STABLE';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-                }
-            }
-
-            // 3. 台美利差與外匯流出警告
-            if (usFed.length > 0 && twDiscount.length > 0) {
-                const latestUSFed = usFed[usFed.length - 1];
-                const latestTWDiscount = twDiscount[twDiscount.length - 1];
-                const spread = Math.abs(latestUSFed.value - latestTWDiscount.value);
-                const titleEl = document.getElementById('master-spread-title');
-                const descEl = document.getElementById('master-spread-desc');
-                const dateEl = document.getElementById('master-spread-date');
-                const statusEl = document.getElementById('master-spread-status');
-                
-                dateEl.innerText = latestTWDiscount.date;
-                if (latestUSFed.value > latestTWDiscount.value && spread > 1.5) {
-                    titleEl.innerText = '🚨 台美利差擴大 (外資流出風險)';
-                    titleEl.className = 'text-rose-400 font-bold mt-2 text-base';
-                    descEl.innerText = '美國基金利率 (' + latestUSFed.value.toFixed(2) + '%) 與台灣重貼現率 (' + latestTWDiscount.value.toFixed(2) + '%) 利差達 ' + spread.toFixed(2) + '%，防範套利交易導致台幣貶值及外資撤離。';
-                    statusEl.innerText = 'HIGH RISK';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
-                } else {
-                    titleEl.innerText = '✅ 利差正常 (外流風險低)';
-                    titleEl.className = 'text-emerald-400 font-bold mt-2 text-base';
-                    descEl.innerText = '台美利差為 ' + spread.toFixed(2) + '% (美國 ' + latestUSFed.value.toFixed(2) + '% vs 台灣 ' + latestTWDiscount.value.toFixed(2) + '%)，利差處於安全區間，資金流動平穩。';
-                    statusEl.innerText = 'LOW RISK';
-                    statusEl.className = 'px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-                }
-            }
-
-            // 圖表主題共用變數（根據 _macroChartTheme 自動切換）
-            var _chartForeColor = _macroChartTheme === 'light' ? '#475569' : '#9ca3af';
-            var _chartGridColor = _macroChartTheme === 'light' ? '#e2e8f0' : '#1f2937';
-
-            // 限制圖表時間跨度 (近 15 年，大約 180 個月)
-            const limit = 180;
-            const sliceData = (data) => data.slice(-limit);
-
-            // A1. 台灣流動性圖表
-            const twM1B_series = sliceData(twM1B).map(d => ({ x: d.date, y: d.value }));
-            const twM2_series = sliceData(twM2).map(d => ({ x: d.date, y: d.value }));
-            const twOptions = {
-                series: [
-                    { name: 'M1B 年增率', data: twM1B_series },
-                    { name: 'M2 年增率', data: twM2_series }
-                ],
-                chart: {
-                    type: 'line',
-                    height: 340,
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#3b82f6', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 35 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: { 
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-liquidity'] = new ApexCharts(document.querySelector("#chart-tw-liquidity"), twOptions);
-            window.macroCharts['chart-tw-liquidity'].render();
-
-            // A2. 美國流動性圖表
-            const usM1_series = sliceData(usM1).map(d => ({ x: d.date, y: d.value }));
-            const usM2_series = sliceData(usM2).map(d => ({ x: d.date, y: d.value }));
-            const usOptions = {
-                series: [
-                    { name: 'M1 年增率', data: usM1_series },
-                    { name: 'M2 年增率', data: usM2_series }
-                ],
-                chart: {
-                    type: 'line',
-                    height: 340,
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#3b82f6', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 35 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: { 
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-liquidity'] = new ApexCharts(document.querySelector("#chart-us-liquidity"), usOptions);
-            window.macroCharts['chart-us-liquidity'].render();
-
-
-            // B1. 台灣通膨圖表
-            const twCPI_series = sliceData(twCPI).map(d => ({ x: d.date, y: d.value }));
-            const twCoreCPI_series = sliceData(twCoreCPI).map(d => ({ x: d.date, y: d.value }));
-            const twCpiOptions = {
-                series: [
-                    { name: '台灣 CPI 年增率 (YoY)', data: twCPI_series },
-                    { name: '台灣核心 CPI 年增率 (Core CPI YoY)', data: twCoreCPI_series }
-                ],
-                chart: {
-                    type: 'line',
-                    height: 340,
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#f59e0b', '#ef4444'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 35 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: { 
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-inflation'] = new ApexCharts(document.querySelector("#chart-tw-inflation"), twCpiOptions);
-            window.macroCharts['chart-tw-inflation'].render();
-
-            // B2. 美國通膨圖表
-            const usCPI_series = sliceData(usCPI).map(d => ({ x: d.date, y: d.value }));
-            const usCoreCPI_series = sliceData(usCoreCPI).map(d => ({ x: d.date, y: d.value }));
-            const usCorePCE_series = sliceData(usCorePce).map(d => ({ x: d.date, y: d.value }));
-            const usCpiOptions = {
-                series: [
-                    { name: '美國 CPI 年增率 (YoY)', data: usCPI_series },
-                    { name: '美國核心 CPI 年增率 (Core CPI YoY)', data: usCoreCPI_series },
-                    { name: '美國核心 PCE 物價年增率 (Core PCE YoY)', data: usCorePCE_series }
-                ],
-                chart: {
-                    type: 'line',
-                    height: 340,
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#f59e0b', '#ef4444', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 35 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: { 
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-inflation'] = new ApexCharts(document.querySelector("#chart-us-inflation"), usCpiOptions);
-            window.macroCharts['chart-us-inflation'].render();
-
-
-            // C1. 台灣金融政策環境 (雙 Y 軸)
-            const twStock_series = sliceData(twStock).map(d => ({ x: d.date, y: d.value }));
-            const twForex_series = sliceData(twForex).map(d => ({ x: d.date, y: d.value }));
-            const twPolicyOptions = {
-                series: [
-                    { name: '台灣加權股價指數', type: 'line', data: twStock_series },
-                    { name: '台灣外匯存底 (十億美元)', type: 'line', data: twForex_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: [3, 2], curve: 'smooth', dashArray: [0, 4] },
-                colors: ['#3b82f6', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 45, right: 55 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: '股價指數 (點)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#3b82f6' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? Math.round(val).toLocaleString() : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '外匯存底 (十億美元)', style: { fontSize: '14px', color: '#10b981' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#10b981' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) + ' B' : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-policy'] = new ApexCharts(document.querySelector("#chart-tw-policy"), twPolicyOptions);
-            window.macroCharts['chart-tw-policy'].render();
-
-            // C2. 美國政策利率與美債利差 (雙 Y 軸)
-            const usFed_series = sliceData(usFed).map(d => ({ x: d.date, y: d.value }));
-            const usYield_series = sliceData(usYield).map(d => ({ x: d.date, y: d.value }));
-            const usCreditSpread_series = sliceData(usCreditSpread).map(d => ({ x: d.date, y: d.value }));
-            const usPolicyOptions = {
-                series: [
-                    { name: '美國聯邦基金利率', type: 'line', data: usFed_series },
-                    { name: '美國 10Y-2Y 美債利差', type: 'line', data: usYield_series },
-                    { name: '美國 Moody\'s AAA 信用利差', type: 'line', data: usCreditSpread_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#ec4899', '#3b82f6', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: '政策與信用利率 (%)', style: { fontSize: '14px', color: '#ec4899' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#ec4899' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '10Y-2Y 美債利差 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#3b82f6' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-policy'] = new ApexCharts(document.querySelector("#chart-us-policy"), usPolicyOptions);
-            window.macroCharts['chart-us-policy'].render();
-
-
-            // D. 美國就業市場 (雙 Y 軸，失業率 & 新增非農，美國專有)
-            const usUnrate_series = sliceData(usUnrate).map(d => ({ x: d.date, y: d.value }));
-            const usNfp_series = sliceData(usNfp).map(d => ({ x: d.date, y: d.value }));
-            const usEmpOptions = {
-                series: [
-                    { name: '新增非農就業人數 (NFP)', type: 'column', data: usNfp_series },
-                    { name: '失業率 (Unemployment Rate)', type: 'line', data: usUnrate_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: [0, 3], curve: 'smooth' },
-                colors: ['#3b82f6', '#ef4444'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 55, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: '新增非農就業 (人)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#3b82f6' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? Math.round(val).toLocaleString() : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '失業率 (%)', style: { fontSize: '14px', color: '#ef4444' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#ef4444' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-employment'] = new ApexCharts(document.querySelector("#chart-us-employment"), usEmpOptions);
-            window.macroCharts['chart-us-employment'].render();
-
-
-            // 3. 台灣信用擴張圖表 (chart-tw-credit)
-            const twReserve_series = sliceData(twReserve).map(d => ({ x: d.date, y: d.value }));
-            const twLoan_series = sliceData(twLoan).map(d => ({ x: d.date, y: d.value }));
-            const twCreditOptions = {
-                series: [
-                    { name: '準備貨幣年增率', data: twReserve_series },
-                    { name: '主要金融機構放款與投資年增率', data: twLoan_series }
-                ],
-                chart: {
-                    type: 'line',
-                    height: 340,
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#8b5cf6', '#ec4899'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 35 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: { 
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-credit'] = new ApexCharts(document.querySelector("#chart-tw-credit"), twCreditOptions);
-            window.macroCharts['chart-tw-credit'].render();
-
-
-            // 4. 美國 GDP 與儲蓄率圖表 (chart-us-gdp-saving)
-            const usGdp_series = sliceData(usGdp).map(d => ({ x: d.date, y: d.value }));
-            const usSaving_series = sliceData(usSaving).map(d => ({ x: d.date, y: d.value }));
-            const usMfgOrders_series = sliceData(usMfgOrders).map(d => ({ x: d.date, y: d.value }));
-            const usGdpSavingOptions = {
-                series: [
-                    { name: '美國實質 GDP 年增率', type: 'line', data: usGdp_series },
-                    { name: '美國個人儲蓄率', type: 'line', data: usSaving_series },
-                    { name: '美國製造業新增訂單年增率', type: 'line', data: usMfgOrders_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#3b82f6', '#f59e0b', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: 'GDP 與製造業訂單年增率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#3b82f6' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '儲蓄率 (%)', style: { fontSize: '14px', color: '#f59e0b' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#f59e0b' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-gdp-saving'] = new ApexCharts(document.querySelector("#chart-us-gdp-saving"), usGdpSavingOptions);
-            window.macroCharts['chart-us-gdp-saving'].render();
-
-
-            // 5. 台灣利率與匯率圖表 (chart-tw-interest)
-            const twDiscount_series = sliceData(twDiscount).map(d => ({ x: d.date, y: d.value }));
-            const twOvernight_series = sliceData(twOvernight).map(d => ({ x: d.date, y: d.value }));
-            const twExchange_series = sliceData(twExchange).map(d => ({ x: d.date, y: d.value }));
-            const twInterestOptions = {
-                series: [
-                    { name: '台灣重貼現率', type: 'line', data: twDiscount_series },
-                    { name: '金融業隔夜拆款利率', type: 'line', data: twOvernight_series },
-                    { name: '新台幣兌美元匯率', type: 'line', data: twExchange_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: [3, 2, 3], curve: 'smooth', dashArray: [0, 4, 0] },
-                colors: ['#ef4444', '#f59e0b', '#10b981'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: '利率 (%)', style: { fontSize: '14px', color: '#ef4444' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#ef4444' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(3) + '%' : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '匯率 (NTD/USD)', style: { fontSize: '14px', color: '#10b981' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#10b981' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-interest'] = new ApexCharts(document.querySelector("#chart-tw-interest"), twInterestOptions);
-            window.macroCharts['chart-tw-interest'].render();
-
-
-            // 6. 全球成本與收入圖表 (chart-us-cost-income)
-            const globalOil_series = sliceData(globalOil).map(d => ({ x: d.date, y: d.value }));
-            const usExportPrice_series = sliceData(usExportPrice).map(d => ({ x: d.date, y: d.value }));
-            const usCD3M_series = sliceData(usCD3M).map(d => ({ x: d.date, y: d.value }));
-            const usCostIncomeOptions = {
-                series: [
-                    { name: '國際原油價格 (WTI, 美元/桶)', type: 'line', data: globalOil_series },
-                    { name: '美國出口物價指數年增率', type: 'line', data: usExportPrice_series },
-                    { name: '美國 3M 大額存單利率 (CD 3M)', type: 'line', data: usCD3M_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: [3, 2, 2], curve: 'smooth' },
-                colors: ['#ec4899', '#f59e0b', '#3b82f6'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: [
-                    {
-                        title: { text: '原油價格 (美元)', style: { fontSize: '14px', color: '#ec4899' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#ec4899' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) : '';
-                            }
-                        }
-                    },
-                    {
-                        opposite: true,
-                        title: { text: '年增率與利率 (%)', style: { fontSize: '14px', color: '#3b82f6' } },
-                        labels: { 
-                            style: { fontSize: '14px', colors: '#3b82f6' },
-                            formatter: function(val) {
-                                return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                            }
-                        }
-                    }
-                ],
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-us-cost-income'] = new ApexCharts(document.querySelector("#chart-us-cost-income"), usCostIncomeOptions);
-            window.macroCharts['chart-us-cost-income'].render();
-
-
-            // 7. 台灣實質產出與就業圖表 (chart-tw-employment)
-            const twGdp_series = sliceData(twGdp).map(d => ({ x: d.date, y: d.value }));
-            const twUnrate_series = sliceData(twUnrate).map(d => ({ x: d.date, y: d.value }));
-            const twEmploymentOptions = {
-                series: [
-                    { name: '台灣 GDP 成長率 (YoY)', data: twGdp_series },
-                    { name: '台灣失業率', data: twUnrate_series }
-                ],
-                chart: {
-                    height: 340,
-                    type: 'line',
-                    foreColor: _chartForeColor,
-                    background: 'transparent',
-                    toolbar: { show: false }
-                },
-                stroke: { width: 3, curve: 'smooth' },
-                colors: ['#3b82f6', '#ef4444'],
-                grid: { 
-                    borderColor: _chartGridColor,
-                    padding: { left: 40, right: 45 }
-                },
-                xaxis: { 
-                    type: 'datetime',
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val, timestamp) {
-                            if (!val) return '';
-                            const date = new Date(timestamp);
-                            const y = date.getFullYear();
-                            const m = String(date.getMonth() + 1).padStart(2, '0');
-                            return `${y}-${m}`;
-                        }
-                    }
-                },
-                yaxis: {
-                    title: { text: '%', style: { fontSize: '14px' } },
-                    labels: { 
-                        style: { fontSize: '14px' },
-                        formatter: function(val) {
-                            return val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : '';
-                        }
-                    }
-                },
-                theme: { mode: _macroChartTheme },
-                legend: { position: 'top', fontSize: '14px' }
-            };
-            window.macroCharts['chart-tw-employment'] = new ApexCharts(document.querySelector("#chart-tw-employment"), twEmploymentOptions);
-            window.macroCharts['chart-tw-employment'].render();
         }
-    </script>
-</body>
-</html>
+
+        if (usFed.length > 0 && twDiscount.length > 0) {
+            const latestUSFed = usFed[usFed.length - 1];
+            const latestTWDiscount = twDiscount[twDiscount.length - 1];
+            const spread = Math.abs(latestUSFed.value - latestTWDiscount.value);
+            const titleEl = document.getElementById('master-spread-title');
+            const descEl = document.getElementById('master-spread-desc');
+            const dateEl = document.getElementById('master-spread-date');
+            const statusEl = document.getElementById('master-spread-status');
+            
+            dateEl.innerText = latestTWDiscount.date;
+            if (latestUSFed.value > latestTWDiscount.value && spread > 1.5) {
+                titleEl.innerText = '台美利差擴大 (外資流出風險)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-danger';
+                descEl.innerText = '美國基金利率 (' + latestUSFed.value.toFixed(2) + '%) 與台灣重貼現率 (' + latestTWDiscount.value.toFixed(2) + '%) 利差達 ' + spread.toFixed(2) + '%，需防範台幣貶值與外資撤離。';
+                statusEl.innerText = 'HIGH RISK';
+                statusEl.className = 'badge bg-danger advisory-badge';
+            } else {
+                titleEl.innerText = '利差正常 (外流風險低)';
+                titleEl.className = 'fw-bold mt-2 mb-1 text-success';
+                descEl.innerText = '台美利差為 ' + spread.toFixed(2) + '% (美國 ' + latestUSFed.value.toFixed(2) + '% vs 台灣 ' + latestTWDiscount.value.toFixed(2) + '%)，利差處於安全區間。';
+                statusEl.innerText = 'LOW RISK';
+                statusEl.className = 'badge bg-success advisory-badge';
+            }
+        }
+
+        const currentThemeMode = getChartTheme();
+        const _chartForeColor = currentThemeMode === 'light' ? '#475569' : '#a0aec0';
+        const _chartGridColor = currentThemeMode === 'light' ? '#e2e8f0' : '#2d2d2d';
+
+        const limit = 180;
+        const sliceData = (data) => data.slice(-limit);
+
+        // A1. 台灣流動性圖表
+        const twM1B_series = sliceData(twM1B).map(d => ({ x: d.date, y: d.value }));
+        const twM2_series = sliceData(twM2).map(d => ({ x: d.date, y: d.value }));
+        const twOptions = {
+            series: [
+                { name: 'M1B 年增率', data: twM1B_series },
+                { name: 'M2 年增率', data: twM2_series }
+            ],
+            chart: {
+                type: 'line',
+                height: 340,
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#0d6efd', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 35 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-liquidity'] = new ApexCharts(document.querySelector("#chart-tw-liquidity"), twOptions);
+        window.macroCharts['chart-tw-liquidity'].render();
+
+        // A2. 美國流動性圖表
+        const usM1_series = sliceData(usM1).map(d => ({ x: d.date, y: d.value }));
+        const usM2_series = sliceData(usM2).map(d => ({ x: d.date, y: d.value }));
+        const usOptions = {
+            series: [
+                { name: 'M1 年增率', data: usM1_series },
+                { name: 'M2 年增率', data: usM2_series }
+            ],
+            chart: {
+                type: 'line',
+                height: 340,
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#0d6efd', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 35 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-liquidity'] = new ApexCharts(document.querySelector("#chart-us-liquidity"), usOptions);
+        window.macroCharts['chart-us-liquidity'].render();
+
+        // B1. 台灣通膨圖表
+        const twCPI_series = sliceData(twCPI).map(d => ({ x: d.date, y: d.value }));
+        const twCoreCPI_series = sliceData(twCoreCPI).map(d => ({ x: d.date, y: d.value }));
+        const twCpiOptions = {
+            series: [
+                { name: '台灣 CPI 年增率 (YoY)', data: twCPI_series },
+                { name: '台灣核心 CPI 年增率 (Core CPI YoY)', data: twCoreCPI_series }
+            ],
+            chart: {
+                type: 'line',
+                height: 340,
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#ffc107', '#dc3545'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 35 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-inflation'] = new ApexCharts(document.querySelector("#chart-tw-inflation"), twCpiOptions);
+        window.macroCharts['chart-tw-inflation'].render();
+
+        // B2. 美國通膨圖表
+        const usCPI_series = sliceData(usCPI).map(d => ({ x: d.date, y: d.value }));
+        const usCoreCPI_series = sliceData(usCoreCPI).map(d => ({ x: d.date, y: d.value }));
+        const usCorePCE_series = sliceData(usCorePce).map(d => ({ x: d.date, y: d.value }));
+        const usCpiOptions = {
+            series: [
+                { name: '美國 CPI 年增率 (YoY)', data: usCPI_series },
+                { name: '美國核心 CPI 年增率 (Core CPI YoY)', data: usCoreCPI_series },
+                { name: '美國核心 PCE 物價年增率 (Core PCE YoY)', data: usCorePCE_series }
+            ],
+            chart: {
+                type: 'line',
+                height: 340,
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#ffc107', '#dc3545', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 35 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-inflation'] = new ApexCharts(document.querySelector("#chart-us-inflation"), usCpiOptions);
+        window.macroCharts['chart-us-inflation'].render();
+
+        // C1. 台灣金融政策環境 (雙 Y 軸)
+        const twStock_series = sliceData(twStock).map(d => ({ x: d.date, y: d.value }));
+        const twForex_series = sliceData(twForex).map(d => ({ x: d.date, y: d.value }));
+        const twPolicyOptions = {
+            series: [
+                { name: '台灣加權股價指數', type: 'line', data: twStock_series },
+                { name: '台灣外匯存底 (十億美元)', type: 'line', data: twForex_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: [3, 2], curve: 'smooth', dashArray: [0, 4] },
+            colors: ['#0d6efd', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 45, right: 55 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: '股價指數 (點)', style: { fontSize: '13px', color: '#0d6efd' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#0d6efd' },
+                        formatter: val => val !== undefined && val !== null ? Math.round(val).toLocaleString() : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '外匯存底 (十億美元)', style: { fontSize: '13px', color: '#198754' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#198754' },
+                        formatter: val => val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) + ' B' : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-policy'] = new ApexCharts(document.querySelector("#chart-tw-policy"), twPolicyOptions);
+        window.macroCharts['chart-tw-policy'].render();
+
+        // C2. 美國政策利率與美債利差 (雙 Y 軸)
+        const usFed_series = sliceData(usFed).map(d => ({ x: d.date, y: d.value }));
+        const usYield_series = sliceData(usYield).map(d => ({ x: d.date, y: d.value }));
+        const usCreditSpread_series = sliceData(usCreditSpread).map(d => ({ x: d.date, y: d.value }));
+        const usPolicyOptions = {
+            series: [
+                { name: '美國聯邦基金利率', type: 'line', data: usFed_series },
+                { name: '美國 10Y-2Y 美債利差', type: 'line', data: usYield_series },
+                { name: '美國 Moody\'s AAA 信用利差', type: 'line', data: usCreditSpread_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#d63384', '#0d6efd', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: '政策與信用利率 (%)', style: { fontSize: '13px', color: '#d63384' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#d63384' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '10Y-2Y 美債利差 (%)', style: { fontSize: '13px', color: '#0d6efd' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#0d6efd' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-policy'] = new ApexCharts(document.querySelector("#chart-us-policy"), usPolicyOptions);
+        window.macroCharts['chart-us-policy'].render();
+
+        // D. 美國就業市場
+        const usUnrate_series = sliceData(usUnrate).map(d => ({ x: d.date, y: d.value }));
+        const usNfp_series = sliceData(usNfp).map(d => ({ x: d.date, y: d.value }));
+        const usEmpOptions = {
+            series: [
+                { name: '新增非農就業人數 (NFP)', type: 'column', data: usNfp_series },
+                { name: '失業率 (Unemployment Rate)', type: 'line', data: usUnrate_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: [0, 3], curve: 'smooth' },
+            colors: ['#0d6efd', '#dc3545'],
+            grid: { borderColor: _chartGridColor, padding: { left: 55, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: '新增非農就業 (人)', style: { fontSize: '13px', color: '#0d6efd' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#0d6efd' },
+                        formatter: val => val !== undefined && val !== null ? Math.round(val).toLocaleString() : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '失業率 (%)', style: { fontSize: '13px', color: '#dc3545' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#dc3545' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-employment'] = new ApexCharts(document.querySelector("#chart-us-employment"), usEmpOptions);
+        window.macroCharts['chart-us-employment'].render();
+
+        // 3. 台灣信用擴張圖表 (chart-tw-credit)
+        const twReserve_series = sliceData(twReserve).map(d => ({ x: d.date, y: d.value }));
+        const twLoan_series = sliceData(twLoan).map(d => ({ x: d.date, y: d.value }));
+        const twCreditOptions = {
+            series: [
+                { name: '準備貨幣年增率', data: twReserve_series },
+                { name: '主要金融機構放款與投資年增率', data: twLoan_series }
+            ],
+            chart: {
+                type: 'line',
+                height: 340,
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#6f42c1', '#d63384'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 35 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-credit'] = new ApexCharts(document.querySelector("#chart-tw-credit"), twCreditOptions);
+        window.macroCharts['chart-tw-credit'].render();
+
+        // 4. 美國 GDP 與儲蓄率圖表 (chart-us-gdp-saving)
+        const usGdp_series = sliceData(usGdp).map(d => ({ x: d.date, y: d.value }));
+        const usSaving_series = sliceData(usSaving).map(d => ({ x: d.date, y: d.value }));
+        const usMfgOrders_series = sliceData(usMfgOrders).map(d => ({ x: d.date, y: d.value }));
+        const usGdpSavingOptions = {
+            series: [
+                { name: '美國實質 GDP 年增率', type: 'line', data: usGdp_series },
+                { name: '美國個人儲蓄率', type: 'line', data: usSaving_series },
+                { name: '美國製造業新增訂單年增率', type: 'line', data: usMfgOrders_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#0d6efd', '#ffc107', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: 'GDP 與製造業訂單年增率 (%)', style: { fontSize: '13px', color: '#0d6efd' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#0d6efd' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '儲蓄率 (%)', style: { fontSize: '13px', color: '#ffc107' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#ffc107' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(1) + '%' : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-gdp-saving'] = new ApexCharts(document.querySelector("#chart-us-gdp-saving"), usGdpSavingOptions);
+        window.macroCharts['chart-us-gdp-saving'].render();
+
+        // 5. 台灣利率與匯率圖表 (chart-tw-interest)
+        const twDiscount_series = sliceData(twDiscount).map(d => ({ x: d.date, y: d.value }));
+        const twOvernight_series = sliceData(twOvernight).map(d => ({ x: d.date, y: d.value }));
+        const twExchange_series = sliceData(twExchange).map(d => ({ x: d.date, y: d.value }));
+        const twInterestOptions = {
+            series: [
+                { name: '台灣重貼現率', type: 'line', data: twDiscount_series },
+                { name: '金融業隔夜拆款利率', type: 'line', data: twOvernight_series },
+                { name: '新台幣兌美元匯率', type: 'line', data: twExchange_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: [3, 2, 3], curve: 'smooth', dashArray: [0, 4, 0] },
+            colors: ['#dc3545', '#ffc107', '#198754'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: '利率 (%)', style: { fontSize: '13px', color: '#dc3545' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#dc3545' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(3) + '%' : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '匯率 (NTD/USD)', style: { fontSize: '13px', color: '#198754' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#198754' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-interest'] = new ApexCharts(document.querySelector("#chart-tw-interest"), twInterestOptions);
+        window.macroCharts['chart-tw-interest'].render();
+
+        // 6. 全球要素與短期資金成本 (chart-us-cost-income)
+        const globalOil_series = sliceData(globalOil).map(d => ({ x: d.date, y: d.value }));
+        const usExportPrice_series = sliceData(usExportPrice).map(d => ({ x: d.date, y: d.value }));
+        const usCD3M_series = sliceData(usCD3M).map(d => ({ x: d.date, y: d.value }));
+        const usCostIncomeOptions = {
+            series: [
+                { name: '國際原油價格 (WTI, 美元/桶)', type: 'line', data: globalOil_series },
+                { name: '美國出口物價指數年增率', type: 'line', data: usExportPrice_series },
+                { name: '美國 3M 大額存單利率 (CD 3M)', type: 'line', data: usCD3M_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: [3, 2, 2], curve: 'smooth' },
+            colors: ['#d63384', '#ffc107', '#0d6efd'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: [
+                {
+                    title: { text: '原油價格 (美元)', style: { fontSize: '13px', color: '#d63384' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#d63384' },
+                        formatter: val => val !== undefined && val !== null ? '$' + parseFloat(val).toFixed(1) : ''
+                    }
+                },
+                {
+                    opposite: true,
+                    title: { text: '年增率與利率 (%)', style: { fontSize: '13px', color: '#0d6efd' } },
+                    labels: { 
+                        style: { fontSize: '13px', colors: '#0d6efd' },
+                        formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                    }
+                }
+            ],
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-us-cost-income'] = new ApexCharts(document.querySelector("#chart-us-cost-income"), usCostIncomeOptions);
+        window.macroCharts['chart-us-cost-income'].render();
+
+        // 7. 台灣實質產出與就業圖表 (chart-tw-employment)
+        const twGdp_series = sliceData(twGdp).map(d => ({ x: d.date, y: d.value }));
+        const twUnrate_series = sliceData(twUnrate).map(d => ({ x: d.date, y: d.value }));
+        const twEmploymentOptions = {
+            series: [
+                { name: '台灣 GDP 成長率 (YoY)', data: twGdp_series },
+                { name: '台灣失業率', data: twUnrate_series }
+            ],
+            chart: {
+                height: 340,
+                type: 'line',
+                foreColor: _chartForeColor,
+                background: 'transparent',
+                toolbar: { show: false }
+            },
+            stroke: { width: 3, curve: 'smooth' },
+            colors: ['#0d6efd', '#dc3545'],
+            grid: { borderColor: _chartGridColor, padding: { left: 40, right: 45 } },
+            xaxis: { 
+                type: 'datetime',
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: (val, timestamp) => {
+                        if (!val) return '';
+                        const date = new Date(timestamp);
+                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    }
+                }
+            },
+            yaxis: { 
+                title: { text: '%', style: { fontSize: '13px' } },
+                labels: { 
+                    style: { fontSize: '13px' },
+                    formatter: val => val !== undefined && val !== null ? parseFloat(val).toFixed(2) + '%' : ''
+                }
+            },
+            theme: { mode: currentThemeMode },
+            legend: { position: 'top', fontSize: '13px' }
+        };
+        window.macroCharts['chart-tw-employment'] = new ApexCharts(document.querySelector("#chart-tw-employment"), twEmploymentOptions);
+        window.macroCharts['chart-tw-employment'].render();
+    }
+</script>
+{% endblock %}

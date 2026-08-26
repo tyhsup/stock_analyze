@@ -219,6 +219,7 @@ class NewsExcelManager:
                     existing_df = self._normalize_df_columns(pd.DataFrame(existing_data)) if existing_data else pd.DataFrame(columns=SCHEMA_COLUMNS)
                 else:
                     existing_df = pd.DataFrame(columns=SCHEMA_COLUMNS)
+                    headers = None
                     wb.create_sheet(title=year)
 
                 # Dedup key = (標題, 日期) or (連結)

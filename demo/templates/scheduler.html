@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block title %}Task Scheduler - StockAIG{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Scheduler 專屬 Badge 與狀態樣式 */
+    .badge-pending {
+        background-color: #ffc107;
+        color: #000;
+    }
+    .badge-running {
+        background-color: #0dcaf0;
+        color: #000;
+    }
+    .badge-completed {
+        background-color: #198754;
+        color: #fff;
+    }
+    .badge-failed {
+        background-color: #dc3545;
+        color: #fff;
+    }
+    .badge-cancelled {
+        background-color: #6c757d;
+        color: #fff;
+    }
+
+    .btn-icon {
+        background: transparent;
+        border: 1px solid var(--card-border, #dee2e6);
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+        color: var(--text-color, inherit);
+    }
+    .btn-icon:hover {
+        background: rgba(13, 110, 253, 0.1);
+        border-color: var(--primary-color, #0d6efd);
+    }
+    .btn-icon-danger:hover {
+        background: rgba(220, 53, 69, 0.1);
+        border-color: #dc3545;
+    }
+
+    .remarks-text {
+        font-size: 0.8rem;
+        color: var(--text-muted, #6c757d);
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 頂部標頭與 LLM 配額卡片 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card p-4 shadow-sm border-0">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle p-3 bg-primary bg-opacity-10 text-primary fs-3">
+                        <i class="bi bi-calendar2-check"></i>
+                    </div>
+                    <div>
+                        <h2 class="display-6 fw-bold mb-1" id="app-title">智能股市數據排程器</h2>
+                        <p class="text-muted mb-0">基於 Gemini LLM 與本地排程引擎的自動化股市資料維護中心</p>
+                    </div>
+                </div>
+
+                <!-- LLM 今日額度顯示卡 -->
+                <div class="card bg-light border-0 p-3 shadow-none" style="min-width: 260px;" id="quota-container">
+                    <div class="d-flex justify-content-between align-items-center mb-2 small fw-semibold">
+                        <span><i class="bi bi-cpu me-1 text-primary"></i> 今日 LLM 額度</span>
+                        <span id="quota-value" class="text-primary">0 / 50</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-primary" id="quota-progress-fill" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI 自然語言任務解析區塊 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 p-4">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-stars text-primary fs-5"></i>
+                <h5 class="fw-bold mb-0" id="llm-heading">AI 自然語言任務解析</h5>
+            </div>
+            <p class="text-muted small mb-3">輸入自然語言描述，由 AI 自動分析並建立適當的資料更新排程任務。</p>
+            <div class="row g-2">
+                <div class="col-md-10">
+                    <textarea id="llm-prompt" class="form-control" rows="2" placeholder="例如：幫我排程每 3 天更新台股籌碼，從今天晚上 11 點開始... 或：立刻幫我更新美股 AAPL 與 NVDA 的法人持股"></textarea>
+                </div>
+                <div class="col-md-2 d-flex">
+                    <button id="btn-parse-llm" class="btn btn-primary w-100 fw-semibold d-flex align-items-center justify-content-center gap-2">
+                        <span id="btn-parse-text"><i class="bi bi-magic me-1"></i> 分析並加入</span>
+                        <span id="btn-parse-spinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                    </button>
+                </div>
+            </div>
+            <div id="llm-error-msg" class="alert alert-danger mt-3 mb-0 d-none"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 指標統計卡片區 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100 d-flex flex-row align-items-center gap-3">
+            <div class="rounded-3 p-3 bg-info bg-opacity-10 text-info fs-4">
+                <i class="bi bi-arrow-repeat"></i>
+            </div>
+            <div>
+                <h3 class="fw-bold mb-0" id="stat-running">0</h3>
+                <span class="text-muted small">執行中任務</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100 d-flex flex-row align-items-center gap-3">
+            <div class="rounded-3 p-3 bg-warning bg-opacity-10 text-warning fs-4">
+                <i class="bi bi-clock"></i>
+            </div>
+            <div>
+                <h3 class="fw-bold mb-0" id="stat-pending">0</h3>
+                <span class="text-muted small">排程中 (Pending)</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100 d-flex flex-row align-items-center gap-3">
+            <div class="rounded-3 p-3 bg-success bg-opacity-10 text-success fs-4">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <h3 class="fw-bold mb-0" id="stat-completed">0</h3>
+                <span class="text-muted small">已完成任務</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card p-3 shadow-sm border-0 h-100 d-flex flex-row align-items-center gap-3">
+            <div class="rounded-3 p-3 bg-danger bg-opacity-10 text-danger fs-4">
+                <i class="bi bi-x-circle"></i>
+            </div>
+            <div>
+                <h3 class="fw-bold mb-0" id="stat-failed">0</h3>
+                <span class="text-muted small">已失敗 / 取消</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 主要排程控制與列表區 -->
+<div class="row g-4 mb-4">
+    <!-- 左側：手動新增任務 -->
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <i class="bi bi-plus-circle-fill text-primary fs-5"></i>
+                <h5 class="fw-bold mb-0" id="manual-heading">手動新增任務</h5>
+            </div>
+            <form id="manual-task-form">
+                <div class="mb-3">
+                    <label for="task-name" class="form-label small fw-semibold">任務名稱</label>
+                    <input type="text" id="task-name" class="form-control" placeholder="例如：更新台股股價" required>
+                </div>
+                <div class="mb-3">
+                    <label for="task-type" class="form-label small fw-semibold">任務類型</label>
+                    <select id="task-type" class="form-select" required>
+                        <option value="tw_stock_cost">台股股價更新</option>
+                        <option value="us_stock_cost">美股股價更新</option>
+                        <option value="tw_stock_price_only">更新全台灣股價</option>
+                        <option value="us_stock_price_only">更新全美國股價</option>
+                        <option value="twse_investor">台股三大法人買賣超 (上市)</option>
+                        <option value="tpex_investor">台股三大法人買賣超 (上櫃)</option>
+                        <option value="us_investor">美股法人持股</option>
+                        <option value="tw_listed_list_update">台灣上市公司清單更新</option>
+                        <option value="tw_otc_list_update">台灣上櫃公司清單更新</option>
+                        <option value="us_stock_list_update">美國上市公司清單更新</option>
+                        <option value="update_macro_data_us">更新美國總體經濟數據</option>
+                        <option value="update_macro_data_tw">更新台灣總體經濟數據</option>
+                    </select>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label for="trigger-type" class="form-label small fw-semibold">觸發類型</label>
+                        <select id="trigger-type" class="form-select">
+                            <option value="manual">手動單次</option>
+                            <option value="auto">自動週期</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label for="interval-days" class="form-label small fw-semibold">更新週期 (天)</label>
+                        <input type="number" id="interval-days" class="form-control" placeholder="週期天數" min="1" disabled>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="trigger-time" class="form-label small fw-semibold">執行時間 (預設立即)</label>
+                    <input type="text" id="trigger-time" class="form-control" placeholder="YYYY-MM-DD HH:MM:SS">
+                </div>
+                <div class="mb-4">
+                    <label for="task-remarks" class="form-label small fw-semibold">備註 / 股票代號 (選填)</label>
+                    <input type="text" id="task-remarks" class="form-control" placeholder="例如: 2330 或 AAPL,NVDA">
+                </div>
+                <button type="submit" id="btn-create-task" class="btn btn-primary w-100 fw-semibold">
+                    <i class="bi bi-send me-1"></i> 建立並加入排程
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 右側：任務列表 Dashboard -->
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 p-4 h-100">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-list-task text-primary fs-5"></i>
+                    <h5 class="fw-bold mb-0" id="list-heading">任務監控面板</h5>
+                </div>
+                <!-- Tab 按鈕切換 -->
+                <ul class="nav nav-pills" id="table-tabs">
+                    <li class="nav-item">
+                        <button class="nav-link active py-1 px-3 tab-btn" data-tab="active" id="tab-active-btn">進行中 / 排程中</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link py-1 px-3 tab-btn" data-tab="completed" id="tab-completed-btn">已完成</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link py-1 px-3 tab-btn" data-tab="failed" id="tab-failed-btn">已失敗 / 取消</button>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="table-responsive">
+                <table id="jobs-table" class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 6%">ID</th>
+                            <th style="width: 24%">任務名稱</th>
+                            <th style="width: 14%">類型</th>
+                            <th style="width: 12%">觸發方式</th>
+                            <th style="width: 16%">預計時間</th>
+                            <th style="width: 16%">完成時間</th>
+                            <th style="width: 8%">耗時</th>
+                            <th style="width: 8%">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-table-body">
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">正在載入任務列表...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI 解析二次確認 Modal -->
+<div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="confirmModalLabel">
+                    <i class="bi bi-stars text-primary me-2"></i>AI 任務解析確認
+                </h5>
+                <button type="button" class="btn-close" id="modal-close-btn" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">AI 已經將您的描述解析為以下任務。請確認參數是否正確：</p>
+                <div class="mb-3">
+                    <label for="modal-name" class="form-label small fw-semibold">任務名稱</label>
+                    <input type="text" id="modal-name" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label for="modal-task-type" class="form-label small fw-semibold">任務類型</label>
+                    <select id="modal-task-type" class="form-select">
+                        <option value="tw_stock_cost">台股股價更新</option>
+                        <option value="us_stock_cost">美股股價更新</option>
+                        <option value="tw_stock_price_only">更新全台灣股價</option>
+                        <option value="us_stock_price_only">更新全美國股價</option>
+                        <option value="twse_investor">台股三大法人買賣超 (上市)</option>
+                        <option value="tpex_investor">台股三大法人買賣超 (上櫃)</option>
+                        <option value="us_investor">美股法人持股</option>
+                        <option value="tw_listed_list_update">台灣上市公司清單更新</option>
+                        <option value="tw_otc_list_update">台灣上櫃公司清單更新</option>
+                        <option value="us_stock_list_update">美國上市公司清單更新</option>
+                        <option value="update_macro_data_us">更新美國總體經濟數據</option>
+                        <option value="update_macro_data_tw">更新台灣總體經濟數據</option>
+                    </select>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label for="modal-trigger-type" class="form-label small fw-semibold">觸發類型</label>
+                        <select id="modal-trigger-type" class="form-select">
+                            <option value="manual">手動單次</option>
+                            <option value="auto">自動週期</option>
+                            <option value="llm">AI 單次</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label for="modal-interval-days" class="form-label small fw-semibold">更新週期 (天)</label>
+                        <input type="number" id="modal-interval-days" class="form-control" min="1">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="modal-trigger-time" class="form-label small fw-semibold">執行時間</label>
+                    <input type="text" id="modal-trigger-time" class="form-control" placeholder="YYYY-MM-DD HH:MM:SS">
+                </div>
+                <div class="mb-2">
+                    <label for="modal-remarks" class="form-label small fw-semibold">備註 / 股票代號</label>
+                    <input type="text" id="modal-remarks" class="form-control" placeholder="例如: 2330 或 AAPL,NVDA">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="modal-cancel-btn" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary fw-semibold" id="modal-confirm-btn">確認並加入排程</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/scheduler/app.js?v=20260826"></script>
+{% endblock %}

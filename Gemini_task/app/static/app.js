@@ -1,5 +1,5 @@
 // ==========================================================================
-// Gemini Task - Interactive Dashboard JS Controller
+// Gemini Task - Interactive Dashboard JS Controller (Bootstrap 5 Standardized)
 // ==========================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -7,8 +7,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const API_BASE = "/scheduler";
 
     // DOM 元素引用
-    const themeToggleBtn = document.getElementById("theme-toggle");
-    const themeIcon = document.getElementById("theme-icon");
     const llmPrompt = document.getElementById("llm-prompt");
     const btnParseLlm = document.getElementById("btn-parse-llm");
     const btnParseText = document.getElementById("btn-parse-text");
@@ -34,10 +32,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const jobsTableBody = document.getElementById("jobs-table-body");
 
     // Modal 相關元素
-    const confirmModal = document.getElementById("confirm-modal");
-    const modalCloseBtn = document.getElementById("modal-close-btn");
-    const modalCancelBtn = document.getElementById("modal-cancel-btn");
-    const modalConfirmBtn = document.getElementById("modal-confirm-btn");
+    const confirmModalEl = document.getElementById("confirm-modal");
+    let bsConfirmModal = null;
+    if (confirmModalEl && typeof bootstrap !== "undefined") {
+        bsConfirmModal = new bootstrap.Modal(confirmModalEl);
+    }
 
     const modalName = document.getElementById("modal-name");
     const modalTaskType = document.getElementById("modal-task-type");
@@ -45,61 +44,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalIntervalDays = document.getElementById("modal-interval-days");
     const modalTriggerTime = document.getElementById("modal-trigger-time");
     const modalRemarks = document.getElementById("modal-remarks");
+    const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
     // 當前全域狀態
     let currentTab = "active"; // active, completed, failed
     let allJobs = [];
 
-    // ----------------- 主題切換邏輯 -----------------
-    const getCurrentTheme = () => localStorage.getItem('theme') || 'dark';
-
-    const applyTheme = (theme) => {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-        if (themeIcon) {
-            if (theme === 'dark') {
-                themeIcon.className = 'fa-solid fa-moon';
-            } else {
-                themeIcon.className = 'fa-solid fa-sun';
-            }
-        }
-    };
-
-    // 初始化主題
-    applyTheme(getCurrentTheme());
-
-    if (themeToggleBtn) {
-        themeToggleBtn.addEventListener('click', () => {
-            const current = getCurrentTheme();
-            const nextTheme = current === 'dark' ? 'light' : 'dark';
-            applyTheme(nextTheme);
-        });
-    }
-
     // ----------------- 初始化與事件綁定 -----------------
 
     // 觸發類型變更時，啟用/停用更新週期天數
-    triggerTypeSelect.addEventListener("change", () => {
-        if (triggerTypeSelect.value === "auto") {
-            intervalDaysInput.removeAttribute("disabled");
-            intervalDaysInput.setAttribute("required", "true");
-            intervalDaysInput.value = 1;
-        } else {
-            intervalDaysInput.setAttribute("disabled", "true");
-            intervalDaysInput.removeAttribute("required");
-            intervalDaysInput.value = "";
-        }
-    });
+    if (triggerTypeSelect && intervalDaysInput) {
+        triggerTypeSelect.addEventListener("change", () => {
+            if (triggerTypeSelect.value === "auto") {
+                intervalDaysInput.removeAttribute("disabled");
+                intervalDaysInput.setAttribute("required", "true");
+                intervalDaysInput.value = intervalDaysInput.value || 1;
+            } else {
+                intervalDaysInput.setAttribute("disabled", "true");
+                intervalDaysInput.removeAttribute("required");
+                intervalDaysInput.value = "";
+            }
+        });
+    }
 
-    modalTriggerType.addEventListener("change", () => {
-        if (modalTriggerType.value === "auto") {
-            modalIntervalDays.removeAttribute("disabled");
-            modalIntervalDays.value = modalIntervalDays.value || 1;
-        } else {
-            modalIntervalDays.setAttribute("disabled", "true");
-            modalIntervalDays.value = "";
-        }
-    });
+    if (modalTriggerType && modalIntervalDays) {
+        modalTriggerType.addEventListener("change", () => {
+            if (modalTriggerType.value === "auto") {
+                modalIntervalDays.removeAttribute("disabled");
+                modalIntervalDays.value = modalIntervalDays.value || 1;
+            } else {
+                modalIntervalDays.setAttribute("disabled", "true");
+                modalIntervalDays.value = "";
+            }
+        });
+    }
 
     // Tab 切換事件
     document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -112,153 +90,171 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // 任務手動建立表單提交
-    manualForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        
-        const payload = {
-            name: document.getElementById("task-name").value,
-            task_type: taskTypeSelect.value,
-            trigger_type: triggerTypeSelect.value,
-            trigger_time: document.getElementById("trigger-time").value || null,
-            interval_days: triggerTypeSelect.value === "auto" ? parseInt(intervalDaysInput.value) : null,
-            remarks: document.getElementById("task-remarks").value || null
-        };
+    if (manualForm) {
+        manualForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            
+            const payload = {
+                name: document.getElementById("task-name").value,
+                task_type: taskTypeSelect.value,
+                trigger_type: triggerTypeSelect.value,
+                trigger_time: document.getElementById("trigger-time").value || null,
+                interval_days: triggerTypeSelect.value === "auto" ? parseInt(intervalDaysInput.value) : null,
+                remarks: document.getElementById("task-remarks").value || null
+            };
 
-        try {
-            const resp = await fetch(`${API_BASE}/api/jobs`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
+            try {
+                const resp = await fetch(`${API_BASE}/api/jobs`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
 
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || "建立任務失敗");
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || "建立任務失敗");
+                }
+
+                // 重置表單並刷新列表
+                manualForm.reset();
+                if (intervalDaysInput) intervalDaysInput.setAttribute("disabled", "true");
+                fetchJobs();
+                alert("任務建立成功！");
+            } catch (err) {
+                alert(err.message);
             }
-
-            // 重置表單並刷新列表
-            manualForm.reset();
-            intervalDaysInput.setAttribute("disabled", "true");
-            fetchJobs();
-            alert("任務建立成功！");
-        } catch (err) {
-            alert(err.message);
-        }
-    });
+        });
+    }
 
     // AI 解析按鈕事件
-    btnParseLlm.addEventListener("click", async () => {
-        const promptText = llmPrompt.value.trim();
-        if (!promptText) {
-            showLlmError("請先輸入您的排程描述需求。");
-            return;
-        }
-
-        clearLlmError();
-        setLlmLoading(true);
-
-        try {
-            const resp = await fetch(`${API_BASE}/api/llm/parse`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: promptText })
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || "AI 解析失敗。");
+    if (btnParseLlm && llmPrompt) {
+        btnParseLlm.addEventListener("click", async () => {
+            const promptText = llmPrompt.value.trim();
+            if (!promptText) {
+                showLlmError("請先輸入您的排程描述需求。");
+                return;
             }
 
-            const parsedResult = await resp.json();
-            showConfirmModal(parsedResult);
-            fetchQuota(); // 成功解析後，刷新配額顯示
-        } catch (err) {
-            showLlmError(err.message);
-        } finally {
-            setLlmLoading(false);
-        }
-    });
+            clearLlmError();
+            setLlmLoading(true);
 
-    // Modal 關閉事件
-    const closeModal = () => {
-        confirmModal.classList.add("hidden");
-    };
-    modalCloseBtn.addEventListener("click", closeModal);
-    modalCancelBtn.addEventListener("click", closeModal);
+            try {
+                const resp = await fetch(`${API_BASE}/api/llm/parse`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt: promptText })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || "AI 解析失敗。");
+                }
+
+                const parsedResult = await resp.json();
+                showConfirmModal(parsedResult);
+                fetchQuota(); // 成功解析後，刷新配額顯示
+            } catch (err) {
+                showLlmError(err.message);
+            } finally {
+                setLlmLoading(false);
+            }
+        });
+    }
 
     // Modal 確認送出事件
-    modalConfirmBtn.addEventListener("click", async () => {
-        const payload = {
-            name: modalName.value,
-            task_type: modalTaskType.value,
-            trigger_type: modalTriggerType.value,
-            trigger_time: modalTriggerTime.value || null,
-            interval_days: modalTriggerType.value === "auto" ? parseInt(modalIntervalDays.value) : null,
-            remarks: modalRemarks.value || null
-        };
+    if (modalConfirmBtn) {
+        modalConfirmBtn.addEventListener("click", async () => {
+            const payload = {
+                name: modalName.value,
+                task_type: modalTaskType.value,
+                trigger_type: modalTriggerType.value,
+                trigger_time: modalTriggerTime.value || null,
+                interval_days: modalTriggerType.value === "auto" ? parseInt(modalIntervalDays.value) : null,
+                remarks: modalRemarks.value || null
+            };
 
-        try {
-            const resp = await fetch(`${API_BASE}/api/jobs`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
+            try {
+                const resp = await fetch(`${API_BASE}/api/jobs`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
 
-            if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.detail || "建立任務失敗");
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || "建立任務失敗");
+                }
+
+                closeModal();
+                if (llmPrompt) llmPrompt.value = ""; // 清空 AI 對話框
+                fetchJobs();
+                alert("已成功由 AI 解析並加入排程任務！");
+            } catch (err) {
+                alert(err.message);
             }
-
-            closeModal();
-            llmPrompt.value = ""; // 清空 AI 對話框
-            fetchJobs();
-            alert("已成功由 AI 解析並加入排程任務！");
-        } catch (err) {
-            alert(err.message);
-        }
-    });
+        });
+    }
 
     // ----------------- 功能函式 -----------------
 
     function setLlmLoading(isLoading) {
+        if (!btnParseLlm) return;
         if (isLoading) {
             btnParseLlm.setAttribute("disabled", "true");
-            btnParseSpinner.classList.remove("hidden");
-            btnParseText.classList.add("hidden");
+            if (btnParseSpinner) btnParseSpinner.classList.remove("d-none");
+            if (btnParseText) btnParseText.classList.add("d-none");
         } else {
             btnParseLlm.removeAttribute("disabled");
-            btnParseSpinner.classList.add("hidden");
-            btnParseText.classList.remove("hidden");
+            if (btnParseSpinner) btnParseSpinner.classList.add("d-none");
+            if (btnParseText) btnParseText.classList.remove("d-none");
         }
     }
 
     function showLlmError(msg) {
+        if (!llmErrorMsg) return;
         llmErrorMsg.textContent = `錯誤：${msg}`;
-        llmErrorMsg.classList.remove("hidden");
+        llmErrorMsg.classList.remove("d-none");
     }
 
     function clearLlmError() {
+        if (!llmErrorMsg) return;
         llmErrorMsg.textContent = "";
-        llmErrorMsg.classList.add("hidden");
+        llmErrorMsg.classList.add("d-none");
     }
 
     function showConfirmModal(data) {
-        modalName.value = data.name || "";
-        modalTaskType.value = data.task_type || "tw_stock_cost";
-        modalTriggerType.value = data.interval_days ? "auto" : "llm";
+        if (modalName) modalName.value = data.name || "";
+        if (modalTaskType) modalTaskType.value = data.task_type || "tw_stock_cost";
+        if (modalTriggerType) modalTriggerType.value = data.interval_days ? "auto" : "llm";
         
-        if (data.interval_days) {
-            modalIntervalDays.removeAttribute("disabled");
-            modalIntervalDays.value = data.interval_days;
-        } else {
-            modalIntervalDays.setAttribute("disabled", "true");
-            modalIntervalDays.value = "";
+        if (modalIntervalDays) {
+            if (data.interval_days) {
+                modalIntervalDays.removeAttribute("disabled");
+                modalIntervalDays.value = data.interval_days;
+            } else {
+                modalIntervalDays.setAttribute("disabled", "true");
+                modalIntervalDays.value = "";
+            }
         }
         
-        modalTriggerTime.value = data.trigger_time || "";
-        modalRemarks.value = data.remarks || "";
+        if (modalTriggerTime) modalTriggerTime.value = data.trigger_time || "";
+        if (modalRemarks) modalRemarks.value = data.remarks || "";
 
-        confirmModal.classList.remove("hidden");
+        if (bsConfirmModal) {
+            bsConfirmModal.show();
+        } else if (confirmModalEl) {
+            confirmModalEl.classList.add("show");
+            confirmModalEl.style.display = "block";
+        }
+    }
+
+    function closeModal() {
+        if (bsConfirmModal) {
+            bsConfirmModal.hide();
+        } else if (confirmModalEl) {
+            confirmModalEl.classList.remove("show");
+            confirmModalEl.style.display = "none";
+        }
     }
 
     // 格式化時間
@@ -299,7 +295,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 格式化耗時
     function formatDuration(sec) {
         if (sec === null || sec === undefined) return "-";
-        if (sec < 60) return `${sec.toFixed(2)} 秒`;
+        if (sec < 60) return `${sec.toFixed(1)} 秒`;
         const min = Math.floor(sec / 60);
         const remSec = sec % 60;
         return `${min} 分 ${remSec.toFixed(0)} 秒`;
@@ -343,17 +339,17 @@ document.addEventListener("DOMContentLoaded", () => {
             const resp = await fetch(`${API_BASE}/api/llm/usage`);
             if (resp.ok) {
                 const data = await resp.json();
-                quotaValue.textContent = `${data.count} / ${data.limit}`;
-                const pct = (data.count / data.limit) * 100;
-                quotaProgressFill.style.width = `${pct}%`;
-                
-                // 配額警告樣式
-                if (pct >= 90) {
-                    quotaProgressFill.style.background = "var(--color-failed)";
-                } else if (pct >= 75) {
-                    quotaProgressFill.style.background = "var(--color-pending)";
-                } else {
-                    quotaProgressFill.style.background = "linear-gradient(to right, hsl(var(--color-purple)), hsl(var(--color-pink)))";
+                if (quotaValue) quotaValue.textContent = `${data.count} / ${data.limit}`;
+                const pct = Math.min((data.count / data.limit) * 100, 100);
+                if (quotaProgressFill) {
+                    quotaProgressFill.style.width = `${pct}%`;
+                    if (pct >= 90) {
+                        quotaProgressFill.className = "progress-bar bg-danger";
+                    } else if (pct >= 75) {
+                        quotaProgressFill.className = "progress-bar bg-warning text-dark";
+                    } else {
+                        quotaProgressFill.className = "progress-bar bg-primary";
+                    }
                 }
             }
         } catch (err) {
@@ -386,18 +382,19 @@ document.addEventListener("DOMContentLoaded", () => {
             if (job.status === "running") running++;
             else if (job.status === "pending") pending++;
             else if (job.status === "completed") completed++;
-            else if (job.status === "failed") failed++;
+            else if (job.status === "failed" || job.status === "cancelled") failed++;
         });
 
-        statRunning.textContent = running;
-        statPending.textContent = pending;
-        statCompleted.textContent = completed;
-        statFailed.textContent = failed;
+        if (statRunning) statRunning.textContent = running;
+        if (statPending) statPending.textContent = pending;
+        if (statCompleted) statCompleted.textContent = completed;
+        if (statFailed) statFailed.textContent = failed;
     }
 
     // 渲染任務表格
     function renderTable() {
-        // 根據 tab 分流過濾任務
+        if (!jobsTableBody) return;
+
         let filteredJobs = [];
         if (currentTab === "active") {
             filteredJobs = allJobs.filter(job => job.status === "pending" || job.status === "running");
@@ -408,12 +405,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (filteredJobs.length === 0) {
-            jobsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">目前沒有符合此狀態的任務。</td></tr>`;
+            jobsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">目前沒有符合此狀態的任務。</td></tr>`;
             return;
         }
 
         jobsTableBody.innerHTML = filteredJobs.map(job => {
-            // 狀態 Badge 樣式
             let badgeClass = "badge-pending";
             let statusText = "排程中";
             if (job.status === "running") {
@@ -430,7 +426,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusText = "已取消";
             }
 
-            // 觸發者顯示
             let triggerSource = "手動";
             if (job.trigger_type === "auto") {
                 triggerSource = `定期 (每 ${job.interval_days} 天)`;
@@ -438,36 +433,33 @@ document.addEventListener("DOMContentLoaded", () => {
                 triggerSource = "AI 解析";
             }
 
-            // 備註提示
             let remarksHtml = "-";
             if (job.remarks) {
                 remarksHtml = `<span class="remarks-text" title="${job.remarks.replace(/"/g, '&quot;')}">${job.remarks}</span>`;
             }
 
-            // 操作按鈕配置
             let actionsHtml = "";
             if (job.status === "pending") {
                 actionsHtml = `
-                    <button class="btn-icon" onclick="triggerImmediately(${job.id})" title="立即執行">
-                        <i class="fa-solid fa-play text-success"></i>
+                    <button class="btn-icon text-success" onclick="triggerImmediately(${job.id})" title="立即執行">
+                        <i class="bi bi-play-fill"></i>
                     </button>
-                    <button class="btn-icon btn-icon-danger" onclick="deleteJob(${job.id}, 'pending')" title="刪除任務">
-                        <i class="fa-solid fa-trash"></i>
+                    <button class="btn-icon btn-icon-danger text-danger" onclick="deleteJob(${job.id}, 'pending')" title="刪除任務">
+                        <i class="bi bi-trash-fill"></i>
                     </button>
                 `;
             } else if (job.status === "running") {
-                actionsHtml = `<span class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i></span>`;
+                actionsHtml = `<span class="text-info spinner-border spinner-border-sm" role="status"></span>`;
             } else {
-                // 已完成 / 已失敗 / 已取消：可以立即重新執行
                 actionsHtml = `
-                    <button class="btn-icon" onclick="triggerImmediately(${job.id})" title="重新觸發">
-                        <i class="fa-solid fa-rotate-left"></i>
+                    <button class="btn-icon text-primary" onclick="triggerImmediately(${job.id})" title="重新觸發">
+                        <i class="bi bi-arrow-counterclockwise"></i>
                     </button>
                 `;
                 if (job.status !== "cancelled") {
                     actionsHtml += `
-                        <button class="btn-icon btn-icon-danger" onclick="deleteJob(${job.id}, '${job.status}')" title="取消">
-                            <i class="fa-solid fa-ban"></i>
+                        <button class="btn-icon btn-icon-danger text-secondary" onclick="deleteJob(${job.id}, '${job.status}')" title="取消">
+                            <i class="bi bi-slash-circle"></i>
                         </button>
                     `;
                 }
@@ -475,18 +467,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
             return `
                 <tr>
-                    <td>${job.id}</td>
+                    <td><span class="text-muted small">${job.id}</span></td>
                     <td>
-                        <div class="task-name-text" style="font-weight: 500;" title="${job.name.replace(/"/g, '&quot;')}">${job.name}</div>
-                        ${remarksHtml !== "-" ? `<div style="margin-top: 4px;">${remarksHtml}</div>` : ""}
+                        <div class="fw-semibold" title="${job.name.replace(/"/g, '&quot;')}">${job.name}</div>
+                        ${remarksHtml !== "-" ? `<div class="mt-1">${remarksHtml}</div>` : ""}
                     </td>
                     <td><span class="badge ${badgeClass}">${getTaskTypeName(job.task_type)}</span></td>
-                    <td><span style="font-size: 0.85rem;">${triggerSource}</span></td>
-                    <td>${formatTime(job.trigger_time)}</td>
-                    <td>${formatTime(job.completion_time)}</td>
-                    <td>${formatDuration(job.duration)}</td>
+                    <td><span class="small text-muted">${triggerSource}</span></td>
+                    <td><span class="small">${formatTime(job.trigger_time)}</span></td>
+                    <td><span class="small">${formatTime(job.completion_time)}</span></td>
+                    <td><span class="small">${formatDuration(job.duration)}</span></td>
                     <td>
-                        <div style="display: flex; gap: 6px;">
+                        <div class="d-flex gap-1">
                             ${actionsHtml}
                         </div>
                     </td>
