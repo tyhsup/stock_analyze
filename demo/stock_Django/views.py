@@ -133,11 +133,21 @@ def smart_advisor_analysis(request, ticker):
     except:
         sentiment_summary = {'label': '未知'}
 
+    # 股票分割資訊
+    splits_data = []
+    try:
+        splits_df = service.cost_mgr.fetch_and_cache_splits(ticker)
+        if splits_df is not None and not splits_df.empty:
+            splits_data = splits_df.to_dict('records')
+    except Exception as e_s:
+        logger.warning(f"Advisor 獲取 {ticker} 分割記錄失敗: {e_s}")
+
     # 2. 準備給 Advisor 的數據
     advisor_input = {
         'trend_label': '看漲' if sentiment_summary.get('label') == '偏多' else '盤整/看跌',
         'sentiment_summary': sentiment_summary,
-        'valuation': val_results
+        'valuation': val_results,
+        'splits_data': splits_data
     }
     
     # 3. 觸發 Gemma 推理 (這可能較久，故前面已將所有數據準備好)

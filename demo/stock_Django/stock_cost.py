@@ -1,7 +1,7 @@
 import pandas as pd
 import yfinance as yf
 import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 import time
 import random
 import asyncio
@@ -740,6 +740,64 @@ class StockCostManager:
     def update_us_cost(self):
         """更新美股股價 (同步包裝器)"""
         return self._run_async_task(self._update_us_cost_async())
+
+    def fetch_and_cache_splits(self, ticker: str, force_refresh: bool = False) -> pd.DataFrame:
+        """
+        從快取或外部 yfinance API 獲取並更新股票分割 (Stock Splits) 資料。
+        實施 7 天 TTL 快取失效保護與完整的例外安全防護。
+        """
+        try:
+            safe_ticker = str(ticker).strip().upper()
+        except Exception as e:
+            logger.error(f"Ticker 標準化錯誤: {e}")
+            return pd.DataFrame()
+
+        if not safe_ticker:
+            return pd.DataFrame()
+
+        # 1. 檢查快取過期狀態
+        try:
+            last_updated = self.sql.get_splits_last_updated(safe_ticker)
+            if last_updated and not force_refresh:
+                ttl = timedelta(days=7)
+                now_dt = datetime.now()
+                # 確保 datetime 比較時時區相容
+                if hasattr(last_updated, 'tzinfo') and last_updated.tzinfo is not None:
+                    last_updated = last_updated.tz_localize(None) if hasattr(last_updated, 'tz_localize') else last_updated.replace(tzinfo=None)
+                if now_dt - last_updated < ttl:
+                    logger.info(f"[{safe_ticker}] 股票分割快取有效 (上次更新: {last_updated.date()})，自 DB 讀取")
+                    return self.sql.get_stock_splits(safe_ticker)
+        except Exception as e_cache:
+            logger.warning(f"檢查 {safe_ticker} 分割快取狀態異常: {e_cache}")
+
+        # 2. 快取失效或強制更新：呼叫 yfinance
+        logger.info(f"[{safe_ticker}] 開始自 yfinance 獲取股票分割資料...")
+        session_to_use = self.curl_session if self.curl_session is not None else self.http_session
+
+        try:
+            t = yf.Ticker(safe_ticker, session=session_to_use)
+            splits_series = t.splits
+
+            if splits_series is not None and not splits_series.empty:
+                splits_df = pd.DataFrame({
+                    'split_date': pd.to_datetime(splits_series.index).strftime('%Y-%m-%d'),
+                    'split_ratio': splits_series.values
+                })
+                self.sql.upsert_stock_splits(safe_ticker, splits_df)
+            else:
+                logger.info(f"[{safe_ticker}] yfinance 無分割記錄，寫入負快取同步時間戳")
+                self.sql.update_sync_log(safe_ticker, 'splits')
+
+            # 重新從 DB 讀取標準格式資料
+            return self.sql.get_stock_splits(safe_ticker)
+
+        except Exception as e_yf:
+            logger.warning(f"[{safe_ticker}] yfinance 獲取股票分割失敗 (將嘗試讀取 DB 既有資料): {e_yf}")
+            try:
+                return self.sql.get_stock_splits(safe_ticker)
+            except Exception:
+                return pd.DataFrame()
+
 
 if __name__ == "__main__":
     manager = StockCostManager()

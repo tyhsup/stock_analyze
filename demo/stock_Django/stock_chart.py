@@ -131,13 +131,14 @@ class chart_create:
 
         return fig.to_json()
 
-    def kline_apex(self, data: pd.DataFrame, symbol: str = "", ai_pred: dict = None) -> Optional[Dict[str, Any]]:
+    def kline_apex(self, data: pd.DataFrame, symbol: str = "", ai_pred: dict = None, splits_data: Any = None) -> Optional[Dict[str, Any]]:
         """生成 ApexCharts 格式的 K 線圖資料。
 
         Args:
             data (pd.DataFrame): 包含 OHLCV 的股價資料。
             symbol (str, optional): 股票代碼。 預設為 ""。
             ai_pred (dict, optional): 包含歷史預測與未來預測的字典。
+            splits_data (Any, optional): 包含股票分割歷史的 DataFrame 或清單。
 
         Returns:
             Optional[Dict[str, Any]]: ApexCharts 配置字典，若資料為空則回傳 None。
@@ -228,15 +229,91 @@ class chart_create:
                     'data': conn_points
                 })
                     
+        # Process Stock Splits Annotations
+        splits_annotations = []
+        if splits_data is not None:
+            min_ts = timestamps[0] if timestamps else 0
+            max_ts = timestamps[-1] if timestamps else 0
+            
+            # 若傳入的是 DataFrame
+            if isinstance(splits_data, pd.DataFrame) and not splits_data.empty:
+                for _, srow in splits_data.iterrows():
+                    s_date = srow.get('split_date')
+                    s_ratio = srow.get('split_ratio', 1.0)
+                    if pd.isna(s_date) or pd.isna(s_ratio):
+                        continue
+                    try:
+                        s_dt = pd.to_datetime(s_date)
+                        if getattr(s_dt, 'tzinfo', None) is not None:
+                            s_dt = s_dt.tz_convert(None)
+                        s_ts = int(s_dt.to_datetime64().astype('datetime64[ms]').astype(np.int64))
+                        # 只標註在可見範圍（或稍微提早）內的分割事件
+                        if min_ts <= s_ts <= (max_ts + 86400000 * 7):
+                            ratio_display = f"{int(s_ratio)}:1" if float(s_ratio).is_integer() else f"{float(s_ratio):g}:1"
+                            splits_annotations.append({
+                                'x': s_ts,
+                                'strokeDashArray': 5,
+                                'borderColor': '#FF4560',
+                                'opacity': 0.7,
+                                'label': {
+                                    'borderColor': '#FF4560',
+                                    'style': {
+                                        'color': '#fff',
+                                        'background': '#FF4560',
+                                        'fontSize': '12px',
+                                        'fontWeight': 'bold'
+                                    },
+                                    'orientation': 'horizontal',
+                                    'text': f'分割 {ratio_display}'
+                                }
+                            })
+                    except Exception as e_s:
+                        logger.warning(f"處理分割標註點出錯: {e_s}")
+            # 若傳入的是 list of dicts
+            elif isinstance(splits_data, list):
+                for s_item in splits_data:
+                    s_date = s_item.get('split_date')
+                    s_ratio = s_item.get('split_ratio', 1.0)
+                    if not s_date:
+                        continue
+                    try:
+                        s_dt = pd.to_datetime(s_date)
+                        if getattr(s_dt, 'tzinfo', None) is not None:
+                            s_dt = s_dt.tz_convert(None)
+                        s_ts = int(s_dt.to_datetime64().astype('datetime64[ms]').astype(np.int64))
+                        if min_ts <= s_ts <= (max_ts + 86400000 * 7):
+                            ratio_display = f"{int(s_ratio)}:1" if float(s_ratio).is_integer() else f"{float(s_ratio):g}:1"
+                            splits_annotations.append({
+                                'x': s_ts,
+                                'strokeDashArray': 5,
+                                'borderColor': '#FF4560',
+                                'opacity': 0.7,
+                                'label': {
+                                    'borderColor': '#FF4560',
+                                    'style': {
+                                        'color': '#fff',
+                                        'background': '#FF4560',
+                                        'fontSize': '12px',
+                                        'fontWeight': 'bold'
+                                    },
+                                    'orientation': 'horizontal',
+                                    'text': f'分割 {ratio_display}'
+                                }
+                            })
+                    except Exception:
+                        pass
+
         config = {
             'candlestick': {'name': 'OHLC', 'data': series_data},
             'volume': {'name': 'Volume', 'data': volume_data},
             'ma': ma_series,
             'ai_history': ai_hist_series,
             'ai_future': ai_future_series,
+            'splits': splits_annotations,
             'symbol': symbol
         }
         return config  # Return dict - Django's json_script filter will serialize it
+
 
     def kline_png(self, data, symbol=""):
         """

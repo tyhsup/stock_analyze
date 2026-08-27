@@ -1537,7 +1537,8 @@
                 }
             },
             annotations: {
-                points: [] // For patterns
+                points: [], // For patterns
+                xaxis: (_rawKlineConfig && _rawKlineConfig.splits && Array.isArray(_rawKlineConfig.splits)) ? _rawKlineConfig.splits : []
             }
         };
 

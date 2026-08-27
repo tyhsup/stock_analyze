@@ -395,13 +395,27 @@ class StockService:
             except Exception as e_trigger:
                 logger.warning(f"Refresh trigger failed for {valuation_symbol}: {e_trigger}")
                 
+            # 2.5 獲取股票分割資訊 (Lazy Loading + 7天 TTL 快取)
+            splits_df = pd.DataFrame()
+            try:
+                splits_df = self.cost_mgr.fetch_and_cache_splits(valuation_symbol)
+            except Exception as e_splits:
+                logger.warning(f"獲取 {valuation_symbol} 股票分割失敗: {e_splits}")
+            
+            result['splits_data'] = splits_df.to_dict('records') if (splits_df is not None and not splits_df.empty) else []
+
             # 3. 生成圖表、技術指標與 AI 預測
             ai_pred = self._get_ai_predictions(valuation_symbol)
             result['ai_prediction'] = ai_pred
             
             if not result['historical_data'].empty:
                 try:
-                    result['kline_json'] = self.chart.kline_apex(result['historical_data'], symbol=number, ai_pred=ai_pred)
+                    result['kline_json'] = self.chart.kline_apex(
+                        result['historical_data'], 
+                        symbol=number, 
+                        ai_pred=ai_pred,
+                        splits_data=splits_df
+                    )
                     result['ta_json'] = self.chart.get_ta_indicators(result['historical_data'])
                 except Exception as e_chart:
                     logger.warning(f"Chart/TA generation error: {e_chart}")

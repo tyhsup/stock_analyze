@@ -713,4 +713,157 @@ class OP_Fun:
             
         except Exception as e:
             logger.error(f"get_industry_investor_summary 執行失敗: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame()
+
+    def init_stock_splits_table(self) -> None:
+        """建立 stock_splits 資料表與 stock_sync_log 負快取紀錄表（若不存在）"""
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS stock_splits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ticker VARCHAR(20) NOT NULL COMMENT '股票代號 (如 AAPL, 2330.TW)',
+            split_date DATE NOT NULL COMMENT '分割生效日',
+            split_ratio DECIMAL(10, 6) NOT NULL COMMENT '分割比例 (例如 2.0 代表 1 拆 2, 10.0 代表 1 拆 10)',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uk_ticker_date` (ticker, split_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+        CREATE TABLE IF NOT EXISTS stock_sync_log (
+            ticker VARCHAR(20) NOT NULL,
+            sync_type VARCHAR(20) NOT NULL DEFAULT 'splits',
+            last_checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (ticker, sync_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        """
+        try:
+            with self.engine.begin() as conn:
+                for statement in create_table_sql.strip().split(';'):
+                    if statement.strip():
+                        conn.execute(text(statement.strip()))
+            logger.info("成功驗證/建立 stock_splits 與 stock_sync_log 表格")
+        except Exception as e:
+            logger.error(f"建立 stock_splits 表格失敗: {e}")
+
+    def update_sync_log(self, ticker: str, sync_type: str = 'splits') -> None:
+        """更新指定 ticker 與同步類型的最後檢查時間 (負快取戳記)"""
+        self.init_stock_splits_table()
+        safe_ticker = str(ticker).strip().upper()
+        if not safe_ticker:
+            return
+
+        sql = """
+        INSERT INTO stock_sync_log (ticker, sync_type, last_checked_at)
+        VALUES (:ticker, :sync_type, CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE last_checked_at = CURRENT_TIMESTAMP
+        """
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(text(sql), {"ticker": safe_ticker, "sync_type": sync_type})
+        except Exception as e:
+            logger.error(f"更新 {safe_ticker} sync_log 失敗: {e}")
+
+    def get_sync_last_checked(self, ticker: str, sync_type: str = 'splits'):
+        """獲取指定 ticker 與同步類型的最後檢查時間 (供 7 天 TTL 快取判定，包含無分割股票)"""
+        self.init_stock_splits_table()
+        safe_ticker = str(ticker).strip().upper()
+        if not safe_ticker:
+            return None
+
+        sql = "SELECT last_checked_at FROM stock_sync_log WHERE ticker = :ticker AND sync_type = :sync_type"
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text(sql), {"ticker": safe_ticker, "sync_type": sync_type}).fetchone()
+                if result and result[0]:
+                    return pd.to_datetime(result[0])
+            return None
+        except Exception as e:
+            logger.error(f"查詢 {safe_ticker} sync_log 失敗: {e}")
+            return None
+
+    def get_stock_splits(self, ticker: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """查詢指定股票在日期區間內的分割記錄，並將 split_date 轉為 ISO 字串避免 JSON 序列化失敗。"""
+        self.init_stock_splits_table()
+        safe_ticker = str(ticker).strip().upper()
+        if not safe_ticker:
+            return pd.DataFrame()
+
+        where_clauses = ["ticker = :ticker"]
+        params = {"ticker": safe_ticker}
+
+        if start_date:
+            where_clauses.append("split_date >= :start_date")
+            params["start_date"] = str(start_date).split(' ')[0]
+
+        if end_date:
+            where_clauses.append("split_date <= :end_date")
+            params["end_date"] = str(end_date).split(' ')[0]
+
+        where_stmt = " AND ".join(where_clauses)
+        sql = f"SELECT ticker, split_date, split_ratio, updated_at FROM stock_splits WHERE {where_stmt} ORDER BY split_date ASC"
+
+        try:
+            with self.engine.connect() as conn:
+                df = pd.read_sql(text(sql), con=conn, params=params)
+            
+            if not df.empty:
+                # 強制轉換 split_date 與 updated_at 為 ISO 格式字串，確保 JSON 序列化安全性
+                df['split_date'] = pd.to_datetime(df['split_date']).dt.strftime('%Y-%m-%d')
+                if 'updated_at' in df.columns:
+                    df['updated_at'] = pd.to_datetime(df['updated_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                df['split_ratio'] = df['split_ratio'].astype(float)
+            return df
+        except Exception as e:
+            logger.error(f"查詢 {safe_ticker} 股票分割失敗: {e}")
+            return pd.DataFrame()
+
+    def upsert_stock_splits(self, ticker: str, splits_df: pd.DataFrame) -> None:
+        """批次更新或插入股票分割紀錄，並同步更新 stock_sync_log 時間戳。"""
+        safe_ticker = str(ticker).strip().upper()
+        if not safe_ticker:
+            return
+
+        self.init_stock_splits_table()
+        # 一律更新 sync_log (確保負快取生效)
+        self.update_sync_log(safe_ticker, 'splits')
+
+        if splits_df is None or splits_df.empty:
+            return
+
+        insert_sql = """
+        INSERT INTO stock_splits (ticker, split_date, split_ratio)
+        VALUES (:ticker, :split_date, :split_ratio)
+        ON DUPLICATE KEY UPDATE
+            split_ratio = VALUES(split_ratio),
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        records = []
+        for _, row in splits_df.iterrows():
+            d_val = row.get('split_date')
+            r_val = row.get('split_ratio')
+            if pd.isna(d_val) or pd.isna(r_val):
+                continue
+            
+            # 格式化日期字串為 YYYY-MM-DD
+            d_str = pd.to_datetime(d_val).strftime('%Y-%m-%d')
+            records.append({
+                "ticker": safe_ticker,
+                "split_date": d_str,
+                "split_ratio": float(r_val)
+            })
+
+        if not records:
+            return
+
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(text(insert_sql), records)
+            logger.info(f"成功更新 {safe_ticker} 的 {len(records)} 筆股票分割記錄")
+        except Exception as e:
+            logger.error(f"寫入 {safe_ticker} 股票分割記錄失敗: {e}")
+
+    def get_splits_last_updated(self, ticker: str):
+        """獲取指定 ticker 股票分割記錄的最後更新時間 (相容既有介面，回退調用 get_sync_last_checked)"""
+        return self.get_sync_last_checked(ticker, 'splits')
+
+

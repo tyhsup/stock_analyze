@@ -12,16 +12,32 @@ class GemmaAdvisorService:
         # 腳本路徑相對於專案根目錄
         self.reasoner_path = os.path.abspath(os.path.join(os.getcwd(), "gemma_reasoner.py"))
 
-    def generate_stock_report(self, ticker: str, technical_summary: str, sentiment_data: Dict[str, Any], valuation_data: Dict[str, Any]) -> str:
+    def generate_stock_report(self, ticker: str, technical_summary: str, sentiment_data: Dict[str, Any], valuation_data: Dict[str, Any], splits_data: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         將所有數據合成一個 Prompt 並調用本地 Gemma 4 進行推理分析。
         """
+        splits_section = ""
+        if splits_data:
+            split_lines = []
+            for s in splits_data:
+                s_date = s.get('split_date', '未知日期')
+                s_ratio = s.get('split_ratio', 1.0)
+                ratio_str = f"{int(s_ratio)}:1" if float(s_ratio).is_integer() else f"{float(s_ratio):g}:1"
+                split_lines.append(f"- {s_date}: 分割比例 {ratio_str} (每 1 股拆為 {s_ratio} 股)")
+            
+            if split_lines:
+                splits_section = f"""
+        [股票分割歷史 (Stock Splits)]
+        {chr(10).join(split_lines)}
+        * 重要防誤判指引：若技術面圖表或歷史股價在上述分割日附近出現顯著跳空或均線位移，此純屬股票分割造成之股價除權重整，並非公司基本面崩盤或市場恐慌拋售，請在分析時特別納入考量。
+        """
+
         prompt = f"""
         請針對股票 {ticker} 進行深度投資分析。
         
         [技術面數據]
         {technical_summary}
-        
+        {splits_section}
         [輿情面 (Sentiment)]
         - 正面比例: {sentiment_data.get('positive', 0)}
         - 負面比例: {sentiment_data.get('negative', 0)}
@@ -33,7 +49,7 @@ class GemmaAdvisorService:
         - DCF估算值: {valuation_data.get('dcf', {}).get('implied_price', 'N/A')}
         
         任務：
-        1. 結合以上數據，分析目前股價與估值的偏離原因。
+        1. 結合以上數據，分析目前股價與估值的偏離原因（若有股票分割歷史，請確認是否為除權調整影響）。
         2. 判斷目前的 AI 預測趨勢 (看漲機率: {sentiment_data.get('score', 50)}%) 是否具備基本面支撐。
         3. 提供具體的操作風險提示（字數 200 字以內，繁體中文）。
         """
@@ -78,4 +94,8 @@ class GemmaAdvisorService:
         # 3. 整理估值面
         val = data.get('valuation', {})
         
-        return self.generate_stock_report(ticker, tech_info, senti, val)
+        # 4. 股票分割歷史
+        splits = data.get('splits_data', [])
+        
+        return self.generate_stock_report(ticker, tech_info, senti, val, splits_data=splits)
+
