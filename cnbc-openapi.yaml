@@ -1,0 +1,147 @@
+openapi: 3.0.3
+info:
+  title: CNBC News & Market API
+  description: CNBC 全球財經新聞與即時行情 API（涵蓋 World News、國際市場、經濟、科技、個股報價與即時搜尋）。
+  version: 1.0.0
+servers:
+  - url: https://search.cnbc.com
+paths:
+  /rs/search/combinedcms/view.xml:
+    get:
+      summary: 取得特定分類的 CNBC 新聞列表
+      description: |
+        取得 CNBC 的新聞 RSS 摘要列表，支援多種新聞分類：
+        - `100727362`: 國際全球新聞與深度分析 (World / International News & Analysis)
+        - `10001147`: 商業新聞 (Business News)
+        - `100003114`: 美國頭條新聞 (US Top News and Analysis)
+        - `15837362`: 美國新聞 (U.S. News)
+        - `20910258`: 總體經濟 (Economy)
+        - `10000664`: 金融市場 (Finance)
+        - `19854910`: 科技產業 (Tech)
+        - `19832390`: 亞洲新聞 (Asia News)
+        - `15839069`: 投資理財 (Investing)
+      operationId: getNewsFeed
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: 新聞分類 ID (例如 100727362=World, 10001147=Business, 20910258=Economy, 10000664=Finance, 19854910=Tech, 19832390=Asia)
+          schema:
+            type: string
+            default: "100727362"
+        - name: partnerId
+          in: query
+          required: false
+          description: 合作夥伴識別碼 (預設 wrss01)
+          schema:
+            type: string
+            default: "wrss01"
+      responses:
+        '200':
+          description: 成功取得新聞列表
+          content:
+            application/xml:
+              schema:
+                type: object
+            application/json:
+              schema:
+                type: object
+
+  /rs/search/all/view.xml:
+    get:
+      summary: 搜尋 CNBC 歷史新聞
+      description: 依關鍵字搜尋 CNBC 新聞文章與報導。
+      operationId: searchNews
+      parameters:
+        - name: keywords
+          in: query
+          required: true
+          description: 搜尋關鍵字 (例如 fed, inflation, nvidia)
+          schema:
+            type: string
+        - name: sort
+          in: query
+          required: false
+          description: 排序方式 (date 或 relevance)
+          schema:
+            type: string
+            default: "date"
+        - name: partnerId
+          in: query
+          required: false
+          description: 合作夥伴識別碼 (預設 wrss01)
+          schema:
+            type: string
+            default: "wrss01"
+      responses:
+        '200':
+          description: 成功搜尋新聞
+          content:
+            application/xml:
+              schema:
+                type: object
+
+  /quote-html-webservice/restQuote/symbolType/symbol:
+    get:
+      servers:
+        - url: https://quote.cnbc.com
+      summary: 取得美股指數與個股即時報價
+      description: |
+        取得 Dow Jones (.DJI)、S&P 500 (.SPX)、Nasdaq (.IXIC) 等主要指數或個股 (AAPL, NVDA, TSLA) 之即時行情。
+      operationId: getQuotes
+      parameters:
+        - name: symbols
+          in: query
+          required: true
+          description: 查詢代碼清單，多檔以垂直線分隔 (例如 `.DJI|.SPX|.IXIC` 或 `AAPL|NVDA|TSLA`)
+          schema:
+            type: string
+            default: ".DJI|.SPX|.IXIC"
+        - name: requestMethod
+          in: query
+          required: false
+          description: 請求模式 (預設 itv)
+          schema:
+            type: string
+            default: "itv"
+        - name: output
+          in: query
+          required: false
+          description: 輸出格式 (預設 json)
+          schema:
+            type: string
+            default: "json"
+      responses:
+        '200':
+          description: 成功取得行情數據
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  FormattedQuoteResult:
+                    type: object
+                    properties:
+                      FormattedQuote:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            symbol:
+                              type: string
+                            name:
+                              type: string
+                            last:
+                              type: string
+                            change:
+                              type: string
+                            change_pct:
+                              type: string
+                            open:
+                              type: string
+                            high:
+                              type: string
+                            low:
+                              type: string
+                            volume:
+                              type: string

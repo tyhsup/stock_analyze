@@ -1,0 +1,51 @@
+version: 2
+project_name: cnbc-cli-pp-cli
+changelog:
+  disable: true
+builds:
+  - id: cnbc-cli-pp-cli
+    main: ./cmd/cnbc-cli-pp-cli
+    binary: cnbc-cli-pp-cli
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X cnbc-cli-pp-cli/internal/cli.version={{ .Version }}
+    targets:
+      - darwin_amd64
+      - darwin_arm64
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+      - windows_arm64
+  - id: cnbc-cli-pp-mcp
+    main: ./cmd/cnbc-cli-pp-mcp
+    binary: cnbc-cli-pp-mcp
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+    targets:
+      - darwin_amd64
+      - darwin_arm64
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+      - windows_arm64
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: checksums.txt
+brews:
+  - name: cnbc-cli-pp-cli
+    repository:
+      owner: ting-yu-hsu
+      name: homebrew-tap
+    homepage: "https://github.com/ting-yu-hsu/cnbc-cli-pp-cli"
+    description: "CNBC 全球財經新聞與即時行情 API（涵蓋 World News、國際市場、經濟、科技、個股報價與即�..."
+    install: |
+      bin.install "cnbc-cli-pp-cli"
+      bin.install "cnbc-cli-pp-mcp"

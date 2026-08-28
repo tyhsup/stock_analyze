@@ -286,7 +286,7 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50, en_limit:
     import time
     import concurrent.futures
     from stock_Django.news_scraper_cnyes import CnyesScraper
-    from stock_Django.news_scraper_en import FinnhubScraper
+    from stock_Django.news_scraper_en import CnbcCliScraper
     from stock_Django.news_excel import NewsExcelManager
 
     ticker = ticker.upper()
@@ -296,7 +296,7 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50, en_limit:
     start_time = time.time()
     try:
         cnyes_scraper = CnyesScraper()
-        finnhub_scraper = FinnhubScraper()
+        cnbc_scraper = CnbcCliScraper()
         news_mgr = NewsExcelManager()
 
         results = []
@@ -310,10 +310,10 @@ def refresh_news_background(ticker: str, market: str, limit: int = 50, en_limit:
                     item['語言'] = 'zh-TW'
                 results.extend(cnyes_results)
 
-        # 2. 抓取英文新聞 (Finnhub)
+        # 2. 抓取英文新聞 (CNBC-CLI)
         if en_limit > 0:
-            _set_status(news_key, 'running', 35, f'正在從 Finnhub 抓取 {ticker} 英文新聞 ({en_limit} 則)...')
-            en_results = finnhub_scraper.fetch_news(ticker, limit=en_limit)
+            _set_status(news_key, 'running', 35, f'正在從 CNBC 抓取 {ticker} 英文新聞 ({en_limit} 則)...')
+            en_results = cnbc_scraper.fetch_news(ticker, limit=en_limit)
             if en_results:
                 for item in en_results:
                     item['語言'] = 'en'

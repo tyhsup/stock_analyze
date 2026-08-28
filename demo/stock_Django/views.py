@@ -44,7 +44,7 @@ def News_display(request):
         # 判斷是否為台股
         is_tw = (query.isdigit() and len(query) >= 4) or ".TW" in query or ".TWO" in query
         if is_tw and en_limit > 0:
-            tw_en_warning = "提示：Finnhub 新聞來源僅支援北美股票，台股輸入的英文新聞數量將不適用。"
+            tw_en_warning = "提示：CNBC 英文新聞來源僅支援美股市場，台股輸入的英文新聞數量將不適用。"
             en_limit = 0  # 台股自動歸零英文數量
 
         # 1. Try finding news for specific ticker first
