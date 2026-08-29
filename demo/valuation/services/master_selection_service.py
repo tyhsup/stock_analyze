@@ -387,7 +387,7 @@ class MasterSelectionService:
         if not df_prices.empty:
             # 去除台股股票代號中的 .TW 或 .TWO 後綴，以與 df_base 純數字代號對齊
             if market == 'tw':
-                df_prices['symbol'] = df_prices['symbol'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
+                df_prices['symbol'] = df_prices['symbol'].str.replace('.TWO', '', case=False, regex=False).str.replace('.TW', '', case=False, regex=False)
             # 轉換日期格式
             df_prices['date'] = pd.to_datetime(df_prices['date'])
             grouped_prices = df_prices.groupby('symbol')
@@ -549,7 +549,7 @@ class MasterSelectionService:
 
         # 統一將價格代號中的 .TW 或 .TWO 後綴去除，以與 res_df 的純數字代號對齊
         if market == 'tw':
-            df_prices['symbol'] = df_prices['symbol'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
+            df_prices['symbol'] = df_prices['symbol'].str.replace('.TWO', '', case=False, regex=False).str.replace('.TW', '', case=False, regex=False)
 
         res_df = res_df.merge(df_names, on='symbol', how='left')
         res_df = res_df.merge(df_prices, on='symbol', how='left')

@@ -587,7 +587,7 @@ class OP_Fun:
             if df_cost.empty:
                 return pd.DataFrame()
             df_cost['date_str'] = df_cost['Date'].astype(str).str.split(' ').str[0]
-            df_cost['symbol_clean'] = df_cost['number'].str.replace('.TW', '', case=False, regex=False).str.replace('.TWO', '', case=False, regex=False)
+            df_cost['symbol_clean'] = df_cost['number'].str.replace('.TWO', '', case=False, regex=False).str.replace('.TW', '', case=False, regex=False)
             df_cost = df_cost.drop(columns=['number'])
             
             # 5. 讀取融資融券資料 (包含餘額與每日買賣欄位)

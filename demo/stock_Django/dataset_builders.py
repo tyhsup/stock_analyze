@@ -99,7 +99,7 @@ class SentimentProbabilityModel:
             return result_df
             
         sql_op = OP_Fun()
-        clean_num = str(stock_number).upper().replace('.TW', '').replace('.TWO', '')
+        clean_num = str(stock_number).upper().replace('.TWO', '').replace('.TW', '')
         start_date = date_index_df.index.min().strftime('%Y-%m-%d')
         end_date = date_index_df.index.max().strftime('%Y-%m-%d')
         
@@ -185,7 +185,7 @@ class InstitutionalFlowModel:
         is_tw = str(stock_number).isdigit() or ".TW" in str(stock_number).upper() or ".TWO" in str(stock_number).upper()
         table_name = 'stock_investor' if is_tw else 'stock_investor_us'
         
-        clean_num = str(stock_number).replace('.TW', '').replace('.TWO', '')
+        clean_num = str(stock_number).replace('.TWO', '').replace('.TW', '')
         if is_tw:
             inv_df = sql_op.get_cost_data(table_name=table_name, stock_number=clean_num)
         else:
@@ -263,7 +263,7 @@ class FundamentalFeatureProcessor:
         is_tw = str(stock_number).isdigit() or ".TW" in str(stock_number).upper() or ".TWO" in str(stock_number).upper()
         market = 'tw' if is_tw else 'us'
         table_name = f'financial_raw_{market}'
-        clean_num = str(stock_number).replace('.TW', '').replace('.TWO', '')
+        clean_num = str(stock_number).replace('.TWO', '').replace('.TW', '')
         
         query = f"SELECT year, quarter, item_name, amount FROM {table_name} WHERE symbol = '{clean_num}'"
         try:

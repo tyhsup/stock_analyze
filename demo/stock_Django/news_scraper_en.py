@@ -245,7 +245,7 @@ class CnbcCliScraper:
             新聞字典陣列，包含：標題, 日期, 內容, 連結, 正負分析, 來源, 語言
         """
         start_time = time.time()
-        ticker = str(ticker).strip().upper().replace('.TW', '').replace('.TWO', '')
+        ticker = str(ticker).strip().upper().replace('.TWO', '').replace('.TW', '')
 
         # 安全防護：ticker 正則白名單驗證 (防禦命令注入)
         if not re.match(r"^[A-Za-z0-9\-\.\s]{1,30}$", ticker):

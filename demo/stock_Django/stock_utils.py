@@ -184,13 +184,12 @@ class StockUtils:
         
         # Get stock number from data
         stock_num = data['number'].iloc[0] if 'number' in data.columns else '2330'
-        if ".TW" in str(stock_num).upper():
-            stock_num = str(stock_num).upper().replace(".TW", "")
+        stock_num = str(stock_num).upper().replace('.TWO', '').replace('.TW', '')
             
         SQL_OP = mySQL_OP.OP_Fun()
         
         # Ensure stock_num is cleaned to prevent injection, even if OP_Fun handles it
-        if not str(stock_num).replace('.TW', '').replace('.TWO', '').isalnum():
+        if not str(stock_num).isalnum():
              return data_copy
              
         load_investor = SQL_OP.get_cost_data(table_name='stock_investor', stock_number=str(stock_num))

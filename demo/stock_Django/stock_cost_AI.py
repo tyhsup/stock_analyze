@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 class IntegratedStockPredModel:
     def __init__(self, stock_number):
         self.stock_number = str(stock_number)
-        self.clean_number = self.stock_number.replace('.TW', '').replace('.TWO', '')
+        self.clean_number = self.stock_number.replace('.TWO', '').replace('.TW', '')
         self.market = 'tw' if '.TW' in self.stock_number or '.TWO' in self.stock_number else 'us'
         
         # Load configuration
@@ -107,7 +107,7 @@ class IntegratedStockPredModel:
 
     def build_dataset_for_symbol(self, symbol):
         """為單一隻股票建立 Dataframe"""
-        clean_sym = symbol.replace('.TW', '').replace('.TWO', '')
+        clean_sym = symbol.replace('.TWO', '').replace('.TW', '')
         cost_data, Date_data = StockUtils.load_data_c('stock_cost', symbol)
         if cost_data.empty:
             cost_data, Date_data = StockUtils.load_data_c('stock_cost_us', symbol)

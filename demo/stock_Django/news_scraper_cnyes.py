@@ -185,7 +185,7 @@ class CnyesScraper:
         logger.info(f"[CnyesScraper] 開始透過 cnyes-cli 獲取個股新聞: {symbol}, limit: {limit}")
         
         # 清除 symbol 尾端的市場標記以符合舊版來源名稱標記行為
-        clean_ticker = ticker.replace('.TW', '').replace('.TWO', '')
+        clean_ticker = ticker.replace('.TWO', '').replace('.TW', '')
         source_label = f"鉅亨網-台股-{clean_ticker}" if market == 'tw' else f"鉅亨網-美股-{clean_ticker}"
         
         # 1. 呼叫 cnyes-cli 獲取列表

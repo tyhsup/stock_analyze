@@ -303,7 +303,7 @@ def gemini_advisor_analysis(request, ticker):
     chips_features = {}
     try:
         if is_tw:
-            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+            clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
             
             # 優先讀取新表 stock_investor_tw
             try:
@@ -511,7 +511,7 @@ def gemini_advisor_analysis(request, ticker):
         
         # 產業別獲取
         if is_tw:
-            clean_sym = valuation_symbol.replace('.TW', '').replace('.TWO', '')
+            clean_sym = valuation_symbol.replace('.TWO', '').replace('.TW', '')
             with service.sql_op.engine.connect() as conn:
                 row_ind = conn.execute(
                     text("SELECT 產業別 FROM stock_table_tw WHERE 有價證卷代號 = :sym"),
