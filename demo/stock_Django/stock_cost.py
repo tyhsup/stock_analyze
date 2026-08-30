@@ -1,7 +1,6 @@
 import pandas as pd
 import yfinance as yf
-import datetime
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import time
 import random
 import asyncio
@@ -427,7 +426,7 @@ class StockCostManager:
             if sym.endswith('.TW'):
                 try:
                     num = sym.split('.')[0]
-                    target_date = start if start else datetime.datetime.now().strftime('%Y%m%d')
+                    target_date = start if start else datetime.now().strftime('%Y%m%d')
                     target_date = target_date.replace('-', '').replace('/', '')
                     url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?stockNo={num}&date={target_date}"
                     
@@ -455,7 +454,7 @@ class StockCostManager:
             elif sym.endswith('.TWO'):
                 try:
                     num = sym.split('.')[0]
-                    target_date = start if start else datetime.datetime.now().strftime('%Y/%m/%d')
+                    target_date = start if start else datetime.now().strftime('%Y/%m/%d')
                     target_date = target_date.replace('-', '/')
                     # 轉換西元日期為民國年格式 (e.g. 2026/06/12 -> 115/06/12)
                     parts = target_date.split('/')
@@ -534,7 +533,7 @@ class StockCostManager:
                 last_date = pd.to_datetime(last_date)
             
             # 如果最後日期是今天或未來，則不需要更新
-            if last_date.date() >= datetime.date.today():
+            if last_date.date() >= date.today():
                 logger.info(f"單一更新 {ticker}: 資料已是最新 ({last_date.date()})，跳過抓取")
                 return True
 
@@ -638,7 +637,7 @@ class StockCostManager:
                 new_stocks.append(symbol)
             else:
                 s_stat = stats[symbol]
-                days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
+                days_diff = (datetime.now() - pd.to_datetime(s_stat['first_date'])).days
                 if s_stat['row_count'] < 100 and days_diff < 365:
                     new_stocks.append(symbol)
                 else:
@@ -662,7 +661,7 @@ class StockCostManager:
             batch = existing_stocks[i : i + 15]
             min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
             start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
-            if pd.to_datetime(start_param).date() >= datetime.date.today():
+            if pd.to_datetime(start_param).date() >= date.today():
                 continue
             tasks.append(self._fetch_and_upload_task(batch, 'stock_cost', start=start_param))
         # 分塊執行 (每 5 個任務一組) 以防同時啟動過多請求
@@ -684,7 +683,7 @@ class StockCostManager:
                 if s not in stats: new_stocks.append(s)
                 else:
                     s_stat = stats[s]
-                    days_diff = (datetime.datetime.now() - pd.to_datetime(s_stat['first_date'])).days
+                    days_diff = (datetime.now() - pd.to_datetime(s_stat['first_date'])).days
                     if s_stat['row_count'] < 100 and days_diff < 365: new_stocks.append(s)
                     else: existing_stocks.append(s)
             
@@ -703,7 +702,7 @@ class StockCostManager:
                 batch = existing_stocks[i : i + 20]
                 min_last = min([pd.to_datetime(stats[s]['last_date']) for s in batch])
                 start_param = (min_last + timedelta(days=1)).strftime('%Y-%m-%d')
-                if pd.to_datetime(start_param).date() >= datetime.date.today(): continue
+                if pd.to_datetime(start_param).date() >= date.today(): continue
                 tasks_exist.append(self._fetch_and_upload_task(batch, 'stock_cost_us', start=start_param))
             for chunk_idx in range(0, len(tasks_exist), 5):
                 chunk = tasks_exist[chunk_idx : chunk_idx + 5]

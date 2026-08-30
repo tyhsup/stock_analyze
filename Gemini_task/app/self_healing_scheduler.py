@@ -80,6 +80,12 @@ class SelfHealingScheduler:
                 self.breaker.observe_success()
                 return result
 
+            except (AttributeError, TypeError, NameError, SyntaxError, ImportError, IndentationError) as fatal_err:
+                # 致命不可自癒錯誤 (Fatal Code/Logic Errors) - 實施 Fail Fast
+                tb = traceback.format_exc()
+                logger.critical(f"偵測到任務 {task_func.__name__} 發生不可自癒之代碼層級異常 (Fail Fast)：\nException: {fatal_err}\nTraceback:\n{tb}")
+                raise fatal_err
+
             except Exception as e:
                 # --- Observe: 偵測故障根源 ---
                 tb = traceback.format_exc()
