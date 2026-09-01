@@ -459,14 +459,14 @@
             <div class="card-body p-0">
                 <div id="bb-status-badge" class="px-3 pt-2" style="display:none;"></div>
                 <div id="kline-main" style="min-height: 450px;"></div>
-                <div id="kline-volume" style="min-height: 160px;"></div>
+                <div id="kline-volume" style="min-height: 450px;"></div>
                 <div id="kline-rsi-wrap" style="display:none;">
                     <div class="d-flex justify-content-between align-items-center px-3 pt-2">
                         <strong class="small text-muted">RSI (14)</strong>
                         <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('rsi')">↺
                             Reset Zoom</button>
                     </div>
-                    <div id="kline-rsi" style="min-height: 220px;"></div>
+                    <div id="kline-rsi" style="min-height: 450px;"></div>
                 </div>
                 <div id="kline-macd-wrap" style="display:none;">
                     <div class="d-flex justify-content-between align-items-center px-3 pt-2">
@@ -474,7 +474,7 @@
                         <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('macd')">↺
                             Reset Zoom</button>
                     </div>
-                    <div id="kline-macd" style="min-height: 220px;"></div>
+                    <div id="kline-macd" style="min-height: 450px;"></div>
                     <div id="macd-analysis-panel" class="px-3 pb-3 mt-2"></div>
                 </div>
                 <!-- Other oscillator panels placeholder -->
@@ -610,6 +610,8 @@
     // ============================================================
     // KLINE CHART GLOBALS
     // ============================================================
+    const STANDARD_CHART_HEIGHT = 450;
+    let macroCharts = {};
     let _rawKlineConfig = null;   // Original daily config from backend
     let _mainChart = null;        // ApexCharts main candle chart instance
     let _volChart = null;         // ApexCharts volume chart instance
@@ -1621,7 +1623,7 @@
             series: [{ name: 'Volume', data: volData }],
             chart: {
                 type: 'bar',
-                height: 160,
+                height: STANDARD_CHART_HEIGHT,
                 id: 'vol-brush',
                 brush: { enabled: true, target: 'candles' },
                 animations: { enabled: false },
@@ -1666,7 +1668,7 @@
                         { name: 'RSI (5)', data: rsiSeries5 }
                     ],
                     chart: {
-                        type: 'line', height: 220,
+                        type: 'line', height: STANDARD_CHART_HEIGHT,
                         animations: { enabled: false },
                         toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         zoom: { enabled: true, type: 'x' }
@@ -1722,7 +1724,7 @@
                         { name: 'Histogram', type: 'bar', data: histSer },
                     ],
                     chart: {
-                        height: 220,
+                        height: STANDARD_CHART_HEIGHT,
                         animations: { enabled: false },
                         toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         zoom: { enabled: true, type: 'x' }
@@ -1953,7 +1955,7 @@
                 return new ApexCharts(chartEl, {
                     series: seriesConfig,
                     chart: {
-                        height: 200, animations: { enabled: false },
+                        height: STANDARD_CHART_HEIGHT, animations: { enabled: false },
                         toolbar: { show: true, tools: { download: false, selection: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
                         zoom: { enabled: true, type: 'x' }
                     },
@@ -2241,7 +2243,7 @@
                                     <strong class="small text-muted">${funcName} (${groupName.replace(/_/g, ' ')})</strong>
                                     <button class="btn btn-outline-secondary btn-sm py-0" onclick="resetOscillatorZoom('${lowName}', true)">↺</button>
                                 </div>
-                                <div id="${chartId}" style="min-height: 200px;"></div>
+                                <div id="${chartId}" style="min-height: 450px;"></div>
                             `;
                             wrap.appendChild(newDiv);
                             containerWrap = newDiv;
@@ -2297,7 +2299,7 @@
                         if (_dynamicCharts[lowName]) _dynamicCharts[lowName].destroy();
                         _dynamicCharts[lowName] = new ApexCharts(document.getElementById(chartId), {
                             series: series,
-                            chart: { height: 220, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
+                            chart: { height: STANDARD_CHART_HEIGHT, type: 'line', animations: { enabled: false }, toolbar: { show: true } },
                             theme: { mode: chartThemeMode },
                             xaxis: { type: 'datetime', labels: { style: { fontSize: '16px' } } },
                             yaxis: { labels: { style: { fontSize: '16px' }, formatter: v => v ? v.toFixed(2) : '' }, forceNiceScale: true },
@@ -2797,6 +2799,40 @@
                 })
                 .catch(err => console.error('Refresh API Error:', err));
         }
+
+        // ============================================================
+        // GLOBAL RESIZE OBSERVER (MACRO CHARTS)
+        // ============================================================
+        const chartContainer = document.querySelector('.card-body.p-0');
+        if (chartContainer) {
+            let resizeTimeout;
+            const ro = new ResizeObserver(entries => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    const currentCharts = [
+                        _mainChart, _volChart, _rsiChart, _macdChart, _stochChart,
+                        _cciChart, _williamsrChart, _atrChart, _obvChart, _adChart,
+                        _cycleChart, _phasorChart, _statsChart, _mathChart
+                    ];
+                    if (typeof _dynamicCharts !== 'undefined') {
+                        Object.values(_dynamicCharts).forEach(c => currentCharts.push(c));
+                    }
+                    
+                    currentCharts.forEach(chart => {
+                        if (chart && chart.w && chart.w.globals && chart.w.globals.dom && chart.w.globals.dom.el) {
+                            const isVisible = chart.w.globals.dom.el.offsetParent !== null;
+                            if (isVisible) {
+                                if (typeof chart.windowResizeHandler === 'function') {
+                                    chart.windowResizeHandler();
+                                }
+                            }
+                        }
+                    });
+                }, 150);
+            });
+            ro.observe(chartContainer);
+        }
+
     });
 
     // Toggle investor chart between stacked/grouped mode
