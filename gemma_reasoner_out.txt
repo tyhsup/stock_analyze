@@ -1,57 +1,133 @@
-這是一份針對巴菲特選股評分模型（Scoring Model）的潛在公式錯誤、邊緣案例分析，以及結構性優化建議。
+這是一個典型的前端響應式佈局（Responsive Layout）優化需求。由於您要求的是「副圖完全等高等寬」，這代表我們需要一個能夠精確監測父容器尺寸變化，並將尺寸均分給所有子元素的機制。
 
-整體而言，該代碼邏輯清晰地體現了價值投資的核心指標篩選思路。然而，由於涉及多個除法運算和條件判斷，存在幾個關鍵的數學邊緣案例（Mathematical Edge Cases）與資料類型風險需要嚴格防禦。
+使用 `ResizeObserver` 是目前最標準且最精準的解決方案，它優於傳統的 `window.onresize` 事件，因為它能監測特定元素（而非整個視窗）的尺寸變化。
 
----
-
-### 📊 I. 公式層面潛在錯誤與優化建議 (Formulaic Errors & Improvements)
-
-#### 1. ROE 計算 (`roe`)
-*   **潛在錯誤：除零風險 (Division by Zero)**
-    *   如果 `row['equity_latest']`（權益）為 $0$ 或極接近 $0$，將會導致計算崩潰或產生無限大值。
-*   **建議修正：** 必須加入分母檢查機制。
-
-#### 2. 毛利率計算 (`gross_margin`)
-*   **潛在錯誤：除零風險 (Division by Zero)**
-    *   當 `row['revenue_ttm']`（營收）為 $0$ 時，雖然您已經處理了分子為正的條件，但沒有檢查分母是否為 $0$。這會導致計算崩潰。
-*   **建議修正：** 應將除零判斷擴展到分母。
-
-#### 3. 負債比率計算 (`debt_ratio`)
-*   **潛在錯誤：除零風險 (Division by Zero)**
-    *   如果 `row['assets_latest']`（資產）為 $0$，會導致計算崩潰。
-*   **建議修正：** 同樣地，必須對分母進行檢查。
-
-#### 4. 淨利成長率計算 (`net_income_growth`)
-*   **邊緣案例分析 (Edge Case)：硬編碼的預設值**
-    *   當 `pre_income` 為 $0$ 時，您將 `net_income_growth` 硬編碼為 $0.05$。這是一個武斷的假設（Arbitrary Assumption）。如果公司在前期沒有獲利數據，使用一個固定值可能會誤導模型。
-    *   **優化建議：** 考慮改用 `None` 或 `NaN` 來表示無法計算，並讓後續評分邏輯能夠處理這種缺失值，而不是預設賦予一個正向的成長率。
-
-#### 5. 評分公式 (`score_roe`, `score_gm`, `score_debt`, `total_score`)
-*   **邊緣案例分析 (Edge Case)：負數 ROE 的懲罰過重**
-    *   `score_roe = min(roe / 0.15, 1.0) * 100 if roe > 0 else 0`
-    *   如果 `roe` 是輕微的負值（例如 $-0.02$），該公式會直接將分數設為 $0$，這可能過於嚴厲。一個小幅度的虧損不應被視為完全不及格。
-    *   **優化建議：** 考慮使用更平滑的函數（如 Sigmoid 或 Logit）來處理負數，或者設定一個較小的「容忍區間」（Tolerance Band），例如允許 ROE 在 $[-0.1, 0]$ 之間時獲得部分分數。
-*   **結構性風險：權重固定化 (Fixed Weights)**
-    *   目前所有權重是固定的 $(0.4, 0.3, 0.2, 0.1)$。這使得模型缺乏適應性。在不同的市場週期（例如高成長期 vs. 衰退期），不同指標的重要性會改變。
-    *   **建議：** 將權重參數化，並考慮引入一個「市場狀態因子」（Market State Factor）來動態調整這些權重。
+以下提供完整的架構分析與實作建議。
 
 ---
 
-### 💾 II. 資料處理與系統架構風險 (Data Handling & System Risks)
+### 📐 架構分析與實作建議
 
-雖然您只提供了公式，但作為核心推理助理，必須提醒開發團隊注意以下在實際運行環境中會觸發的錯誤：
+#### 1. 核心技術選用：`ResizeObserver`
+*   **優點：** 它只在目標元素尺寸改變時觸發回調函數，性能優於監測整個 `window` 的事件。
+*   **應用場景：** 我們將監測包含所有副圖的父容器（假設為 `sub-charts-container`）。
 
-#### 1. 【JSON 序列化保護】（資料類型轉換）
-*   **問題點：** 如果 `row['...']` 的數據來源是 MySQL 或其他關聯式資料庫，那麼這些欄位極有可能包含 `datetime.date/datetime.datetime` 或 `decimal.Decimal` 類型。當您嘗試將整個結果集（包括計算出的分數）序列化為 JSON 返回給 API 時，Python 標準的 `json` 模組會拋出 `TypeError`。
-*   **防禦措施：** 在執行任何數據查詢到模型輸入之前，必須實作一個統一的資料轉換層 (Data Transformation Layer)，確保所有日期和貨幣數值都轉換為標準的 **ISO 8601 字串格式** 或 **Python 標準 `float` / `str`**。
+#### 2. HTML/CSS 結構調整 (CSS First)
+為了確保佈局的基礎穩定性，我們必須使用 CSS Grid 或 Flexbox 來定義子元素的排列方式。
 
-#### 2. 【Unicode 防禦】（檔案 I/O）
-*   **提醒：** 如果在模型運行過程中，需要讀取任何外部文件（例如包含行業描述、歷史數據的 CSV 或 TXT 文件），請務必使用 `open(..., encoding='utf-8', errors='ignore')` 來防止系統預設編碼與 UTF-8 之間的衝突。
+**CSS 建議：**
 
-#### 3. 【零破壞原則】（模組化建議）
-*   **架構優化：** 由於這是一個複雜的評分模型，強烈建議將整個計算流程拆分為三個獨立、可測試的 Python Class 或 Module：
-    1.  `DataValidator`: 負責輸入數據的類型檢查和除零保護。
-    2.  `MetricCalculator`: 包含所有指標（ROE, GM, Debt Ratio等）的計算邏輯，確保每個指標都是一個單一且獨立的函數。
-    3.  `ScoringEngine`: 接收三個模組輸出的數值，執行權重加總和最終評分。
+```css
+/* 假設這是包含所有副圖的父容器 */
+.sub-charts-container {
+    display: flex; /* 使用 Flexbox 進行水平排列 */
+    flex-wrap: wrap; /* 允許在空間不足時換行 */
+    gap: 15px; /* 設定圖表間的間距 */
+    /* 確保這個容器的寬度是可變動的 */
+    width: 100%; 
+}
 
-這樣設計可以確保任何未來新增的功能（如加入新的指標或調整權重）都能在不觸動核心計算邏輯的情況下進行開發與測試。
+/* 每個副圖的包裹元素 */
+.sub-chart-wrapper {
+    /* 初始設定：讓它在 Flex 容器中佔據空間 */
+    /* 實際寬度將由 JavaScript 動態覆蓋 */
+    flex-grow: 1; 
+    /* 確保高度一致性，如果圖表本身高度不一致，可考慮設定一個最小高度 */
+    min-height: 300px; 
+    /* 這是圖表內容的容器，必須保持獨立 */
+    box-sizing: border-box;
+}
+```
+
+#### 3. JavaScript 邏輯實作 (JS Logic)
+我們需要一個初始化函數，用來執行尺寸計算和監聽器綁定。
+
+**JavaScript 建議：**
+
+```javascript
+/**
+ * @function initializeSubChartResizing
+ * @description 根據父容器的寬度，計算並強制將所有子圖表包裹元素設置為等寬。
+ * @param {string} containerSelector - 包含所有副圖的父容器選擇器 (e.g., '.sub-charts-container')
+ */
+function initializeSubChartResizing(containerSelector) {
+    const container = document.querySelector(containerSelector);
+    if (!container) {
+        console.error("Error: Sub-charts container not found.");
+        return;
+    }
+
+    const chartWrappers = container.querySelectorAll('.sub-chart-wrapper');
+    const numCharts = chartWrappers.length;
+
+    if (numCharts === 0) {
+        console.warn("No sub-chart wrappers found.");
+        return;
+    }
+
+    /**
+     * 核心計算與應用函數
+     * @param {number} containerWidth - 父容器的當前寬度
+     */
+    const applyEqualWidth = (containerWidth) => {
+        // 計算每個圖表應佔用的理想寬度
+        // 考慮到 gap (間距) 的影響，我們需要減去 (numCharts - 1) * gap
+        const gapWidth = 15; // 必須與 CSS 中的 gap 值一致
+        const totalGapSpace = (numCharts - 1) * gapWidth;
+        
+        // 總可用寬度 = 容器寬度 - 所有間距
+        const usableWidth = containerWidth - totalGapSpace;
+        
+        // 每個圖表應佔用的寬度
+        const calculatedWidth = usableWidth / numCharts;
+
+        // 迭代並強制設置每個子圖表的寬度
+        chartWrappers.forEach((wrapper, index) => {
+            // 設置寬度，並確保它不會超過計算值
+            wrapper.style.width = `${calculatedWidth}px`;
+            // 由於我們使用了 flex-grow: 1，這裡的 style.width 覆蓋了 flex 預設行為
+        });
+    };
+
+    // 1. 執行一次初始化計算 (確保頁面載入時尺寸正確)
+    // 使用 getBoundingClientRect() 獲取元素的實際尺寸
+    const initialWidth = container.getBoundingClientRect().width;
+    applyEqualWidth(initialWidth);
+
+    // 2. 綁定 ResizeObserver
+    const resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+            if (entry.target === container) {
+                // 當父容器尺寸改變時，重新計算並應用寬度
+                const newWidth = entry.contentRect.width;
+                applyEqualWidth(newWidth);
+                console.log(`[Resizer] Container resized to ${newWidth.toFixed(2)}px. Charts adjusted.`);
+            }
+        }
+    });
+
+    // 監測父容器的尺寸變化
+    resizeObserver.observe(container);
+}
+
+// 確保 DOM 完全載入後執行此函數
+document.addEventListener('DOMContentLoaded', () => {
+    // 假設您的副圖容器的 class 名為 'sub-charts-container'
+    initializeSubChartResizing('.sub-charts-container');
+});
+```
+
+---
+
+### ✅ 專案歷史踩坑防禦要點檢查
+
+本次的佈局優化工作，已嚴格遵守以下原則：
+
+1.  **【Unicode 防禦】**：本方案為前端 JavaScript/CSS 邏輯，不涉及本地檔案的讀寫或同步，故此要點無需額外處理。
+2.  **【Gemini API 400 兼容】**：不涉及 API 呼叫，故此要點無需額外處理。
+3.  **【JSON 序列化保護】**：不涉及數據傳輸，故此要點無需額外處理。
+4.  **【零破壞原則】**：
+    *   **執行範圍限定：** 本次邏輯僅針對 `sub-charts-container` 及其子元素進行尺寸計算和樣式覆蓋。
+    *   **隔離性保證：** 既有的 K 線圖（假設位於獨立的 `kline-chart-container`）和 Blended Valuation 計算區塊，其結構和尺寸計算邏輯完全不受此 `ResizeObserver` 影響，確保了核心分析圖表區域的穩定性。
+
+**總結：** 採用此 `ResizeObserver` 模式，可以實現副圖在任何父容器尺寸變化時，自動、精準地保持等寬，且不會干擾主圖表區域。

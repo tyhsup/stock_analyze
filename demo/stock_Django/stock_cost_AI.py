@@ -460,10 +460,11 @@ class IntegratedStockPredModel:
         latest_price: float,
         industry: str = "其他/未知",
         latest_macro_data: dict = None,
-        ma_features: dict = None
+        ma_features: dict = None,
+        splits_data: list = None
     ) -> dict:
         """
-        綜合分析技術面(LSTM + 均線量價雙軌)、籌碼面(法人)、情緒面(新聞)、基本面(估值)與最新股價，
+        綜合分析技術面(LSTM + 均線量價雙軌)、籌碼面(法人)、情緒面(新聞)、基本面(估值)、股票分割事件與最新股價，
         調用雲端 Gemini 取得買賣建議與指針分數。
         """
         import subprocess
@@ -517,6 +518,37 @@ class IntegratedStockPredModel:
         macd_hist_state = macd_dict.get('hist_state', '持平')
         macd_adv = macd_dict.get('macd_advice', '無特別訊號')
         
+        # 處理股票分割歷史資料 (方案 B: 自然語言摘要預處理，防禦空資料與編碼風險)
+        splits_summary_list = []
+        if splits_data is not None:
+            if isinstance(splits_data, pd.DataFrame):
+                if not splits_data.empty and 'split_date' in splits_data.columns and 'split_ratio' in splits_data.columns:
+                    for _, r in splits_data.iterrows():
+                        s_date = str(r['split_date'])
+                        try:
+                            s_ratio = float(r['split_ratio'])
+                            splits_summary_list.append(f"{s_date} 進行 1 拆 {s_ratio:g} 分割")
+                        except (ValueError, TypeError):
+                            splits_summary_list.append(f"{s_date} 進行分割 (比率: {r['split_ratio']})")
+            elif isinstance(splits_data, list) and len(splits_data) > 0:
+                for item in splits_data:
+                    if isinstance(item, dict):
+                        s_date = item.get('split_date') or item.get('date', '')
+                        s_ratio = item.get('split_ratio') or item.get('ratio', '')
+                        if s_date and s_ratio:
+                            try:
+                                s_ratio_val = float(s_ratio)
+                                splits_summary_list.append(f"{s_date} 進行 1 拆 {s_ratio_val:g} 分割")
+                            except (ValueError, TypeError):
+                                splits_summary_list.append(f"{s_date} 分割比率 {s_ratio}")
+                    elif isinstance(item, str):
+                        splits_summary_list.append(item)
+
+        if splits_summary_list:
+            splits_str = "；".join(splits_summary_list)
+        else:
+            splits_str = "近期無股票分割紀錄（價格序列未受分割跳空影響）"
+
         # 籌碼資料
         chips_str = json.dumps(chips_features, ensure_ascii=False)
         
@@ -541,7 +573,8 @@ class IntegratedStockPredModel:
             f"2. 【層級 2：成交量與量價關係（權重 30%）】：成交量為真實資金動能。價漲量增為健康攻擊；價漲量縮為虛漲背離（假突破風險高）；價跌量增為高檔出貨或低檔恐慌換手；價跌量縮為籌碼沉澱與良性回檔。\n"
             f"3. 【層級 3：趨勢指標與動能（權重 20%）】：MACD 零軸為多空分界。零軸之上金叉為強多攻擊（高可靠）；零軸之下金叉僅為弱勢反彈；零軸之下死叉為強空下殺。\n"
             f"4. 【層級 4：震盪指標與超買超賣（權重 10%）】：RSI < 30 超賣等待回升至 30-50 區間確認反彈；RSI > 70 警戒超買；結合布林通道上/下軌雙重確認。\n"
-            f"5. 【背離分析與防偽機制】：必須檢查一般頂/底背離（趨勢反轉先兆）與 RSI 隱藏背離（趨勢延續訊號）；落實三重突破驗證（收盤價實體站穩、頸線量縮回測 Pullback、2B/123 法則過濾假突破）。\n\n"
+            f"5. 【背離分析與防偽機制】：必須檢查一般頂/底背離（趨勢反轉先兆）與 RSI 隱藏背離（趨勢延續訊號）；落實三重突破驗證（收盤價實體站穩、頸線量縮回測 Pullback、2B/123 法則過濾假突破）。\n"
+            f"6. 【股票分割影響分析 SOP】：若標的近期有股票分割歷史，必須確認價格跳空與成交量變化是否為分割還原或股數擴張所致，嚴禁將未還原之價格斷層誤判為破位崩跌或爆量出貨。\n\n"
             f"[技術分析與預測 (LSTM + 均線 + 布林通道多軌 + RSI & MACD 戰術動能分析)]\n"
             f"- 最新收盤價: {latest_price:.2f}\n"
             f"- LSTM 預測未來 5 日價格走勢: [{pred_str}]\n"
@@ -558,6 +591,8 @@ class IntegratedStockPredModel:
             f"- 20日乖離率 (BIAS): {bias_20}\n"
             f"- 量價動能驗證: {vol_conf}\n"
             f"- 技術面評估範疇: {deg_level}\n\n"
+            f"[事件與股票分割歷史]\n"
+            f"- 股票分割紀錄: {splits_str}\n\n"
             f"[法人籌碼面]\n"
             f"- 近期籌碼概況: {chips_str}\n\n"
             f"[輿情情緒面]\n"
@@ -570,7 +605,7 @@ class IntegratedStockPredModel:
             f"[總體經濟與產業分析 (子 Agent 觀點)]\n"
             f"- 總體宏觀觀點: {macro_view}\n\n"
             f"任務：\n"
-            f"1. 請依據【技術指標協同判讀 SOP】（先價格型態、後成交量、再 MACD/RSI 趨勢動能與背離驗證），綜合分析該股票的最新投資前景。\n"
+            f"1. 請依據【技術指標協同判讀 SOP】（先價格型態、後成交量、再 MACD/RSI 趨勢動能與背離驗證、並考量股票分割影響），綜合分析該股票的最新投資前景。\n"
             f"2. 給予買進或賣出的建議，評等必須嚴格限制為以下五個項目之一：'強力賣出', '賣出', '觀望', '買進', '強力買進'。\n"
             f"3. 給予一個推薦分數 (score)，範圍為 0 至 100 之間（0-20: 強力賣出, 21-40: 賣出, 41-60: 觀望, 61-80: 買進, 81-100: 強力買進）。\n"
             f"4. 提供 150 字以內的簡短中文推薦理由。\n\n"
@@ -580,7 +615,7 @@ class IntegratedStockPredModel:
             f"  \"score\": 50,\n"
             f"  \"reason\": \"理由說明\",\n"
             f"  \"details\": {{\n"
-            f"    \"technical\": \"技術分析簡短評語（需嚴格遵循 SOP：包含型態頸線、量價關係、MACD/RSI 零軸動能與背離過濾結果）\",\n"
+            f"    \"technical\": \"技術分析簡短評語（需嚴格遵循 SOP：包含型態頸線、量價關係、MACD/RSI 零軸動能、背離過濾與分割影響結果）\",\n"
             f"    \"chips\": \"籌碼分析簡短評語\",\n"
             f"    \"sentiment\": \"輿情分析簡短評語\",\n"
             f"    \"valuation\": \"基本估值簡短評語\",\n"

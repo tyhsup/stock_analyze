@@ -544,6 +544,15 @@ def gemini_advisor_analysis(request, ticker):
     except Exception as e_macro_load:
         logger.warning(f"Failed to fetch industry or macro data for advice: {e_macro_load}")
 
+    # 7. 查詢股票分割歷史資料 (Stock Splits)
+    splits_data = None
+    try:
+        df_splits = service.fetch_and_cache_splits(valuation_symbol)
+        if df_splits is not None and not df_splits.empty:
+            splits_data = df_splits.to_dict(orient='records')
+    except Exception as e_splits:
+        logger.warning(f"Failed to fetch splits for Gemini advice: {e_splits}")
+
     # 呼叫 Gemini 進行綜合預測與推薦
     try:
         from .stock_cost_AI import IntegratedStockPredModel
@@ -556,7 +565,8 @@ def gemini_advisor_analysis(request, ticker):
             latest_price=latest_price,
             industry=industry,
             latest_macro_data=latest_macro_data,
-            ma_features=ma_features
+            ma_features=ma_features,
+            splits_data=splits_data
         )
         
         # 區分成功與 fallback 快取時間
