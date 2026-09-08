@@ -266,6 +266,7 @@
                 <span class="badge bg-warning text-dark px-3 py-1" id="gemini-status-badge">分析準備中</span>
             </div>
             <div class="card-body p-4">
+                <!-- 上半部：左側評分儀表與建議標籤，右側綜合分析理由 -->
                 <div class="row align-items-center">
                     <div class="col-md-4 text-center border-end">
                         <div class="d-flex flex-column align-items-center justify-content-center">
@@ -276,39 +277,83 @@
                         </div>
                     </div>
                     <div class="col-md-8 ps-md-4 mt-3 mt-md-0">
-                        <h5 class="fw-bold mb-2"><i class="bi bi-journal-text me-2 text-primary"></i>綜合分析理由</h5>
-                        <p class="text-muted" id="gemini-rec-reason" style="font-size: 15px; line-height: 1.6;">正在讀取數據，準備呼叫雲端 Gemini 進行綜合推理...</p>
-                        
-                        <div class="row g-3 mt-2">
-                            <div class="col-12 col-sm-6 col-md">
-                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-primary">
-                                    <div class="text-muted small mb-1">技術面 (LSTM)</div>
-                                    <div class="small fw-semibold text-dark" id="gemini-detail-tech">--</div>
+                        <h5 class="fw-bold mb-3 d-flex align-items-center">
+                            <i class="bi bi-journal-text me-2 text-primary"></i>綜合分析理由
+                        </h5>
+                        <p class="text-body mb-0" id="gemini-rec-reason" style="font-size: 15px; line-height: 1.8;">正在讀取數據，準備呼叫雲端 Gemini 進行綜合推理...</p>
+                    </div>
+                </div>
+
+                <hr class="my-4 text-muted opacity-25">
+
+                <!-- 下半部：子 Agent 深度分析維度（橫式由上往下排列） -->
+                <div class="mt-2">
+                    <h6 class="fw-bold mb-3 text-secondary d-flex align-items-center">
+                        <i class="bi bi-diagram-3 me-2 text-primary"></i>子 Agent 深度分析維度
+                    </h6>
+                    <div class="d-flex flex-column gap-3">
+                        <!-- 1. 技術面 (LSTM) -->
+                        <div class="p-3 bg-light rounded shadow-xs border-start border-4 border-primary">
+                            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+                                <div class="me-md-3 mb-2 mb-md-0 flex-shrink-0" style="min-width: 140px;">
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 me-1">
+                                        <i class="bi bi-graph-up me-1"></i>技術面
+                                    </span>
+                                    <span class="text-muted small fw-semibold">LSTM 預測</span>
                                 </div>
+                                <div class="flex-grow-1 text-body small fw-semibold" id="gemini-detail-tech">--</div>
                             </div>
-                            <div class="col-12 col-sm-6 col-md">
-                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-info">
-                                    <div class="text-muted small mb-1">籌碼面 (法人)</div>
-                                    <div class="small fw-semibold text-dark" id="gemini-detail-chips">--</div>
+                        </div>
+
+                        <!-- 2. 籌碼面 (法人) -->
+                        <div class="p-3 bg-light rounded shadow-xs border-start border-4 border-info">
+                            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+                                <div class="me-md-3 mb-2 mb-md-0 flex-shrink-0" style="min-width: 140px;">
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1 me-1">
+                                        <i class="bi bi-people-fill me-1"></i>籌碼面
+                                    </span>
+                                    <span class="text-muted small fw-semibold">法人動向</span>
                                 </div>
+                                <div class="flex-grow-1 text-body small fw-semibold" id="gemini-detail-chips">--</div>
                             </div>
-                            <div class="col-12 col-sm-6 col-md">
-                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-success">
-                                    <div class="text-muted small mb-1">情緒面 (輿情)</div>
-                                    <div class="small fw-semibold text-dark" id="gemini-detail-senti">--</div>
+                        </div>
+
+                        <!-- 3. 情緒面 (輿情) -->
+                        <div class="p-3 bg-light rounded shadow-xs border-start border-4 border-success">
+                            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+                                <div class="me-md-3 mb-2 mb-md-0 flex-shrink-0" style="min-width: 140px;">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 me-1">
+                                        <i class="bi bi-chat-heart-fill me-1"></i>情緒面
+                                    </span>
+                                    <span class="text-muted small fw-semibold">市場輿情</span>
                                 </div>
+                                <div class="flex-grow-1 text-body small fw-semibold" id="gemini-detail-senti">--</div>
                             </div>
-                            <div class="col-12 col-sm-6 col-md">
-                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-warning">
-                                    <div class="text-muted small mb-1">基本面分析</div>
-                                    <div class="small fw-semibold text-dark" id="gemini-detail-val">--</div>
+                        </div>
+
+                        <!-- 4. 基本面分析 -->
+                        <div class="p-3 bg-light rounded shadow-xs border-start border-4 border-warning">
+                            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+                                <div class="me-md-3 mb-2 mb-md-0 flex-shrink-0" style="min-width: 140px;">
+                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1 me-1">
+                                        <i class="bi bi-cash-coin me-1"></i>基本面
+                                    </span>
+                                    <span class="text-muted small fw-semibold">估值與財務</span>
                                 </div>
+                                <div class="flex-grow-1 text-body small fw-semibold" id="gemini-detail-val">--</div>
                             </div>
-                            <div class="col-12 col-sm-6 col-md">
-                                <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-purple" style="border-top-color: #6f42c1 !important;">
-                                    <div class="text-muted small mb-1">總經分析 (子 Agent)</div>
-                                    <div class="small fw-semibold text-dark" id="gemini-detail-macro">--</div>
+                        </div>
+
+                        <!-- 5. 總經分析 (子 Agent) -->
+                        <div class="p-3 bg-light rounded shadow-xs border-start border-4 border-purple" style="border-left-color: #6f42c1 !important;">
+                            <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center">
+                                <div class="me-md-3 mb-2 mb-md-0 flex-shrink-0" style="min-width: 140px;">
+                                    <span class="badge px-2 py-1 me-1" style="background-color: rgba(111, 66, 193, 0.15); color: #6f42c1; border: 1px solid rgba(111, 66, 193, 0.3);">
+                                        <i class="bi bi-globe2 me-1"></i>總經面
+                                    </span>
+                                    <span class="text-muted small fw-semibold">總體經濟</span>
                                 </div>
+                                <div class="flex-grow-1 text-body small fw-semibold" id="gemini-detail-macro">--</div>
                             </div>
                         </div>
                     </div>
