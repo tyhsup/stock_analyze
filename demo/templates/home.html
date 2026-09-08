@@ -300,7 +300,7 @@
                             </div>
                             <div class="col-12 col-sm-6 col-md">
                                 <div class="p-3 bg-light rounded shadow-xs h-100 border-top border-3 border-warning">
-                                    <div class="text-muted small mb-1">基本面 (估值)</div>
+                                    <div class="text-muted small mb-1">基本面分析</div>
                                     <div class="small fw-semibold text-dark" id="gemini-detail-val">--</div>
                                 </div>
                             </div>
@@ -367,7 +367,7 @@
                         document.getElementById('gemini-detail-tech').textContent = report.details.technical || "暫無技術評語";
                         document.getElementById('gemini-detail-chips').textContent = report.details.chips || "暫無籌碼評語";
                         document.getElementById('gemini-detail-senti').textContent = report.details.sentiment || "暫無情緒評語";
-                        document.getElementById('gemini-detail-val').textContent = report.details.valuation || "暫無基本評語";
+                        document.getElementById('gemini-detail-val').textContent = (report.details && (report.details.fundamental || report.details.valuation)) || "暫無基本評語";
                         document.getElementById('gemini-detail-macro').textContent = report.details.macro || "暫無總經評語";
                         
                         badge.textContent = data.cached ? "已載入快取" : "最新分析";

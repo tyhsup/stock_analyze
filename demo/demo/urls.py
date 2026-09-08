@@ -21,7 +21,7 @@ from django.urls import path, include
 #from ClassServices.views import studentMethod
 from stock_Django.views import (
     home, News_display, refresh_status_api, news_refresh_api, 
-    smart_advisor_analysis, gemini_advisor_analysis,
+    gemini_advisor_analysis,
     macrotrends_financials_api, macrotrends_ratios_api,
     macro_dashboard, macro_data_api
 )
@@ -39,7 +39,6 @@ urlpatterns = [
     path('valuation/', include('valuation.urls')),
     path('api/refresh-status/<str:ticker>/', refresh_status_api, name='refresh_status'),
     path('api/news-refresh/<str:ticker>/', news_refresh_api, name='news_refresh'),
-    path('api/smart-advisor/<str:ticker>/', smart_advisor_analysis, name='smart_advisor'),
     path('api/gemini-advisor/<str:ticker>/', gemini_advisor_analysis, name='gemini_advisor'),
     path('api/macrotrends/financials', macrotrends_financials_api, name='macrotrends_financials'),
     path('api/macrotrends/ratios', macrotrends_ratios_api, name='macrotrends_ratios'),

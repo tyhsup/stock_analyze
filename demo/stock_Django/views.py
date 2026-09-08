@@ -22,7 +22,6 @@ import threading
 import logging
 from datetime import datetime
 from .services import StockService
-from .gemma_advisor_service import GemmaAdvisorService
 
 logger = logging.getLogger(__name__)
 
@@ -96,68 +95,6 @@ def refresh_status_api(request, ticker):
         return JsonResponse(news_status)
     status = get_refresh_status(ticker)
     return JsonResponse(status)
-
-def smart_advisor_analysis(request, ticker):
-    """
-    智慧顧問分析：整合技術面、情緒面與估值，調用本地 Gemma 4 進行推理。
-    """
-    service = StockService()
-    advisor = GemmaAdvisorService()
-    
-    # 1. 取得基礎數據
-    # 這裡儘量復用 existing logic
-    
-    # 技術預測
-    pred_data = service._get_ai_predictions(ticker)
-    
-    # 估值 (調用 valuation_service)
-    try:
-        from valuation.services.valuation_service import ValuationService
-        val_results = ValuationService.calculate_valuation(ticker)
-    except:
-        val_results = {"error": "估值模組未就緒"}
-        
-    # 情緒 (讀取最新新聞統計)
-    try:
-        from .news_excel import NewsExcelManager
-        news_mgr = NewsExcelManager()
-        news = news_mgr.read_news(ticker, limit=20)
-        pos = sum(1 for n in news if n.get('正負分析') == '正面')
-        neg = sum(1 for n in news if n.get('正負分析') == '負面')
-        sentiment_summary = {
-            'positive': pos,
-            'negative': neg,
-            'label': '偏多' if pos > neg else ('偏空' if neg > pos else '中性'),
-            'score': pred_data.get('latest', {}).get('trend_probability', 0.5) * 100 if pred_data.get('latest') else 50
-        }
-    except:
-        sentiment_summary = {'label': '未知'}
-
-    # 股票分割資訊
-    splits_data = []
-    try:
-        splits_df = service.cost_mgr.fetch_and_cache_splits(ticker)
-        if splits_df is not None and not splits_df.empty:
-            splits_data = splits_df.to_dict('records')
-    except Exception as e_s:
-        logger.warning(f"Advisor 獲取 {ticker} 分割記錄失敗: {e_s}")
-
-    # 2. 準備給 Advisor 的數據
-    advisor_input = {
-        'trend_label': '看漲' if sentiment_summary.get('label') == '偏多' else '盤整/看跌',
-        'sentiment_summary': sentiment_summary,
-        'valuation': val_results,
-        'splits_data': splits_data
-    }
-    
-    # 3. 觸發 Gemma 推理 (這可能較久，故前面已將所有數據準備好)
-    report = advisor.get_structured_advice(ticker, advisor_input)
-    
-    return JsonResponse({
-        'ticker': ticker,
-        'report': report,
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
 
 def news_refresh_api(request, ticker):
     """API endpoint to trigger news refresh for Chinese and English news."""
@@ -489,19 +426,29 @@ def gemini_advisor_analysis(request, ticker):
     except Exception as e_senti:
         logger.warning(f"Failed to fetch sentiment for Gemini advice: {e_senti}")
         
-    # 5. 基本面估值
-    valuation_features = {"fair_value": "N/A", "upside": 0.0, "rating": "N/A"}
+    # 5. 基本面財務指標蒐集 (純基本面分析，移除估值結論)
+    fundamental_features = {}
     try:
-        from valuation.services.valuation_service import ValuationService
-        val_results = ValuationService.calculate_valuation(valuation_symbol)
-        if val_results and "error" not in val_results:
-            valuation_features = {
-                "fair_value": f"{val_results.get('fair_value', 'N/A')}",
-                "upside": float(val_results.get('upside', 0.0) * 100),
-                "rating": val_results.get('rating', 'N/A')
-            }
-    except Exception as e_val:
-        logger.warning(f"Failed to fetch valuation for Gemini advice: {e_val}")
+        from .fundamental_collector import FundamentalDataCollector
+        fundamental_features = FundamentalDataCollector.collect_fundamentals(
+            ticker=ticker,
+            valuation_symbol=valuation_symbol,
+            is_tw=is_tw,
+            latest_price=latest_price,
+            service=service
+        )
+    except Exception as e_fund:
+        logger.warning(f"Failed to fetch fundamentals for Gemini advice: {e_fund}")
+        fundamental_features = {
+            "pe": "N/A", "eps": "N/A", "pb": "N/A", "roe": "N/A",
+            "gross_margin": "N/A", "operating_margin": "N/A", "net_margin": "N/A",
+            "debt_to_equity": "N/A", "free_cash_flow": "N/A", "revenue_growth": "N/A",
+            "revenue_mom": "N/A", "revenue_yoy": "N/A", "peg_ratio": "N/A",
+            "book_value": "N/A", "dividend_yield": "N/A", "market_cap": "N/A",
+            "data_source": "TWSE 官方統計 + 本機 DB" if is_tw else "SEC EDGAR + 本機 DB",
+            "data_period": "最新季度 TTM",
+            "data_status": f"提取失敗: {str(e_fund)[:50]}"
+        }
         
     # 6. 新增：總經數據與產業別加載 (子 Agent 觀點)
     industry = "其他/未知"
@@ -547,7 +494,12 @@ def gemini_advisor_analysis(request, ticker):
     # 7. 查詢股票分割歷史資料 (Stock Splits)
     splits_data = None
     try:
-        df_splits = service.fetch_and_cache_splits(valuation_symbol)
+        df_splits = None
+        if hasattr(service, 'fetch_and_cache_splits'):
+            df_splits = service.fetch_and_cache_splits(valuation_symbol)
+        elif hasattr(service, 'cost_mgr') and hasattr(service.cost_mgr, 'fetch_and_cache_splits'):
+            df_splits = service.cost_mgr.fetch_and_cache_splits(valuation_symbol)
+            
         if df_splits is not None and not df_splits.empty:
             splits_data = df_splits.to_dict(orient='records')
     except Exception as e_splits:
@@ -561,7 +513,7 @@ def gemini_advisor_analysis(request, ticker):
             lstm_pred=lstm_pred,
             chips_features=chips_features,
             sentiment_summary=sentiment_summary,
-            valuation_features=valuation_features,
+            fundamental_features=fundamental_features,
             latest_price=latest_price,
             industry=industry,
             latest_macro_data=latest_macro_data,

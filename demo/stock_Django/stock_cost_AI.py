@@ -456,15 +456,16 @@ class IntegratedStockPredModel:
         lstm_pred: dict, 
         chips_features: dict, 
         sentiment_summary: dict, 
-        valuation_features: dict, 
-        latest_price: float,
+        fundamental_features: dict = None, 
+        latest_price: float = 0.0,
         industry: str = "其他/未知",
         latest_macro_data: dict = None,
         ma_features: dict = None,
-        splits_data: list = None
+        splits_data: list = None,
+        valuation_features: dict = None
     ) -> dict:
         """
-        綜合分析技術面(LSTM + 均線量價雙軌)、籌碼面(法人)、情緒面(新聞)、基本面(估值)、股票分割事件與最新股價，
+        綜合分析技術面(LSTM + 均線量價雙軌)、籌碼面(法人)、情緒面(新聞)、基本面(純財務數據)、股票分割事件與最新股價，
         調用雲端 Gemini 取得買賣建議與指針分數。
         """
         import subprocess
@@ -476,8 +477,8 @@ class IntegratedStockPredModel:
             chips_features = {}
         if sentiment_summary is None:
             sentiment_summary = {}
-        if valuation_features is None:
-            valuation_features = {}
+        if fundamental_features is None:
+            fundamental_features = valuation_features or {}
         if ma_features is None:
             ma_features = {}
             
@@ -559,10 +560,26 @@ class IntegratedStockPredModel:
         senti_label = sentiment_summary.get('label', '中性')
         senti_score = sentiment_summary.get('score', 50.0)
         
-        # 估值數據
-        fair_val = valuation_features.get('fair_value', 'N/A')
-        upside = valuation_features.get('upside', 0.0)
-        val_rating = valuation_features.get('rating', 'N/A')
+        # 基本面財務指標數據提取
+        data_src = fundamental_features.get('data_source', 'TWSE/SEC 官方資料庫')
+        data_per = fundamental_features.get('data_period', '最新季度 TTM')
+        pe = fundamental_features.get('pe', 'N/A')
+        eps = fundamental_features.get('eps', 'N/A')
+        pb = fundamental_features.get('pb', 'N/A')
+        roe = fundamental_features.get('roe', 'N/A')
+        gross_margin = fundamental_features.get('gross_margin', 'N/A')
+        operating_margin = fundamental_features.get('operating_margin', 'N/A')
+        net_margin = fundamental_features.get('net_margin', 'N/A')
+        debt_to_equity = fundamental_features.get('debt_to_equity', 'N/A')
+        free_cash_flow = fundamental_features.get('free_cash_flow', 'N/A')
+        revenue_growth = fundamental_features.get('revenue_growth', 'N/A')
+        revenue_mom = fundamental_features.get('revenue_mom', 'N/A')
+        revenue_yoy = fundamental_features.get('revenue_yoy', 'N/A')
+        peg_ratio = fundamental_features.get('peg_ratio', 'N/A')
+        book_value = fundamental_features.get('book_value', 'N/A')
+        dividend_yield = fundamental_features.get('dividend_yield', 'N/A')
+        market_cap = fundamental_features.get('market_cap', 'N/A')
+        data_status = fundamental_features.get('data_status', '正常')
         
         # 構建 Prompt（整合技術指標協同判讀 SOP 最高規範）
         prompt = (
@@ -598,14 +615,28 @@ class IntegratedStockPredModel:
             f"[輿情情緒面]\n"
             f"- 近期新聞情緒統計: 正面 {pos} 篇, 負面 {neg} 篇, 中性 {neu} 篇\n"
             f"- 情緒強度評級: {senti_label} (情緒得分: {senti_score:.1f}/100)\n\n"
-            f"[基本面與估值]\n"
-            f"- 公允估值: {fair_val}\n"
-            f"- 目前股價與公允值差距 (Upside): {upside}%\n"
-            f"- 估值評級: {val_rating}\n\n"
+            f"[基本面財務分析 (客觀財務指標，不含主觀估值結論)]\n"
+            f"- 數據來源: {data_src} (財報時效性: {data_per})\n"
+            f"- 本益比 (PE / TTM): {pe}\n"
+            f"- 每股盈餘 (EPS / TTM): {eps}\n"
+            f"- 股價淨值比 (PB): {pb}\n"
+            f"- 股東權益報酬率 (ROE, %): {roe}\n"
+            f"- 毛利率 (%): {gross_margin}\n"
+            f"- 營業利益率 (%): {operating_margin}\n"
+            f"- 稅後淨利率 (%): {net_margin}\n"
+            f"- 負債比率 (D/E Ratio, %): {debt_to_equity}\n"
+            f"- 自由現金流 (FCF): {free_cash_flow}\n"
+            f"- 營收成長率 (YoY, %): {revenue_growth}\n"
+            f"- 月營收動能: MoM {revenue_mom}%, YoY {revenue_yoy}%\n"
+            f"- PEG 比率: {peg_ratio}\n"
+            f"- 每股淨值 (BPS): {book_value}\n"
+            f"- 殖利率 (%): {dividend_yield}\n"
+            f"- 市值: {market_cap}\n"
+            f"- 財務資料狀態: {data_status}\n\n"
             f"[總體經濟與產業分析 (子 Agent 觀點)]\n"
             f"- 總體宏觀觀點: {macro_view}\n\n"
             f"任務：\n"
-            f"1. 請依據【技術指標協同判讀 SOP】（先價格型態、後成交量、再 MACD/RSI 趨勢動能與背離驗證、並考量股票分割影響），綜合分析該股票的最新投資前景。\n"
+            f"1. 請依據【技術指標協同判讀 SOP】（先價格型態、後成交量、再 MACD/RSI 趨勢動能與背離驗證、考量股票分割影響，並綜合評估基本面獲利結構與財務體質），給出權威的最新投資前景。\n"
             f"2. 給予買進或賣出的建議，評等必須嚴格限制為以下五個項目之一：'強力賣出', '賣出', '觀望', '買進', '強力買進'。\n"
             f"3. 給予一個推薦分數 (score)，範圍為 0 至 100 之間（0-20: 強力賣出, 21-40: 賣出, 41-60: 觀望, 61-80: 買進, 81-100: 強力買進）。\n"
             f"4. 提供 150 字以內的簡短中文推薦理由。\n\n"
@@ -618,7 +649,7 @@ class IntegratedStockPredModel:
             f"    \"technical\": \"技術分析簡短評語（需嚴格遵循 SOP：包含型態頸線、量價關係、MACD/RSI 零軸動能、背離過濾與分割影響結果）\",\n"
             f"    \"chips\": \"籌碼分析簡短評語\",\n"
             f"    \"sentiment\": \"輿情分析簡短評語\",\n"
-            f"    \"valuation\": \"基本估值簡短評語\",\n"
+            f"    \"fundamental\": \"基本面分析簡短評語（評估獲利能力、財務結構、現金流與成長動能）\",\n"
             f"    \"macro\": \"總經分析簡短評語\"\n"
             f"  }}\n"
             f"}}"
@@ -711,6 +742,15 @@ class IntegratedStockPredModel:
                             else:
                                 friendly_model_name = model
                             parsed_response['model_name'] = friendly_model_name
+                            
+                            # 雙鍵防禦相容支援
+                            if 'details' in parsed_response and isinstance(parsed_response['details'], dict):
+                                d = parsed_response['details']
+                                if 'fundamental' in d and 'valuation' not in d:
+                                    d['valuation'] = d['fundamental']
+                                elif 'valuation' in d and 'fundamental' not in d:
+                                    d['fundamental'] = d['valuation']
+                                    
                             return parsed_response
                     except Exception as je:
                         logger.warning(f"[GeminiAdvisor] 無法解析模型 {model} 回覆的 JSON: {je}. 原始內容: {clean_res}")
@@ -737,6 +777,7 @@ class IntegratedStockPredModel:
                 "technical": "暫無建議",
                 "chips": "暫無建議",
                 "sentiment": "暫無建議",
+                "fundamental": "暫無建議",
                 "valuation": "暫無建議"
             },
             "model_name": "N/A"
