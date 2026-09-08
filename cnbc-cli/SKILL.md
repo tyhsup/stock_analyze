@@ -1,6 +1,6 @@
 ---
 name: pp-cnbc-cli
-description: "Printing Press CLI for Cnbc Cli. CNBC 全球財經新聞與即時行情 API（涵蓋 World News、國際市場、經濟、科技、個股報價與即�..."
+description: "Printing Press CLI for Cnbc Cli. CNBC 全球財經新聞與即時行情 API（涵蓋 World News、國際市場、經濟、科技、個股報價與即..."
 author: "Ting-Yu Hsu"
 license: "Apache-2.0"
 argument-hint: "<command> [args] | install cli|mcp"
