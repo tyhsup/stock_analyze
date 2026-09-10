@@ -161,4 +161,27 @@ STATICFILES_DIRS = [
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'# Auto reload trigger: 2026-08-19 19:35
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ==========================================
+# Celery 異步排程與任務佇列配置
+# ==========================================
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 分鐘硬超時防禦
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/0')
+
+# Celery Beat 每日排程設定 (交易日收盤後自動觸發全市場批量重算)
+CELERY_BEAT_SCHEDULE = {
+    'batch-valuation-tw-market-daily': {
+        'task': 'valuation.tasks.batch_calculate_market_valuation',
+        'schedule': 86400.0,
+        'args': ('TW',),
+    },
+    'batch-valuation-us-market-daily': {
+        'task': 'valuation.tasks.batch_calculate_market_valuation',
+        'schedule': 86400.0,
+        'args': ('US',),
+    },
+}

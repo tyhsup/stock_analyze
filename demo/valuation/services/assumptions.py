@@ -24,3 +24,53 @@ class Assumptions:
 
         # --- 永續期假設 (Terminal Value) ---
         self.perpetuity_growth_rate = 0.03 # g
+
+    def validate_terminal_growth(self, risk_free_rate: float = 0.03) -> float:
+        """
+        動態檢驗並約束永續增長率不得超過無風險利率 (g <= Rf)。
+        若超出上限，自動 clamp 並記錄警告。
+        """
+        rf = float(risk_free_rate if risk_free_rate is not None else 0.03)
+        if self.perpetuity_growth_rate > rf:
+            import logging
+            logging.getLogger(__name__).warning(
+                "永續增長率 g (%.2f%%) 超過無風險利率 (%.2f%%)，自動約束至上限。",
+                self.perpetuity_growth_rate * 100, rf * 100
+            )
+            self.perpetuity_growth_rate = rf
+        elif self.perpetuity_growth_rate < 0:
+            self.perpetuity_growth_rate = 0.0
+        return float(self.perpetuity_growth_rate)
+
+    def calculate_reinvestment_rate(self, roic: float, g: float = None) -> float:
+        """
+        依據 ROIC 與永續成長率 g 計算穩定期再投資率 (Reinvestment Rate = g / ROIC)。
+        
+        邊界防禦：
+        - 若 ROIC <= 0 且 g > 0，強制再投資率為 1.0 (100% 再投資以維持增長，防止無本萬利假設)。
+        - 若 g <= 0，再投資率為 0.0。
+        - 正常情況 clamp 於 [0.0, 1.0]。
+        """
+        eff_g = float(g if g is not None else self.perpetuity_growth_rate)
+        eff_roic = float(roic if roic is not None else 0.10)
+
+        if eff_g <= 0:
+            return 0.0
+
+        if eff_roic <= 0:
+            # 虧損或零資本回報卻預期增長，必須投入全部利潤
+            return 1.0
+
+        rr = eff_g / eff_roic
+        return float(max(min(rr, 1.0), 0.0))
+
+    def calculate_terminal_fcff(self, nopat_n: float, roic: float, g: float = None) -> float:
+        """
+        計算終值期第一年自由現金流 (Terminal FCFF_n+1)。
+        公式：NOPAT_n * (1 + g) * (1 - Reinvestment_Rate)
+        """
+        eff_g = float(g if g is not None else self.perpetuity_growth_rate)
+        rr = self.calculate_reinvestment_rate(roic, eff_g)
+        terminal_nopat = float(nopat_n) * (1.0 + eff_g)
+        return float(terminal_nopat * (1.0 - rr))
+

@@ -24,6 +24,10 @@ class ValuationResult(models.Model):
     # Note: Requires MySQL 5.7+ for JSONField
     assumptions = models.JSONField(default=dict, blank=True)
     
+    # Phase 6: WACC 異常值防護閥標記
+    is_flagged = models.BooleanField(default=False, db_index=True, help_text="是否觸發異常防護閥 (如 WACC 超出 [3%, 20%] 等)")
+    flag_reason = models.TextField(blank=True, default='', help_text="異常原因或防護備註")
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -78,3 +82,40 @@ class MasterSelection(models.Model):
         return f"{self.market} - {self.symbol} ({self.master_name}) Rank {self.rank}"
 
 
+from django.core.serializers.json import DjangoJSONEncoder
+
+class ValuationAssumptionHistory(models.Model):
+    """
+    SCD Type 2 (Slowly Changing Dimension Type 2) 估值假設歷史版本控制表
+    維護估值假設快照 (wacc, g, roic, tax_rate, margins) 與估值結果歷史可追溯性。
+    """
+    symbol = models.CharField(max_length=20, db_index=True)
+    market = models.CharField(max_length=10, choices=[('TW', 'Taiwan'), ('US', 'USA')])
+    version = models.PositiveIntegerField(default=1)
+    effective_date = models.DateField(help_text="SCD2 生效起始日期")
+    end_date = models.DateField(null=True, blank=True, help_text="SCD2 生效結束日期（最新版本為 NULL）")
+    is_current = models.BooleanField(default=True, db_index=True, help_text="是否為當前最新有效版本")
+    
+    # 假設與估值快照 (使用 DjangoJSONEncoder 支援 Decimal/Date 精度)
+    assumptions = models.JSONField(default=dict, encoder=DjangoJSONEncoder, help_text="估值假設快照 (wacc, g, roic, tax_rate, margin, etc.)")
+    valuation_snapshot = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder, help_text="當期估值結果快照 (dcf_per_share, fair_value, ev, net_debt, etc.)")
+    change_reason = models.CharField(max_length=255, blank=True, default='', help_text="版本變更原因 (例如：季報更新、分析師調校、批量重算)")
+    
+    # Phase 6: WACC 異常值防護閥歷史追蹤
+    is_flagged = models.BooleanField(default=False, db_index=True, help_text="是否包含異常參數標記")
+    flag_reasons = models.JSONField(default=list, blank=True, encoder=DjangoJSONEncoder, help_text="異常原因標籤列表")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'valuation_assumption_history'
+        ordering = ['-version', '-effective_date']
+        indexes = [
+            models.Index(fields=['symbol', 'market', 'is_current']),
+            models.Index(fields=['symbol', 'market', 'version']),
+            models.Index(fields=['effective_date']),
+        ]
+
+    def __str__(self):
+        status = "Current" if self.is_current else f"Archived ({self.end_date})"
+        return f"{self.symbol} ({self.market}) v{self.version} [{status}]"

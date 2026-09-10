@@ -72,37 +72,21 @@ class ValuationService:
             assumptions.capex_as_pct_sales = hist_ratios.get('capex_as_pct_revenue', 0.03)
             assumptions.depreciation_as_pct_revenue = hist_ratios.get('da_as_pct_revenue', 0.03)
             
-            # Helper function for DCF calculations given parameters
-            def compute_dcf(proj_df, wacc_val, g_val, is_mid_year=False, use_exit_mult=False, exit_mult_val=10.0, debt_adjust=0.0):
-                last_yr = proj_df.iloc[-1]
-                t_rate = assumptions.tax_rate
-                fcf_5 = last_yr['ebit'] * (1 - t_rate) + last_yr['depreciation'] - last_yr['capex'] - last_yr['change_in_wc']
-                
-                if use_exit_mult:
-                    ebitda_5 = last_yr['ebit'] + last_yr['depreciation']
-                    tv = ebitda_5 * exit_mult_val
-                else:
-                    wacc_eff = max(wacc_val, 0.03)
-                    denom = wacc_eff - g_val
-                    if denom < 0.01: denom = 0.01
-                    tv = fcf_5 * (1 + g_val) / denom
-                    
-                pv_fcfs = 0.0
-                for i, row in proj_df.iterrows():
-                    fcf = row['ebit'] * (1 - t_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']
-                    t_exp = (i + 0.5) if is_mid_year else (i + 1)
-                    pv_fcfs += fcf / ((1 + max(wacc_val, 0.01))**t_exp)
-                
-                tv_exp = 4.5 if is_mid_year else 5.0
-                pv_tv = tv / ((1 + max(wacc_val, 0.01))**tv_exp)
-                ev = pv_fcfs + pv_tv
-                
-                # Net Debt = Total Debt - Cash + Debt-like Items
-                raw_net_debt = start_data.get('total_debt', 0) - start_data.get('cash', 0) + debt_adjust
-                eq_val = ev - raw_net_debt
-                shrs = max(start_data.get('diluted_shares', start_data.get('shares_outstanding', 1)), 1)
-                implied_p = max(eq_val / shrs, 0)
-                return implied_p, ev, raw_net_debt, tv, pv_tv, shrs
+            # 4.1 驗證並約束永續期成長率天花板 (g <= Rf)
+            risk_free_rate = assumptions.risk_free_rate
+            g_capped = assumptions.validate_terminal_growth(risk_free_rate)
+
+            # 4.2 估計 ROIC (若無足夠投資資本數據則預設合理水平 12%)
+            t_rate = assumptions.tax_rate
+            invested_cap = (
+                start_data.get('total_debt', 0) + 
+                start_data.get('share_capital', 0) + 
+                start_data.get('retained_earnings', 0) - 
+                start_data.get('cash', 0)
+            )
+            latest_ebit = start_data.get('ebit', 0)
+            est_nopat = latest_ebit * (1.0 - t_rate)
+            est_roic = est_nopat / invested_cap if invested_cap > 0 else 0.12
 
             # 5. Run Primary DCF Projection
             projector = FinancialProjector(start_data, assumptions)
@@ -110,17 +94,99 @@ class ValuationService:
             
             is_mid_year = (discount_convention == 'mid_year')
             use_exit_mult = (tv_method == 'exit_multiple')
-            
-            implied_price_dcf, enterprise_value, net_debt, terminal_value, pv_tv, shares = compute_dcf(
-                projections, 
-                wacc_val=wacc, 
-                g_val=assumptions.perpetuity_growth_rate, 
-                is_mid_year=is_mid_year, 
-                use_exit_mult=use_exit_mult, 
-                exit_mult_val=exit_multiple, 
-                debt_adjust=debt_like_items
+
+            # 折現與終值計算輔助函式
+            def evaluate_dcf_flow(proj_df, wacc_val, g_val, use_mult, mult_val):
+                last_yr = proj_df.iloc[-1]
+                nopat_last = last_yr['ebit'] * (1.0 - t_rate)
+                fcf_last = nopat_last + last_yr['depreciation'] - last_yr['capex'] - last_yr['change_in_wc']
+
+                if use_mult:
+                    ebitda_last = last_yr['ebit'] + last_yr['depreciation']
+                    tv = ebitda_last * mult_val
+                else:
+                    # 筆記標準：扣除再投資率之終值 FCFF
+                    term_fcf = assumptions.calculate_terminal_fcff(nopat_last, est_roic, g_val)
+                    wacc_eff = max(float(wacc_val), 0.03)
+                    denom = wacc_eff - g_val
+                    if denom < 0.01:
+                        denom = 0.01
+                    tv = term_fcf / denom
+
+                pv_fcfs = 0.0
+                for i, row in proj_df.iterrows():
+                    fcf = row['ebit'] * (1.0 - t_rate) + row['depreciation'] - row['capex'] - row['change_in_wc']
+                    t_exp = (i + 0.5) if is_mid_year else (i + 1.0)
+                    pv_fcfs += fcf / ((1.0 + max(float(wacc_val), 0.01)) ** t_exp)
+
+                tv_exp = (len(proj_df) - 0.5) if is_mid_year else float(len(proj_df))
+                pv_tv = tv / ((1.0 + max(float(wacc_val), 0.01)) ** tv_exp)
+                ev = pv_fcfs + pv_tv
+                return float(ev), float(tv), float(pv_tv)
+
+            # 6. 整合 IterativeDCFSolver 與 EVToEquityBridge 進行循環論證求解與動態 TSM 稀釋計算
+            from .iterative_solver import IterativeDCFSolver, TSMCalculator
+            from .ev_bridge import EVToEquityBridge
+            solver = IterativeDCFSolver(max_iter=50, tol=1e-4, damping_factor=0.5)
+
+            # 提取 EV-to-Equity Bridge 核心調整項
+            c_cash = float(start_data.get('cash', 0) or 0)
+            t_debt = float(start_data.get('total_debt', 0) or 0)
+            op_leases = float(start_data.get('operating_lease_liability', 0) or 0)
+            pref_stock = float(start_data.get('preferred_stock', 0) or 0)
+            min_interest = float(start_data.get('minority_interest', 0) or 0)
+            pension_def = float(start_data.get('pension_deficit', 0) or 0)
+
+            # 取得股權成本 Ke 與債務成本 Rd
+            cost_of_equity = wacc_calc.calculate_cost_of_equity()
+            cost_of_debt = assumptions.cost_of_debt
+
+            # 執行迭代求解
+            basic_shares = float(start_data.get('shares_outstanding', 1))
+            reported_diluted = float(start_data.get('diluted_shares', basic_shares))
+            opts_count = float(start_data.get('options_count', 0))
+            stk_price = float(start_data.get('strike_price', 0))
+
+            solve_res = solver.solve(
+                initial_price=current_price,
+                basic_shares=basic_shares,
+                total_debt=t_debt,
+                cash=c_cash,
+                cost_of_equity=cost_of_equity,
+                cost_of_debt=cost_of_debt,
+                tax_rate=t_rate,
+                discount_fn=lambda w: evaluate_dcf_flow(projections, w, g_capped, use_exit_mult, exit_multiple),
+                options_count=opts_count,
+                strike_price=stk_price,
+                reported_diluted_shares=reported_diluted,
+                debt_adjust=debt_like_items,
+                wacc_premium=wacc_premium,
+                operating_lease_liability=op_leases,
+                preferred_stock=pref_stock,
+                minority_interest=min_interest,
+                pension_deficit=pension_def
             )
-            
+
+            implied_price_dcf = solve_res['implied_price']
+            shares = solve_res['diluted_shares']
+            wacc = solve_res['converged_wacc']
+
+            # 重新計算收斂後之 EV, TV 與完整 EV-to-Equity Bridge
+            enterprise_value, terminal_value, pv_tv = evaluate_dcf_flow(
+                projections, wacc, g_capped, use_exit_mult, exit_multiple
+            )
+            bridge_base = EVToEquityBridge.calculate_bridge(
+                enterprise_value=enterprise_value,
+                cash=c_cash,
+                total_debt=t_debt,
+                operating_lease_liability=op_leases,
+                preferred_stock=pref_stock,
+                minority_interest=min_interest,
+                pension_deficit=pension_def,
+                debt_like_items=debt_like_items
+            )
+            net_debt = bridge_base['net_debt']
+
             # --- 三情境分析 (Bear / Base / Bull) ---
             # 保守情境 (Bear): WACC + 2.0%, 營收成長率 70%, g = 1.0%
             assumptions_bear = Assumptions()
@@ -128,15 +194,18 @@ class ValuationService:
             assumptions_bear.ebit_margin = assumptions.ebit_margin * 0.9
             assumptions_bear.tax_rate = assumptions.tax_rate
             proj_bear = FinancialProjector(start_data, assumptions_bear).run_projection()
-            price_bear, _, _, _, _, _ = compute_dcf(proj_bear, wacc + 0.02, 0.01, is_mid_year, use_exit_mult, exit_multiple * 0.8, debt_like_items)
+            ev_bear, _, _ = evaluate_dcf_flow(proj_bear, wacc + 0.02, 0.01, use_exit_mult, exit_multiple * 0.8)
+            price_bear = max((ev_bear - net_debt) / max(shares, 1), 0.0)
 
-            # 樂觀情境 (Bull): WACC - 1.0%, 營收成長率 120%, g = 2.5%
+            # 樂觀情境 (Bull): WACC - 1.0%, 營收成長率 120%, g = min(2.5%, Rf)
             assumptions_bull = Assumptions()
             assumptions_bull.revenue_growth_rate = [g_val * 1.2 for g_val in assumptions.revenue_growth_rate]
             assumptions_bull.ebit_margin = assumptions.ebit_margin * 1.1
             assumptions_bull.tax_rate = assumptions.tax_rate
             proj_bull = FinancialProjector(start_data, assumptions_bull).run_projection()
-            price_bull, _, _, _, _, _ = compute_dcf(proj_bull, max(wacc - 0.01, 0.03), 0.025, is_mid_year, use_exit_mult, exit_multiple * 1.2, debt_like_items)
+            g_bull = min(0.025, risk_free_rate)
+            ev_bull, _, _ = evaluate_dcf_flow(proj_bull, max(wacc - 0.01, 0.03), g_bull, use_exit_mult, exit_multiple * 1.2)
+            price_bull = max((ev_bull - net_debt) / max(shares, 1), 0.0)
             
             price_base = implied_price_dcf
 
@@ -222,12 +291,59 @@ class ValuationService:
             # 確保 wacc_premium_pct 正確顯示為百分比數字 (例如 1.5)，避免被二次乘 100 溢位
             wacc_premium_pct = wacc_results.get('WACC Premium Pct', float(wacc_premium))
 
+            # --- 9. Phase 3 風險分析強化：蒙地卡羅模擬 (10,000 次) 與 WACC vs g 雙向敏感度矩陣 ---
+            import numpy as np
+            from .monte_carlo import MonteCarloSimulator
+            from .sensitivity import SensitivityAnalyzer
+
+            mc_sim = MonteCarloSimulator(num_simulations=10000, seed=42)
+            base_rev = float(start_data.get('revenue', 0) or 1000000000)
+            avg_growth = float(np.mean(assumptions.revenue_growth_rate)) if assumptions.revenue_growth_rate else 0.05
+            reinvest_rate = float(assumptions.calculate_reinvestment_rate(est_roic, g_capped))
+
+            monte_carlo_res = mc_sim.run_simulation(
+                base_revenue=base_rev,
+                base_growth=avg_growth,
+                growth_std=0.03,
+                ebit_margin=float(assumptions.ebit_margin),
+                tax_rate=t_rate,
+                base_wacc=float(wacc),
+                wacc_std=0.012,
+                risk_free_rate=float(risk_free_rate),
+                reinvestment_rate=reinvest_rate,
+                net_debt=net_debt,
+                shares_outstanding=shares,
+                current_price=current_price
+            )
+
+            sensitivity_res = SensitivityAnalyzer.generate_matrix(
+                base_revenue=base_rev,
+                growth_rates=assumptions.revenue_growth_rate,
+                ebit_margin=float(assumptions.ebit_margin),
+                tax_rate=t_rate,
+                reinvestment_rate=reinvest_rate,
+                base_wacc=float(wacc),
+                base_g=float(g_capped),
+                net_debt=net_debt,
+                shares_outstanding=shares,
+                risk_free_rate=float(risk_free_rate),
+                is_mid_year=is_mid_year
+            )
+
+            # Phase 6: WACC 防護閥狀態與異常原因
+            is_wacc_flagged = bool(wacc_results.get('is_flagged', False))
+            wacc_flag_reasons = list(wacc_results.get('flag_reasons', []))
+            wacc_guardrail_dict = wacc_results.get('wacc_guardrail', {})
+
             results = {
                 "symbol": ticker_symbol,
                 "current_price": round(current_price, 2),
                 "fair_value": round(fair_value, 2),
                 "upside": float(upside),
                 "currency": currency,
+                "is_flagged": is_wacc_flagged,
+                "flag_reasons": wacc_flag_reasons,
+                "wacc_guardrail": wacc_guardrail_dict,
                 "institutional_tuning": {
                     "wacc_premium_pct": round(wacc_premium_pct, 2),
                     "discount_convention": discount_convention,
@@ -250,6 +366,9 @@ class ValuationService:
                     "pv_terminal_value": round(float(pv_tv) / 1000000, 2),
                     "net_debt": float(net_debt),
                     "shares_outstanding": float(shares),
+                    "iterations": int(solve_res.get('iterations', 1)),
+                    "is_converged": bool(solve_res.get('is_converged', True)),
+                    "ev_to_equity_bridge": bridge_base,
                     "projected_fcf": {
                         "years": years_list,
                         "revenues": revenues_list,
@@ -273,8 +392,56 @@ class ValuationService:
                     "tax_rate": float(assumptions.tax_rate if assumptions.tax_rate < 1 else assumptions.tax_rate / 100),
                     "wacc": float(wacc),
                     "exit_growth_rate": float(assumptions.perpetuity_growth_rate)
-                }
+                },
+                "monte_carlo": monte_carlo_res,
+                "sensitivity_matrix": sensitivity_res
             }
+
+            # Phase 4 & Phase 6: SCD Type 2 歷史版本控制快照 (含 WACC 異常防護閥標記)
+            try:
+                from valuation.services.assumption_history import AssumptionHistoryService
+                assumption_snapshot = {
+                    "revenue_growth_rate": assumptions.revenue_growth_rate,
+                    "ebit_margin": float(assumptions.ebit_margin),
+                    "tax_rate": float(assumptions.tax_rate if assumptions.tax_rate < 1 else assumptions.tax_rate / 100),
+                    "wacc": float(wacc),
+                    "exit_growth_rate": float(assumptions.perpetuity_growth_rate),
+                    "wacc_premium": float(wacc_premium),
+                    "dcf_weight": float(dcf_weight),
+                    "market_weight": float(market_weight),
+                    "debt_like_items": float(debt_like_items),
+                    "is_flagged": is_wacc_flagged,
+                    "flag_reasons": wacc_flag_reasons,
+                    "raw_wacc": float(wacc_results.get('Raw WACC', wacc)),
+                }
+                val_snapshot = {
+                    "blended_fair_value": float(fair_value),
+                    "current_price": float(current_price) if current_price else None,
+                    "upside": float(upside) if upside else None,
+                    "implied_price_dcf": float(implied_price_dcf),
+                    "implied_price_market": float(implied_price_market),
+                    "ev": float(enterprise_value),
+                    "equity_value": float(bridge_base.get('equity_value', 0.0)),
+                }
+                scd_market = getattr(loader, 'market', 'tw').upper()
+                scd_rec, is_new_version = AssumptionHistoryService.save_assumptions_scd2(
+                    symbol=ticker_symbol,
+                    market=scd_market,
+                    assumptions=assumption_snapshot,
+                    valuation_snapshot=val_snapshot,
+                    change_reason="估值計算自動存檔與快照",
+                    is_flagged=is_wacc_flagged,
+                    flag_reasons=wacc_flag_reasons,
+                )
+                results["scd2"] = {
+                    "version": scd_rec.version,
+                    "is_current": scd_rec.is_current,
+                    "effective_date": scd_rec.effective_date.isoformat(),
+                    "is_new_version": is_new_version,
+                }
+            except Exception as scd_err:
+                logger.warning(f"SCD2 快照儲存失敗 (非致命): {scd_err}")
+
             return results
             
         except Exception as e:

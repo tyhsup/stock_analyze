@@ -150,12 +150,29 @@ class WACCCalculator:
         re = self.calculate_cost_of_equity()
         rd = self.calculate_cost_of_debt()
         base_wacc = (mcap/v * re) + (debt/v * rd * (1 - custom_tax_rate))
-        wacc = base_wacc + premium_decimal
+        raw_wacc = base_wacc + premium_decimal
+        
+        # Phase 6: 調用 WACCGuardrail 執行異常值防護閥檢驗與 Clamp 截斷
+        from valuation.services.wacc_guardrail import WACCGuardrail
+        rf = self.get_risk_free_rate()
+        guardrail_res = WACCGuardrail.validate_and_clamp(
+            raw_wacc=raw_wacc,
+            base_wacc=base_wacc,
+            rf=rf,
+            market=self.market
+        )
         
         return {
-            "WACC": wacc, 
+            "WACC": guardrail_res.wacc,
+            "Raw WACC": guardrail_res.raw_wacc,
             "Cost of Debt (Rd)": rd, 
-            "Base WACC": base_wacc, 
+            "Base WACC": guardrail_res.base_wacc, 
             "WACC Premium": premium_decimal,
-            "WACC Premium Pct": float_premium if abs(float_premium) >= 0.05 else float_premium * 100.0
+            "WACC Premium Pct": float_premium if abs(float_premium) >= 0.05 else float_premium * 100.0,
+            "is_flagged": guardrail_res.is_flagged,
+            "flag_reasons": guardrail_res.flag_reasons,
+            "is_clamped": guardrail_res.is_clamped,
+            "fallback_used": guardrail_res.fallback_used,
+            "risk_free_rate": guardrail_res.rf,
+            "wacc_guardrail": guardrail_res.to_dict()
         }
