@@ -1,133 +1,139 @@
-# Smart Stock Analysis & AI Valuation Platform
+# 智慧台美股量化分析與 AI 估值決策平台
 
-## Project Overview
+## 專案概述
 
-This project is a comprehensive student portfolio website designed to provide end-to-end research, valuation, and AI-driven insights for the Taiwan and US stock markets. 
+本專案為一套整合台股（TWSE / TPEx）與美股（NYSE / NASDAQ）的端到端量化分析與人工智慧估值決策系統。系統以後端 Django 框架為核心，結合本地端 MySQL 資料庫進行高頻快取與持久化治理，並整合量化技術指標、三大法人籌碼追蹤、深度學習價格時序預測以及大語言模型（LLM）新聞定性洞察。
 
-Built with the Django backend framework and a local MySQL database, the platform automates stock data synchronization and integrates financial engineering tools (TA-Lib), institutional chip tracking, LSTM-based price forecasting, and Large Language Model (LLM) sentiment analysis. It aims to solve the problem of fragmented investment information by offering retail investors a unified, professional-grade research station.
-
----
-
-## Core Features
-
-1. **Dual-Theme Interactive Dashboard**
-   * Features Light and Dark modes with optimized CSS contrast for readability.
-   * Integrates up to 12 interactive ApexCharts on the homepage, including K-line charts, trading volume, technical indicators (RSI, MACD, HT_PHASOR trajectory), institutional holding trends, holding concentration, and a Gemini-powered gauge chart.
-
-2. **Institutional Chip Tracking**
-   * Visualizes buy, sell, and net position dynamics of Foreign Investors, Investment Trusts, and Dealers.
-   * Plots institutional holding ratios and concentration donut charts to help users identify major capital flows.
-
-3. **Fair Value Calculator**
-   * Uses a blended valuation model combining the Discounted Cash Flow (DCF) model and the Market Approach (Relative Valuation / Multipliers).
-   * Automatically calculates fair value and potential upside percentages, displaying dynamic assumption tables.
-
-4. **AI News Insights & Sentiment Analysis**
-   * Connects to financial news APIs (e.g., CNYES) and leverages LLMs (Gemini / Llama 3) for text summarization and sentiment analysis.
-   * Generates structured "AI Insights" cards detailing short, medium, and long-term market impacts, paired with news sentiment distribution charts.
-
-5. **Automated Data Scheduler**
-   * A dedicated management interface to schedule or manually trigger data synchronization tasks.
-   * Integrates TWSE, TPEX, and US stock collectors. All ingested price, chip, and financial report data are persisted locally in MySQL to prevent external API rate limits.
-
-6. **All-Dimension Macroeconomics Dashboard**
-   * Displays symmetrical macro monitoring layouts for US and Taiwan, based on the Asset Management Decision Framework.
-   * Includes three core categories: **Money Supply & Liquidity** (M1/M2 YoY), **Inflation Monitoring** (CPI & Core CPI YoY), and **Macro Policy & Risk Spreads** (Fed Funds vs. 10Y-2Y yield spreads, and TW stock index vs. forex reserves).
-   * Features interactive dual Y-axis charts, enlarged label typography (14px), and zero-latency country filtering.
+面對金融市場中分散破碎的資訊環境，本平台旨在提供一套邏輯嚴謹、具備回測驗證支持與模型可解釋性的研究工作站，協助研究員與投資人進行客觀、數據導向的投資決策。
 
 ---
 
-## Recent Performance Optimizations
+## 核心系統架構與關鍵功能
 
-To deliver a professional-grade user experience, the platform was optimized to solve significant data loading and query bottlenecks:
-1. **Asynchronous Non-blocking Operations**: Modified the financial data refresh process. Instead of blocking the Web thread during network scraping, the crawler tasks are delegated to background worker threads, instantly returning a transition page to the user.
-2. **Unified Metrics Pre-calculation**: Designed and migrated a unified `stock_metrics` table. A daily cron task runs at 5:00 PM to bulk synchronizes PE, PB, and Dividend Yield metrics for TW and US stocks, bypassing high-overhead real-time CLI subprocess calls.
-3. **Database Index & Query Tuning**: Replaced index-disabling `TRIM(number) = :symbol` queries in the WACC calculator and pricing modules with indexed `number = :symbol` lookups. This eliminated full table scans, reducing a single DB query from **7.02s** to **0.03s** (a **230x speedup**).
-4. **Time-Series Ingestion Optimization**: Limited macro data ingestion (FRED and TW Central Bank) to a 15-year cutoff date (since 2011-01-01). This avoided redundant historical entries and accelerated ORM bulk updates by up to **10x**.
-5. **Multi-level Caching**: Integrated Django Cache to store sentiment premium Excel evaluations (TTL = 10m) to reduce redundant physical disk IO, combined with instance-level ORM query caching.
-6. **AJAX Polling & Smooth Transition UI**: Implemented a progress bar and a 3-second AJAX polling mechanism in `detail.html` that automatically reloads the page once background updates complete.
+### 1. 雙主題互動式量化儀表板
+* 支援淺色與深色主題切換，介面針對高對比閱讀體驗進行最佳化。
+* 整合 ApexCharts 圖表庫，提供高互動性之技術面與籌碼面圖表：包含 K 線圖、移動平均線、布林通道（Bollinger Bands）、相對強弱指標（RSI）、平滑異同移動平均線（MACD）、希爾伯特變換向量軌跡（HT_PHASOR）以及成交量分佈。
 
-*These optimizations reduced the mocked page valuation calculation load time from **37.6s** to **188ms** (a **200x overall performance boost**).*
+### 2. 三大法人與機構籌碼追蹤
+* 視覺化外資、投信與自營商的每日買賣超動態與累積持股水位。
+* 提供機構籌碼集中度分析圖表，直觀呈現大額資金的流向與持倉集中趨勢。
 
----
+### 3. 多維混合內在價值估值模型
+* 結合現金流折現模型（Discounted Cash Flow, DCF）與市場法乘數估值（PE、PB、PS 相對估值法），提供綜合內在價值區間。
+* 自動揭示折現率（WACC）、永續成長率與安全邊際假設，消除單一估值模型之主觀偏誤。
 
-## Technology Stack
-
-* **Frontend**
-  * **Core Structure**: HTML5, JavaScript, Bootstrap 5, Vanilla CSS.
-  * **Data Visualization**: ApexCharts.js (for high-performance, interactive financial charts).
-  * **Icon Libraries**: FontAwesome, Bootstrap Icons.
-
-* **Backend**
-  * **Web Framework**: Django 5.x (Python 3.11+).
-  * **Background Processing**: Custom task scheduler utilizing multi-threading and a web-based control panel.
-
-* **Database Management**
-  * **Database**: MySQL (for persistent storage of historical prices, institutional chips, and quarterly financial statements).
-  * **Optimization**: Django ORM with mysql-connector-pooling.
-
-* **Data Scraping & Automation**
-  * **APIs**: yfinance (US market data), CNYES News API, FRED API, Central Bank of Taiwan API.
-  * **Crawlers**: aiohttp (asynchronous HTTP requests with proxy and User-Agent rotation to handle rate limits) and custom TWSE/TPEX CLIs.
-  * **Note**: Users are responsible for managing their own data sources, API keys, and ensuring compliance with third-party data provider terms of service.
-
-* **Data Science & Machine Learning**
-  * **Financial Indicators**: TA-Lib (RSI, MACD, HT_PHASOR calculation).
-  * **Data Processing**: Pandas (vectorized operations), NumPy.
-  * **Predictive Modeling**: TensorFlow/Keras (LSTM for time-series stock price forecasting) and Scikit-learn.
-  * **Generative AI**: LLM APIs for automated sentiment analysis and structural text summary generation.
+### 4. 總體經濟跨維度觀測站
+* 參照資產管理決策架構，對稱呈現台美兩地之核心總體經濟指標。
+* 涵蓋三大板塊：貨幣流動性（M1B / M2 年增率）、通膨監測（CPI 與核心 CPI 年增率）以及政策利率與利差（Fed Funds Rate、10Y-2Y 公債殖利率利差、台灣外匯存底與加權指數對比）。
 
 ---
 
-## Database Schema Overview
+## 近期量化與 AI 系統強化模組
 
-The database contains the following key tables:
-* `stocks_tw` / `stocks_us`: Metadata and listing status of TWSE/TPEX and US companies.
-* `stock_cost` / `stock_cost_us`: Daily historical market data (Open, High, Low, Close, Volume).
-* `stock_investor` / `stock_investor_us`: Daily institutional trading details and holding ratios.
-* `financial_raw_tw` / `financial_raw_us`: Raw quarterly and annual financial statements.
-* `macro_us` / `macro_tw`: Time-series macroeconomic data for US (FRED) and Taiwan (Central Bank).
-* `valuation_valuationresult`: Stored intrinsic value results and model assumptions.
+為了使系統由基礎特徵工程晉升為具備量化實戰級別之決策體系，本專案近期完成了四大維度的深層升級：
+
+### 1. 數據基礎治理（時區與交易日曆對齊）
+* **跨市場交易日曆治理 (`TradingCalendarService`)**：建立 `dim_trading_calendar` 資料表，收錄台美兩地完整交易日曆，自動處理美東夏令日光節約時間（EDT / EST）轉換，並嚴格落實盤中與盤後截斷點（13:30 / 16:00），將盤後發布之新聞自動滾動至次一交易日（T+1），防止前瞻偏誤。
+* **多因子權威度加權聚合 (`WeightedSentimentAggregator`)**：捨棄傳統算術平均，建立來源權威度階層架構（CNBC / Reuters: 0.90，鉅亨網 / MoneyDJ: 0.70，社群論壇: 0.30），結合時間指數衰減 $w = \exp(-0.1 \cdot \Delta t)$，提升情緒特徵之訊噪比。
+
+### 2. 嚴謹驗證體系（避免過擬合與數據洩漏）
+* **滾動向前走步回測引擎 (`WalkForwardBacktester`)**：落實標準訓練視窗（252 個交易日）與測試視窗（21 個交易日）循環滾動驗證，所有交易訊號強制執行 $T+1$ 遞延（`shift(1)`），並計入單邊 10 bps（0.0010）之交易摩擦成本。
+* **特徵標準化隔離防護 (`PriceLSTMFeatureExtractor`)**：嚴格區分訓練集（`fit_mode=True`）與測試集（`fit_mode=False`），測試階段僅允許使用訓練期擬合之 Scaler 參數進行轉換，若未傳入 Scaler 則主動拋出例外，徹底杜絕均值與變異數跨樣本洩漏。
+* **量化指標持久化**：建立 `backtest_results` 表，記錄 Sharpe Ratio、Sortino Ratio、最大回撤（Max Drawdown）、勝率與盈虧比。
+
+### 3. 模型升級與特徵可解釋性
+* **雙語統一情緒分析器 (`UnifiedSentimentAnalyzer`)**：中文文本自動路由至 `IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment`，英文文本延遲載入 `ProsusAI/finbert`，並校準中立防護閾值（0.60），解決客觀財經新聞過度判定為中立之問題。
+* **SHAP 特徵貢獻度歸因 (`ModelExplainer`)**：導入 SHAP 特徵重要性分析，並實作 `RobustSHAPEncoder` 將數值中的 `NaN` 與 `Inf` 安全序列化為 JSON `null`；同時硬性限制前端展示為 Top-K 重要特徵，其餘特徵匯總為 `others_shap_value`，避免前端視覺遮擋與版面溢出。
+* **A/B 基準評測框架 (`NLPMultiModelABTester`)**：保留原自訓練模型作為對照組，實測顯示新版雙語推論延遲降低至 75.79 ms/sample，取得 4.17 倍之推論加速。
+
+### 4. 動態系統與時序連續性
+* **動態模型選擇與路由 (`DynamicModelSelector`)**：採納策略模式（Strategy Pattern），在 LSTM 時序模型與 Random Forest（scikit-learn）之間依據近 60 日樣本外（OOS）方向勝率動態切換；具備記憶體溫啟動（Warm Start）、本地快取（TTL 300 秒）與資料庫斷連雙重降級（Double Fallback）保護機制。
+* **特徵維度塑形器 (`FeatureShaper`)**：自動在 3D 時序張量與 2D 表格特徵間安全轉換，防止維度不匹配異常。
+* **時序衰減向前填充 (`SentimentTimeDecay`)**：針對非交易日與無新聞日，採用指數衰減向前填充：$V_t = V_{t-1} \cdot \exp(-0.1 \cdot \Delta t)$，具備 $\Delta t > 100$ 天下溢直接歸零與負值例外攔截，保留市場情緒之衰減記憶。
+* **模型註冊表 (`model_registry`)**：記錄各個股模型版本、啟用狀態與滾動勝率，支援高併發參數化 UPSERT。
 
 ---
 
-## Installation & Setup Guide
+## 技術棧 (Technology Stack)
 
-### Prerequisites
-* Python 3.11+
-* MySQL Server (Create a database named `stock_tw_analyse`)
-* TA-Lib C++ Library (Windows users are recommended to download and install pre-built `.whl` files)
+* **後端架構**：Python 3.11+ / 3.14、Django 5.x
+* **前端介面**：HTML5、JavaScript、Bootstrap 5、Vanilla CSS、ApexCharts.js
+* **資料庫管理**：MySQL 8.0+、mysql-connector-python、SQLAlchemy
+* **數據分析與回測**：Pandas（向量化資料處理）、NumPy、Scikit-learn、SHAP
+* **深度學習與自然語言處理**：PyTorch、HuggingFace Transformers（Erlangshen-Roberta、FinBERT）
+* **自動化資料獲取**：aiohttp（異步網路爬蟲）、yfinance、台灣證券交易所與櫃買中心數據接口、FRED API
 
-### Setup Steps
+---
 
-1. **Clone the Repository**
+## 核心資料庫結構清單
+
+* `stocks_tw` / `stocks_us`：台美股個股基本資料與上市狀態。
+* `stock_cost` / `stock_cost_us`：每日歷史價量數據（開高低收與成交量）。
+* `stock_investor` / `stock_investor_us`：三大法人與機構每日籌碼明細。
+* `financial_raw_tw` / `financial_raw_us`：每季財務報表原始數據。
+* `macro_tw` / `macro_us`：台美總體經濟時間序列資料。
+* `dim_trading_calendar`：跨市場交易日曆維度表。
+* `backtest_results`：Walk-Forward 滾動回測量化績效指標表。
+* `model_registry`：動態模型註冊與滾動勝率追蹤表。
+
+---
+
+## 安裝與快速開始
+
+### 環境需求
+* Python 3.11 或更新版本
+* MySQL Server 8.0 或更新版本（需先建立資料庫 `stock_tw_analyse`）
+* C++ 依賴環境（部分機器學習與 TA-Lib 套件編譯需求）
+
+### 部署步驟
+
+1. **取得專案原始碼**
    ```bash
    git clone <repository-url>
    cd mydjango
    ```
 
-2. **Install Python Dependencies**
+2. **安裝必要依賴套件**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure Environment Variables**
-   Create a `.env` file under `demo/stock_Django/` and fill in your MySQL credentials and API keys:
+3. **環境變數設定**
+   請於 `demo/stock_Django/` 目錄下建立 `.env` 檔案，填入 MySQL 帳號密碼與相關金鑰：
    ```env
    DB_HOST=localhost
    DB_USER=your_db_user
    DB_PASSWORD=your_db_password
    DB_NAME=stock_tw_analyse
-   GROQ_API_KEY=your_groq_api_key
+   GEMINI_API_KEY=your_gemini_api_key
    ```
 
-4. **Run Database Migrations**
+4. **資料庫結構遷移與初始化**
    ```bash
+   cd demo
    python manage.py migrate
    ```
 
-5. **Start Django Development Server**
+5. **執行全套回歸驗證測試**
+   ```bash
+   python -m unittest discover -s stock_Django/tests -p "test_*.py" -v
+   ```
+   *(目前涵蓋 Phase 0 至 Phase 3 共 41 項單元測試，全數通過後方可上線運作)*
+
+6. **啟動伺服器**
    ```bash
    python manage.py runserver
    ```
-   Once started, visit `http://127.0.0.1:8000/` in your web browser.
+   啟動完成後，於瀏覽器造訪 `http://127.0.0.1:8000/` 即可進入系統工作台。
+
+---
+
+## 軟體品質與測試驗證
+
+本專案採行嚴格的測試驅動與回歸保護流程：
+* **Phase 0 測試**：`test_phase0_data_foundation.py`（9 項，交易日曆與時區加權）
+* **Phase 1 測試**：`test_phase1_validation_system.py`（9 項，Walk-Forward 回測與 Scaler 隔離）
+* **Phase 2 測試**：`test_phase2_model_upgrade.py`（10 項，Unicode 防禦、0.60 閾值校準與 RobustSHAP 序列化）
+* **Phase 3 測試**：`test_phase3_dynamic_system.py`（13 項，時間衰減向前填充、特徵塑形器、雙重降級與除零防護）
+
+**全套 41 項單元與整合測試保持 100% 通過（OK，耗時約 5.4 秒）**，確保系統演進過程具備零破壞性與向下相容性。

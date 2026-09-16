@@ -1,7 +1,10 @@
 import logging
+import math
+import datetime
 import numpy as np
 import pandas as pd
 import os
+from typing import List, Optional, Union, Dict, Any
 from sqlalchemy import text
 try:
     import torch
@@ -33,11 +36,37 @@ logger = logging.getLogger(__name__)
 
 class PriceLSTMFeatureExtractor:
     @staticmethod
-    def extract_features(data_df):
-        """產生 LSTM 所需之漲跌幅度與型態特徵"""
+    def extract_features(data_df, market: str = 'tw', scaler=None, fit_mode: bool = True, return_scaler: bool = False):
+        """
+        產生 LSTM 所需之漲跌幅度與型態特徵，整合交易日曆並落實標準化隔離 (Scaler Leakage 防護)。
+        
+        :param data_df: 原始價格行情 DataFrame
+        :param market: 市場別 ('tw' / 'us')
+        :param scaler: sklearn StandardScaler 實例 (若 fit_mode=False 必須傳入訓練集擬合之 scaler)
+        :param fit_mode: True 代表訓練集 (fit_transform)，False 代表測試集 (僅 transform)
+        :param return_scaler: 是否同時回傳 scaler 物件 (向後相容預設 False)
+        """
         df = data_df.copy()
         if 'Close' not in df.columns:
+            if return_scaler:
+                return df, scaler
             return df
+            
+        # 整合交易日曆，過濾非交易日
+        try:
+            try:
+                from stock_Django.trading_calendar import TradingCalendarService
+            except ImportError:
+                from .trading_calendar import TradingCalendarService
+            cal = TradingCalendarService()
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                start_d = df.index.min().date()
+                end_d = df.index.max().date()
+                trading_days = set(cal.get_trading_days(market, start_d, end_d))
+                df = df[df.index.map(lambda x: x.date() in trading_days)]
+        except Exception as e:
+            logger.warning(f"PriceLSTMFeatureExtractor 交易日曆對齊略過: {e}")
+
         # 產生日報酬率
         df['Daily_Return'] = df['Close'].pct_change()
         # 均線特徵
@@ -47,7 +76,172 @@ class PriceLSTMFeatureExtractor:
         df['Bias_5'] = (df['Close'] - df['SMA_5']) / df['SMA_5']
         df['Bias_20'] = (df['Close'] - df['SMA_20']) / df['SMA_20']
         df.fillna(0, inplace=True)
+
+        # 標準化特徵隔離
+        feature_cols = [c for c in ['Daily_Return', 'Bias_5', 'Bias_20'] if c in df.columns]
+        if feature_cols:
+            from sklearn.preprocessing import StandardScaler
+            if fit_mode:
+                if scaler is None:
+                    scaler = StandardScaler()
+                df[feature_cols] = scaler.fit_transform(df[feature_cols])
+            else:
+                if scaler is None:
+                    raise ValueError("【安全警報】測試模式下（fit_mode=False）必須提供已擬合之 scaler，以防特徵洩漏！")
+                df[feature_cols] = scaler.transform(df[feature_cols])
+
+        if return_scaler:
+            return df, scaler
         return df
+
+class WeightedSentimentAggregator:
+    """
+    多因子情緒加權聚合器。
+    
+    加權公式：
+    Score_d = Σ (E_i × w_time_i × w_source_i × w_conf_i) / Σ (w_time_i × w_source_i × w_conf_i)
+    
+    各權重項定義（使用者審查確認之分級）：
+    - w_time = exp(-λ × Δt)  時間指數衰減（Δt 為距交易日天數差距，預設 λ=0.1）
+    - w_source = SOURCE_WEIGHTS[source]  來源權威度：CNBC/Reuters (0.9) > CNYES/MoneyDJ (0.7) > PTT (0.3)
+    - w_conf = confidence_score  模型推論置信度（預設 1.0）
+    """
+    
+    SOURCE_WEIGHTS = {
+        'cnbc': 0.90,       # 國際權威財經媒體
+        'reuters': 0.90,    # 路透社
+        'cnyes': 0.70,      # 台灣專業財經媒體（鉅亨網）
+        'moneydj': 0.70,    # 理財網（MoneyDJ）
+        'ptt': 0.30,        # 社群討論區（批踢踢）
+        'default': 0.50     # 其他來源預設
+    }
+    
+    @classmethod
+    def get_source_weight(cls, source_name: Optional[str]) -> float:
+        if not source_name:
+            return cls.SOURCE_WEIGHTS['default']
+        cleaned = str(source_name).lower().strip()
+        for key, weight in cls.SOURCE_WEIGHTS.items():
+            if key in cleaned:
+                return weight
+        return cls.SOURCE_WEIGHTS['default']
+        
+    @classmethod
+    def aggregate(cls, embeddings: np.ndarray,
+                  timestamps: Optional[List[Any]] = None,
+                  sources: Optional[List[str]] = None,
+                  confidences: Optional[List[float]] = None,
+                  target_date: Optional[Union[datetime.date, str]] = None,
+                  decay_lambda: float = 0.1,
+                  embedding_dim: int = 768) -> np.ndarray:
+        """
+        對當日多筆新聞嵌入向量執行多因子加權聚合。
+        防禦機制：
+        - 零除與浮點數下溢（Underflow）/ NaN / Inf 防護，回退至算術平均。
+        - 輸出強轉為 np.float32 確保序列化與儲存一致。
+        """
+        if len(embeddings) == 0:
+            return np.zeros(embedding_dim, dtype=np.float32)
+            
+        n = len(embeddings)
+        weights = np.ones(n, dtype=np.float64)
+        
+        # 1. 時間衰減權重
+        if timestamps and target_date:
+            try:
+                t_date = pd.to_datetime(target_date).date()
+                for i in range(n):
+                    ts = pd.to_datetime(timestamps[i])
+                    if not pd.isna(ts):
+                        dt_days = max(0.0, (t_date - ts.date()).total_seconds() / 86400.0)
+                        weights[i] *= math.exp(-decay_lambda * dt_days)
+            except Exception as e:
+                logger.warning(f"時間衰減權重計算異常: {e}")
+                
+        # 2. 來源權威度權重
+        if sources:
+            for i in range(min(n, len(sources))):
+                weights[i] *= cls.get_source_weight(sources[i])
+                
+        # 3. 模型置信度權重
+        if confidences:
+            for i in range(min(n, len(confidences))):
+                c = float(confidences[i]) if confidences[i] is not None else 1.0
+                weights[i] *= max(0.01, min(1.0, c))
+                
+        # 4. 防禦：處理零除、NaN、Inf 與極小浮點數
+        sum_w = float(np.sum(weights))
+        if math.isnan(sum_w) or math.isinf(sum_w) or sum_w < 1e-9:
+            return np.mean(embeddings, axis=0).astype(np.float32)
+            
+        normalized_weights = weights / sum_w
+        weighted_emb = np.sum(embeddings * normalized_weights[:, np.newaxis], axis=0)
+        return weighted_emb.astype(np.float32)
+
+class SentimentTimeDecay:
+    """
+    時間序列情緒特徵衰減向前填充器 (Phase 3 P3)。
+    實作公式：V_t = V_{t-1} * exp(-lambda * delta_t)
+    具備 Evaluator 要求之防禦機制：
+    - delta_t 負值檢查 (delta_t < 0 拋出 ValueError)
+    - delta_t > max_gap_days (預設 100) 下溢直接歸零
+    - 首日缺失/Null 安全預設為 0.0
+    - 支援 Series 或 DataFrame 批次多維特徵運算
+    """
+    @staticmethod
+    def calculate_decay_factor(delta_t: float, lambda_decay: float = 0.1, max_gap_days: float = 100.0) -> float:
+        if delta_t < 0:
+            raise ValueError(f"【安全防禦】時間差 delta_t 不能為負值 (收到: {delta_t})")
+        if delta_t > max_gap_days:
+            return 0.0
+        if delta_t < 1e-9:
+            return 1.0
+        try:
+            return float(math.exp(-lambda_decay * delta_t))
+        except (OverflowError, FloatingPointError):
+            return 0.0
+
+    @classmethod
+    def apply_time_decay_ffill(cls, data: Union[pd.Series, pd.DataFrame], 
+                               dates: Optional[pd.DatetimeIndex] = None,
+                               lambda_decay: float = 0.1,
+                               max_gap_days: float = 100.0) -> Union[pd.Series, pd.DataFrame]:
+        """
+        對時間序列進行指數衰減向前填充。
+        若某日資料全為 0 或 NaN，依據與上一筆有效新聞日之日曆天數差進行指數衰減。
+        """
+        if data.empty:
+            return data.copy()
+
+        out = data.copy()
+        date_idx = pd.DatetimeIndex(out.index) if dates is None else pd.DatetimeIndex(dates)
+
+        if isinstance(out, pd.Series):
+            last_valid_val = None
+            last_valid_date = None
+            for idx, d in enumerate(date_idx):
+                cur_val = out.iloc[idx]
+                is_valid = pd.notna(cur_val) and float(cur_val) != 0.0
+                if is_valid:
+                    last_valid_val = float(cur_val)
+                    last_valid_date = d
+                else:
+                    if last_valid_val is None or last_valid_date is None:
+                        out.iloc[idx] = 0.0
+                    else:
+                        dt = (d - last_valid_date).total_seconds() / 86400.0
+                        factor = cls.calculate_decay_factor(dt, lambda_decay, max_gap_days)
+                        out.iloc[idx] = last_valid_val * factor
+            return out
+
+        # DataFrame 多欄位逐欄獨立衰減填充
+        res_cols = {}
+        for col in out.columns:
+            res_cols[col] = cls.apply_time_decay_ffill(
+                out[col], dates=date_idx, lambda_decay=lambda_decay, max_gap_days=max_gap_days
+            )
+        return pd.DataFrame(res_cols, index=out.index)
+
 
 class SentimentProbabilityModel:
     _model_instance = None
@@ -87,10 +281,17 @@ class SentimentProbabilityModel:
         return np.vstack(all_embeddings)
 
     @classmethod
-    def get_sentiment_features(cls, stock_number, date_index_df):
-        """取得新聞語詞特徵 (具備資料庫快取機制)"""
+    def get_sentiment_features(cls, stock_number, date_index_df, apply_decay_fill: bool = True):
+        """取得新聞語詞特徵 (具備資料庫快取機制與指數時間衰減向前填充)"""
         embedding_dim = 768
         embedding_cols = [f'finbert_emb_{i}' for i in range(embedding_dim)]
+        
+        # Helper: 套用時間衰減向前填充防護
+        def _finalize(df_res):
+            sub_df = df_res[embedding_cols]
+            if apply_decay_fill and not sub_df.empty:
+                return SentimentTimeDecay.apply_time_decay_ffill(sub_df, lambda_decay=0.1)
+            return sub_df
         
         # Initialize result DataFrame
         result_df = pd.DataFrame(0.0, index=date_index_df.index, columns=embedding_cols)
@@ -119,7 +320,7 @@ class SentimentProbabilityModel:
 
         
         if not missing_dates:
-            return result_df[embedding_cols]
+            return _finalize(result_df)
             
         # 3. 僅針對缺失日期讀取原始文本並進行推論
         logger.info(f"AI Cache Miss for {stock_number}. Parsing raw news for {len(missing_dates)} days...")
@@ -130,21 +331,52 @@ class SentimentProbabilityModel:
         
         if not os.path.exists(news_file):
             logger.warning(f"News text file not found: {news_file}. Using 0.0 embeddings fallback.")
-            return result_df[embedding_cols]
+            return _finalize(result_df)
             
         try:
             # 讀取 Excel 並解析日期與標題
             df_news = pd.read_excel(news_file)
             if df_news.empty:
-                return result_df[embedding_cols]
-                
-            # 假設欄位順序: Index 0=標題, Index 1=發布時間
-            df_news['Parsed_Date'] = pd.to_datetime(df_news.iloc[:, 1], errors='coerce').dt.strftime('%Y-%m-%d')
-            df_news['Parsed_Text'] = df_news.iloc[:, 0].fillna("").astype(str)
+                return _finalize(result_df)
+
+            try:
+                from stock_Django.trading_calendar import TradingCalendarService
+            except ImportError:
+                from .trading_calendar import TradingCalendarService
+            cal = TradingCalendarService()
+            
+            market = 'tw' if clean_num.isdigit() else 'us'
+            
+            # 偵測各欄位 (0=標題, 1=發布時間, 3=連結)
+            time_col_idx = 1 if df_news.shape[1] > 1 else 0
+            text_col_idx = 0
+            link_col_idx = 3 if df_news.shape[1] > 3 else (2 if df_news.shape[1] > 2 else None)
+            
+            df_news['Raw_Time'] = pd.to_datetime(df_news.iloc[:, time_col_idx], errors='coerce')
+            df_news['Parsed_Text'] = df_news.iloc[:, text_col_idx].fillna("").astype(str)
+            
+            # 抽取新聞來源
+            link_series = df_news.iloc[:, link_col_idx].fillna("").astype(str) if link_col_idx is not None else pd.Series([""] * len(df_news))
+            def _detect_source(link_val: str, text_val: str) -> str:
+                combined = (link_val + " " + text_val).lower()
+                for src_key in ['cnbc', 'reuters', 'cnyes', 'moneydj', 'ptt']:
+                    if src_key in combined:
+                        return src_key
+                return 'cnyes' if 'cnyes.com' in link_val.lower() else 'default'
+            
+            df_news['Source'] = [
+                _detect_source(l, t) for l, t in zip(link_series, df_news['Parsed_Text'])
+            ]
+            
+            # 透過 TradingCalendarService 對齊有效交易日 (T+1 盤後防前瞻偏誤)
+            df_news['Aligned_Date'] = df_news['Raw_Time'].apply(
+                lambda t: cal.align_to_trading_day(t, market=market).strftime('%Y-%m-%d') if pd.notna(t) else None
+            )
+            df_news = df_news.dropna(subset=['Aligned_Date'])
             
             # 過濾僅保留缺失日期的數據
             missing_date_strs = [d.strftime('%Y-%m-%d') for d in missing_dates]
-            df_missing = df_news[df_news['Parsed_Date'].isin(missing_date_strs)]
+            df_missing = df_news[df_news['Aligned_Date'].isin(missing_date_strs)]
             
             if df_missing.empty:
                 return result_df[embedding_cols]
@@ -157,25 +389,32 @@ class SentimentProbabilityModel:
                 df_missing = df_missing.copy()
                 df_missing['embedding'] = list(embeddings)
                 
-                # 按日聚合 取平均
-                daily_groups = df_missing.groupby('Parsed_Date')['embedding'].apply(
-                    lambda x: np.mean(np.stack(x.values), axis=0) if len(x) > 0 else np.zeros(embedding_dim)
-                )
-                
-                # 4. 寫回快取並更新結果
+                # 多因子加權聚合 (取代舊有算術平均)
                 new_cache_data = {}
-                for d_str, emb in daily_groups.items():
-                    new_cache_data[d_str] = emb
-                    d_ts = pd.Timestamp(d_str)
+                for aligned_d, group in df_missing.groupby('Aligned_Date'):
+                    group_embs = np.vstack(group['embedding'].values)
+                    group_times = group['Raw_Time'].tolist()
+                    group_sources = group['Source'].tolist()
+                    
+                    agg_emb = WeightedSentimentAggregator.aggregate(
+                        embeddings=group_embs,
+                        timestamps=group_times,
+                        sources=group_sources,
+                        target_date=aligned_d,
+                        decay_lambda=0.1,
+                        embedding_dim=embedding_dim
+                    )
+                    new_cache_data[aligned_d] = agg_emb
+                    d_ts = pd.Timestamp(aligned_d)
                     if d_ts in result_df.index:
-                        result_df.loc[d_ts, embedding_cols] = emb
+                        result_df.loc[d_ts, embedding_cols] = agg_emb
                 
                 sql_op.save_sentiment_embeddings(stock_number, new_cache_data)
                 
         except Exception as e:
             logger.error(f"Failed to process raw news text for {stock_number}: {e}")
             
-        return result_df[embedding_cols]
+        return _finalize(result_df)
 
 class InstitutionalFlowModel:
     @staticmethod

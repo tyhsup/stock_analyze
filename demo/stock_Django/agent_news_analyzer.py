@@ -3,7 +3,11 @@ import sys
 import json
 import logging
 import time
-from typing import Optional
+import unicodedata
+import re
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List, Union
+import numpy as np
 
 # ──────────────────────────────────────────────
 # 全局 Groq helper 路徑
@@ -12,11 +16,272 @@ GLOBAL_HELPER_PATH = r"c:\Users\許廷宇\.gemini\antigravity\scripts"
 if GLOBAL_HELPER_PATH not in sys.path:
     sys.path.append(GLOBAL_HELPER_PATH)
 
-# Groq library imports are no longer mandatory as we use Gemini CLI
-
 logger = logging.getLogger(__name__)
-import threading
+import threading
 import random
+
+
+def clean_and_normalize_text(text: str) -> str:
+    """
+    Unicode NFKC 正規化與控制字元過濾 (Evaluator 防禦要求)。
+    處理全形半形、Emoji、不可見零寬字元與 \x00 截斷符號。
+    """
+    if not isinstance(text, str):
+        return ""
+    # 1. NFKC 規範化
+    normalized = unicodedata.normalize('NFKC', text)
+    # 2. 移除空字元與控制字元 (保留換行 \n 與空白)
+    cleaned = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', normalized)
+    return cleaned.strip()
+
+
+@dataclass
+class SentimentResult:
+    """統一情緒分析結果數據容器"""
+    label: str                                   # 'positive' / 'negative' / 'neutral'
+    score: float                                 # -1.0 ~ 1.0 綜合情緒分
+    confidence: float                            # 0.0 ~ 1.0 模型最高信心度
+    probabilities: Dict[str, float]              # 各類別機率分佈 {'positive': ..., 'negative': ..., 'neutral': ...}
+    is_neutral_adjusted: bool = False           # 是否因低於 neutral_threshold 而被校正為中立
+    language: str = 'zh-TW'
+    embedding: Optional[np.ndarray] = None       # 768D 語意特徵向量
+
+    def to_dict(self) -> Dict[str, Any]:
+        """相容既有字典格式與前端渲染"""
+        label_map = {
+            'positive': '正面', 'negative': '負面', 'neutral': '中立',
+            '正面': '正面', '負面': '負面', '中立': '中立'
+        }
+        zh_label = label_map.get(self.label, '中立')
+        return {
+            "positive_negative_analysis": zh_label,
+            "label": self.label,
+            "sentiment_score": round(float(self.score), 4),
+            "confidence": round(float(self.confidence), 4),
+            "probabilities": {k: round(float(v), 4) for k, v in self.probabilities.items()},
+            "is_neutral_adjusted": bool(self.is_neutral_adjusted),
+            "language": self.language
+        }
+
+
+class UnifiedSentimentAnalyzer:
+    """
+    統一新聞情緒分析器 (Unified Sentiment Analyzer)。
+    
+    模型配置：
+    - 中文核心：IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment
+    - 英文核心：ProsusAI/finbert (Lazy loaded)
+    - 閾值防護：neutral_threshold 預設 0.60 (修復 2026-08-12 歷史 0.65 過高誤過濾缺陷)
+    """
+    def __init__(self, neutral_threshold: float = 0.60,
+                 zh_model_name: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment",
+                 en_model_name: str = "ProsusAI/finbert"):
+        import torch
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+        self._torch = torch
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.neutral_threshold = float(neutral_threshold)
+        self.zh_model_name = zh_model_name
+        self.en_model_name = en_model_name
+
+        logger.info(f"[UnifiedSentimentAnalyzer] 初始化中文模型，裝置: {self.device}，模型: {zh_model_name}")
+        self.tokenizer = AutoTokenizer.from_pretrained(zh_model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(zh_model_name)
+        self.model.to(self.device)
+        self.model.eval()
+
+        self.en_tokenizer = None
+        self.en_model = None
+
+    def _ensure_en_model(self) -> bool:
+        """延遲載入英文 FinBERT 模型"""
+        if self.en_tokenizer is None or self.en_model is None:
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            logger.info(f"[UnifiedSentimentAnalyzer] 延遲載入英文 FinBERT: {self.en_model_name}...")
+            try:
+                self.en_tokenizer = AutoTokenizer.from_pretrained(self.en_model_name)
+                self.en_model = AutoModelForSequenceClassification.from_pretrained(self.en_model_name)
+                self.en_model.to(self.device)
+                self.en_model.eval()
+            except Exception as e:
+                logger.error(f"[UnifiedSentimentAnalyzer] 載入英文 FinBERT 失敗: {e}")
+                return False
+        return True
+
+    @staticmethod
+    def detect_language(text: str) -> str:
+        """自動偵測語言類別 ('zh-TW' 或 'en')"""
+        if not text:
+            return 'zh-TW'
+        # 計算中文字元數量
+        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+        if chinese_chars >= 2:
+            return 'zh-TW'
+        # 計算英文字母比例
+        ascii_letters = len(re.findall(r'[a-zA-Z]', text))
+        if ascii_letters > len(text) * 0.4:
+            return 'en'
+        return 'zh-TW'
+
+    def analyze(self, text: str, language: str = 'auto', title: str = "", content: str = "") -> SentimentResult:
+        """
+        統一情感分析入口。
+        
+        :param text: 欲分析之本文（若有傳 title / content 則優先拼接）
+        :param language: 語言別 ('auto', 'zh-TW', 'en')
+        :param title: 新聞標題
+        :param content: 新聞內容
+        :return: SentimentResult 實例
+        """
+        # 組合並清洗文本
+        if title or content:
+            raw_text = f"{title}. {content[:300]}".strip()
+        else:
+            raw_text = text
+
+        cleaned_text = clean_and_normalize_text(raw_text)
+        if not cleaned_text:
+            return SentimentResult(
+                label="neutral",
+                score=0.0,
+                confidence=0.0,
+                probabilities={"positive": 0.0, "negative": 0.0, "neutral": 1.0},
+                is_neutral_adjusted=False,
+                language=language if language != 'auto' else 'zh-TW'
+            )
+
+        # 語言判定
+        actual_lang = self.detect_language(cleaned_text) if language == 'auto' else language
+
+        if actual_lang == 'en':
+            return self._analyze_en(cleaned_text)
+        return self._analyze_zh(cleaned_text)
+
+    def _analyze_zh(self, text: str) -> SentimentResult:
+        """中文新聞情緒推論 (Erlangshen-Roberta-110M-Sentiment)"""
+        try:
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512
+            ).to(self.device)
+
+            with self._torch.no_grad():
+                outputs = self.model(**inputs)
+                probs = self._torch.softmax(outputs.logits, dim=-1)[0].cpu().tolist()
+
+            neg_prob = float(probs[0])
+            pos_prob = float(probs[1])
+            max_prob = max(neg_prob, pos_prob)
+
+            # 閾值防護：若最高信心度低於 neutral_threshold (0.60)，強制判定為中立
+            if max_prob < self.neutral_threshold:
+                label = "neutral"
+                score = 0.0
+                is_neutral_adjusted = True
+            else:
+                label = "positive" if pos_prob > neg_prob else "negative"
+                score = round(pos_prob - neg_prob, 4)
+                is_neutral_adjusted = False
+
+            return SentimentResult(
+                label=label,
+                score=score,
+                confidence=round(max_prob, 4),
+                probabilities={
+                    "positive": round(pos_prob, 4),
+                    "negative": round(neg_prob, 4),
+                    "neutral": round(1.0 - abs(pos_prob - neg_prob), 4)
+                },
+                is_neutral_adjusted=is_neutral_adjusted,
+                language="zh-TW"
+            )
+        except Exception as e:
+            logger.error(f"[UnifiedSentimentAnalyzer] 中文分析失敗: {e}")
+            return SentimentResult(
+                label="neutral",
+                score=0.0,
+                confidence=0.0,
+                probabilities={"positive": 0.0, "negative": 0.0, "neutral": 1.0},
+                is_neutral_adjusted=False,
+                language="zh-TW"
+            )
+
+    def _analyze_en(self, text: str) -> SentimentResult:
+        """英文新聞情緒推論 (ProsusAI/finbert)"""
+        if not self._ensure_en_model():
+            return SentimentResult(
+                label="neutral",
+                score=0.0,
+                confidence=0.0,
+                probabilities={"positive": 0.0, "negative": 0.0, "neutral": 1.0},
+                is_neutral_adjusted=False,
+                language="en"
+            )
+
+        try:
+            inputs = self.en_tokenizer(
+                text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512
+            ).to(self.device)
+
+            with self._torch.no_grad():
+                outputs = self.en_model(**inputs)
+                probs = self._torch.softmax(outputs.logits, dim=-1)[0].cpu().tolist()
+
+            pos_prob = float(probs[0])
+            neg_prob = float(probs[1])
+            neu_prob = float(probs[2])
+
+            confidence = max(pos_prob, neg_prob, neu_prob)
+
+            # FinBERT 標籤與閾值防護
+            if neu_prob >= 0.50 or max(pos_prob, neg_prob) < self.neutral_threshold:
+                label = "neutral"
+                score = 0.0
+                is_neutral_adjusted = (neu_prob < 0.50 and max(pos_prob, neg_prob) < self.neutral_threshold)
+            elif pos_prob > neg_prob:
+                label = "positive"
+                score = round(pos_prob - neg_prob, 4)
+                is_neutral_adjusted = False
+            else:
+                label = "negative"
+                score = round(pos_prob - neg_prob, 4)
+                is_neutral_adjusted = False
+
+            return SentimentResult(
+                label=label,
+                score=score,
+                confidence=round(confidence, 4),
+                probabilities={
+                    "positive": round(pos_prob, 4),
+                    "negative": round(neg_prob, 4),
+                    "neutral": round(neu_prob, 4)
+                },
+                is_neutral_adjusted=is_neutral_adjusted,
+                language="en"
+            )
+        except Exception as e:
+            logger.error(f"[UnifiedSentimentAnalyzer] 英文分析失敗: {e}")
+            return SentimentResult(
+                label="neutral",
+                score=0.0,
+                confidence=0.0,
+                probabilities={"positive": 0.0, "negative": 0.0, "neutral": 1.0},
+                is_neutral_adjusted=False,
+                language="en"
+            )
+
+    def batch_analyze(self, texts: List[str], language: str = 'auto') -> List[SentimentResult]:
+        """批次分析多筆新聞"""
+        return [self.analyze(t, language=language) for t in texts]
+
 
 class RateLimiter:
     """
@@ -39,137 +304,18 @@ class RateLimiter:
             self.last_request_time = time.time()
 
 
-class FinBertScorer:
+class FinBertScorer(UnifiedSentimentAnalyzer):
     """
-    雙語情緒分析器：
-    - 中文：IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment
-    - 英文：ProsusAI/finbert (Lazy loaded)
+    雙語情緒分析器相容封裝（繼承 UnifiedSentimentAnalyzer）。
+    完全向後相容既有呼叫端，回傳舊版字典格式。
     """
-
     def __init__(self, model_name: str = "IDEA-CCNL/Erlangshen-Roberta-110M-Sentiment"):
-        import torch
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-
-        self.model_name = model_name
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"[Scorer] 初始化中文模型，裝置: {self.device}，模型: {model_name}")
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        self.model.to(self.device)
-        self.model.eval()
-        self._torch = torch
-        self.neutral_threshold = 0.65  # 若最高信心度低於此值，視為中立
-
-        # Lazy loading for English FinBERT model
-        self.en_tokenizer = None
-        self.en_model = None
-
-    def _get_en_model(self):
-        if self.en_tokenizer is None or self.en_model is None:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            en_model_name = "ProsusAI/finbert"
-            logger.info(f"[Scorer] 載入英文 FinBERT 模型: {en_model_name}...")
-            try:
-                self.en_tokenizer = AutoTokenizer.from_pretrained(en_model_name)
-                self.en_model = AutoModelForSequenceClassification.from_pretrained(en_model_name)
-                self.en_model.to(self.device)
-                self.en_model.eval()
-            except Exception as e:
-                logger.error(f"[Scorer] 載入英文 FinBERT 失敗: {e}")
-                return False
-        return True
+        super().__init__(neutral_threshold=0.60, zh_model_name=model_name)
 
     def analyze(self, title: str, content: str, language: str = 'zh-TW') -> dict:
-        """
-        分析新聞，回傳量化情緒指標。支援中英文自動分流。
-        """
-        combined = f"{title}. {content[:200]}".strip()
-        if not combined:
-            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
-
-        if language == 'en':
-            return self._analyze_en(combined)
-
-        try:
-            inputs = self.tokenizer(
-                combined,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512
-            ).to(self.device)
-
-            with self._torch.no_grad():
-                outputs = self.model(**inputs)
-                probs = self._torch.softmax(outputs.logits, dim=-1)[0].cpu().tolist()
-
-            # Erlangshen 輸出：[Negative_prob, Positive_prob]
-            neg_prob = probs[0]
-            pos_prob = probs[1]
-
-            confidence = max(neg_prob, pos_prob)
-            
-            if confidence < self.neutral_threshold:
-                label = "中立"
-                sentiment_score = 0.0
-            else:
-                label = "正面" if pos_prob > neg_prob else "負面"
-                sentiment_score = round(pos_prob - neg_prob, 4)
-
-            return {
-                "positive_negative_analysis": label,
-                "sentiment_score": sentiment_score,
-                "confidence": round(confidence, 4)
-            }
-
-        except Exception as e:
-            logger.error(f"[Scorer] 中文推論失敗: {e}")
-            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
-
-    def _analyze_en(self, text: str) -> dict:
-        """使用 ProsusAI/finbert 分析英文新聞"""
-        if not self._get_en_model():
-            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
-
-        try:
-            inputs = self.en_tokenizer(
-                text,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512
-            ).to(self.device)
-
-            with self._torch.no_grad():
-                outputs = self.en_model(**inputs)
-                probs = self._torch.softmax(outputs.logits, dim=-1)[0].cpu().tolist()
-
-            # ProsusAI/finbert 輸出：[positive, negative, neutral]
-            pos_prob = probs[0]
-            neg_prob = probs[1]
-            neu_prob = probs[2]
-
-            confidence = max(pos_prob, neg_prob, neu_prob)
-
-            if neu_prob >= 0.5 or confidence < 0.5:
-                label = "中立"
-                sentiment_score = 0.0
-            elif pos_prob > neg_prob:
-                label = "正面"
-                sentiment_score = round(pos_prob - neg_prob, 4)
-            else:
-                label = "負面"
-                sentiment_score = round(pos_prob - neg_prob, 4)
-
-            return {
-                "positive_negative_analysis": label,
-                "sentiment_score": sentiment_score,
-                "confidence": round(confidence, 4)
-            }
-        except Exception as e:
-            logger.error(f"[Scorer] 英文推論失敗: {e}")
-            return {"positive_negative_analysis": "中立", "sentiment_score": 0.0, "confidence": 0.0}
+        """分析新聞並回傳字典（完全相容舊版介面）"""
+        res = super().analyze(text="", language=language, title=title, content=content)
+        return res.to_dict()
 
 
 # ══════════════════════════════════════════════════════════════════
