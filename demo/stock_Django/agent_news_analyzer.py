@@ -433,7 +433,15 @@ class AgentNewsAnalyzer:
             import shutil
             self.gemini_path = shutil.which("gemini")
             if not self.gemini_path:
-                logger.error("[AgentNewsAnalyzer] 找不到 gemini CLI。")
+                logger.info("[AgentNewsAnalyzer] 容器或環境中無 gemini CLI，自動委派至 DualTrackLLMClient...")
+                try:
+                    from .llm_adapters import DualTrackLLMClient
+                    client = DualTrackLLMClient.get_instance()
+                    res_json, _ = client.generate_json(prompt, system_prompt=GEMINI_SYSTEM_PROMPT)
+                    if res_json and isinstance(res_json, dict):
+                        return res_json
+                except Exception as e:
+                    logger.error(f"[AgentNewsAnalyzer] DualTrackLLMClient 分析失敗: {e}")
                 return None
 
         env = os.environ.copy()

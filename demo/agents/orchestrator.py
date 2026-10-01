@@ -19,26 +19,32 @@ class FinancialOrchestrator:
     支持 Gemini 原生 Tool Use (Function Calling) 以串接本機 MySQL 與 yfinance 數據。
     三級備援推理機制：優先直連 API，次之 CLI，最後本地 Ollama。
     """
-    def __init__(self, model_name: str = "gemini-3.5-flash", max_depth: int = 3):
-        self.model_name = model_name
+    def __init__(self, model_name: Optional[str] = None, max_depth: int = 3):
+        # 優先從環境變數讀取模型名稱，若無則預設 gemini-2.5-flash
+        self.model_name = model_name or os.getenv("GEMINI_ADVISOR_MODEL", "gemini-2.5-flash")
         self.max_depth = max_depth
         
         # 讀取與既有系統相同的 API Key
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
         if not self.gemini_api_key:
             from dotenv import load_dotenv
-            dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
-            if os.path.exists(dotenv_path):
-                load_dotenv(dotenv_path)
-                self.gemini_api_key = os.getenv("GEMINI_API_KEY")
-            else:
-                project_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stock_Django", ".env")
-                if os.path.exists(project_env):
-                    load_dotenv(project_env)
+            possible_envs = [
+                os.path.join(os.getcwd(), ".env"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stock_Django", ".env"),
+                os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env"),
+            ]
+            for ep in possible_envs:
+                if os.path.exists(ep):
+                    load_dotenv(ep)
                     self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+                    if self.gemini_api_key:
+                        break
         
         self.gemini_path = shutil.which("gemini")
-        self.ollama_url = "http://localhost:11434/api/generate"
+        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
+        self.ollama_url = f"{ollama_base}/api/generate"
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
         
         # 定義 Tool Calling 宣告 (符合 Google API 規格)
         self.tools_declaration = [
@@ -192,10 +198,10 @@ class FinancialOrchestrator:
         """
         備援方案 2: 本地 Ollama
         """
-        logger.warning("[Orchestrator] 啟動本地 Ollama (gemma4) 作為最終備援...")
+        logger.warning(f"[Orchestrator] 啟動本地 Ollama ({self.ollama_model}) 作為最終備援...")
         combined_prompt = f"{system_prompt}\n\n使用者輸入：{user_prompt}"
         payload = {
-            "model": "gemma4-cpu",
+            "model": self.ollama_model,
             "prompt": combined_prompt,
             "stream": False,
             "options": { "temperature": 0.2, "num_ctx": 4096 }

@@ -395,59 +395,15 @@ class IntegratedStockPredModel:
             f"並用 80 字以內的一段精煉中文給出具體的總體經濟觀點評語，不要有任何多餘的引言或格式標記。"
         )
         
-        # 換行轉換以防 Windows 參數問題
-        full_prompt = prompt.replace("\n", " ").replace("\r", " ").strip()
-        
-        gemini_path = shutil.which("gemini")
-        if not gemini_path:
-            return "暫時無法使用 Gemini CLI 進行總經分析。"
-            
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            from dotenv import load_dotenv
-            dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
-            load_dotenv(dotenv_path, override=True)
-            gemini_api_key = os.getenv("GEMINI_API_KEY")
-            
-        env = os.environ.copy()
-        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
-        if gemini_api_key:
-            env["GEMINI_API_KEY"] = gemini_api_key
-            
-        custom_model = os.getenv("GEMINI_ADVISOR_MODEL")
-        if custom_model:
-            models_to_try = [custom_model]
-        else:
-            models_to_try = ["gemini-3.1-pro-preview", "gemini-2.5-flash", "gemma-4-31b-it"]
-            
-        for model in models_to_try:
-            try:
-                args = [gemini_path, "-m", model, "--skip-trust"]
-                result = subprocess.run(
-                    args, 
-                    input=full_prompt, 
-                    text=True, 
-                    encoding="utf-8", 
-                    capture_output=True, 
-                    env=env, 
-                    shell=False, 
-                    timeout=120
-                )
-                if result.returncode == 0:
-                    res_text = (result.stdout or "").strip()
-                    if res_text:
-                        if "{" in res_text and "response" in res_text:
-                            try:
-                                json_start = res_text.index("{")
-                                json_data = json.loads(res_text[json_start:])
-                                res_text = json_data.get("response", "").strip()
-                            except:
-                                pass
-                        return res_text[:120]
-            except subprocess.TimeoutExpired:
-                logger.warning(f"[MacroAgent] 呼叫 {model} 總經分析超時 (120s)")
-            except Exception as e:
-                logger.error(f"[MacroAgent] 呼叫 {model} 總經分析異常: {e}")
+        # 呼叫雙軌 LLM 客戶端 (優先 Gemini 雲端 REST API，容錯回退至宿主機 Ollama)
+        try:
+            from .llm_adapters import get_llm_client
+            client = get_llm_client()
+            res_text = client.generate_text(prompt)
+            if res_text and len(res_text.strip()) > 5:
+                return res_text.strip()[:150]
+        except Exception as e:
+            logger.error(f"[MacroAgent] 呼叫雙軌適配器總經分析異常: {e}")
                 
         return "總體經濟與產業關聯度尚屬平穩，建議密切關注後續利率政策與產業需求變動。"
 
@@ -655,118 +611,32 @@ class IntegratedStockPredModel:
             f"}}"
         )
         
-        # 換行轉換以防 Windows 參數問題
-        full_prompt = prompt.replace("\n", " ").replace("\r", " ").strip()
-        
-        gemini_path = shutil.which("gemini")
-        if not gemini_path:
-            logger.error("[GeminiAdvisor] 系統中找不到 gemini CLI。")
-            return self._default_advice("系統找不到 gemini CLI 執行檔")
+        # 呼叫雙軌 LLM 客戶端生成結構化投資建議
+        try:
+            from .llm_adapters import get_llm_client
+            client = get_llm_client()
+            parsed_response = client.generate_json(prompt, required_keys=['recommendation', 'score'])
             
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        if not gemini_api_key:
-            from dotenv import load_dotenv
-            dotenv_path = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", ".env")
-            load_dotenv(dotenv_path, override=True)
-            gemini_api_key = os.getenv("GEMINI_API_KEY")
-            logger.debug(f"[GeminiAdvisor] 從 {dotenv_path} 載入 GEMINI_API_KEY: {'成功' if gemini_api_key else '失敗'}")
-            
-        env = os.environ.copy()
-        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
-        if gemini_api_key:
-            env["GEMINI_API_KEY"] = gemini_api_key
-            
-        # 決定要試的模型
-        custom_model = os.getenv("GEMINI_ADVISOR_MODEL")
-        if custom_model:
-            models_to_try = [custom_model]
-        else:
-            models_to_try = ["gemini-3.1-pro-preview", "gemini-2.5-flash", "gemma-4-31b-it"]
+            # 驗證必要欄位與評等範圍
+            rec = parsed_response.get('recommendation', '觀望')
+            if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
+                parsed_response['recommendation'] = '觀望'
 
-        last_error = "所有模型呼叫皆失敗"
-        
-        for model in models_to_try:
-            try:
-                logger.info(f"[GeminiAdvisor] 正在呼叫雲端 Gemini.CLI {model} 分析股票 {self.stock_number}...")
-                args = [gemini_path, "-m", model, "--skip-trust", "-o", "json"]
-                
-                result = subprocess.run(
-                    args,
-                    input=full_prompt,
-                    text=True,
-                    encoding="utf-8",
-                    capture_output=True,
-                    env=env,
-                    shell=False,
-                    timeout=120
-                )
-                
-                if result.returncode != 0:
-                    stderr_msg = result.stderr or ""
-                    logger.warning(f"[GeminiAdvisor] Gemini CLI {model} 執行失敗 (code: {result.returncode}), stderr: {stderr_msg}")
-                    last_error = f"{model} 執行失敗: {result.returncode}"
-                    continue
+            model_name = parsed_response.get('_model_source', 'Gemini (gemini-2.5-flash)')
+            parsed_response['model_name'] = model_name
+
+            # 雙鍵防禦相容支援 (fundamental / valuation)
+            if 'details' in parsed_response and isinstance(parsed_response['details'], dict):
+                d = parsed_response['details']
+                if 'fundamental' in d and 'valuation' not in d:
+                    d['valuation'] = d['fundamental']
+                elif 'valuation' in d and 'fundamental' not in d:
+                    d['fundamental'] = d['valuation']
                     
-                stdout_decoded = (result.stdout or "").strip()
-                
-                if "{" in stdout_decoded:
-                    json_start = stdout_decoded.index("{")
-                    json_data = json.loads(stdout_decoded[json_start:])
-                    response_text = json_data.get("response", "").strip()
-                    
-                    # 移除可能存在的 markdown wrapper
-                    clean_res = response_text
-                    if clean_res.startswith("```"):
-                        lines = clean_res.splitlines()
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        clean_res = "\n".join(lines).strip()
-                        
-                    try:
-                        parsed_response = json.loads(clean_res)
-                        # 驗證必要欄位與值範圍
-                        if 'recommendation' in parsed_response and 'score' in parsed_response:
-                            rec = parsed_response['recommendation']
-                            if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
-                                parsed_response['recommendation'] = '觀望'
-                            
-                            # 填入具可讀性的模型名稱
-                            if "gemini-3.1" in model:
-                                friendly_model_name = "Gemini 3.1 Pro"
-                            elif "gemini-2.5" in model:
-                                friendly_model_name = "Gemini 2.5 Flash"
-                            elif "gemma-4" in model:
-                                friendly_model_name = "Gemma-4-31B"
-                            else:
-                                friendly_model_name = model
-                            parsed_response['model_name'] = friendly_model_name
-                            
-                            # 雙鍵防禦相容支援
-                            if 'details' in parsed_response and isinstance(parsed_response['details'], dict):
-                                d = parsed_response['details']
-                                if 'fundamental' in d and 'valuation' not in d:
-                                    d['valuation'] = d['fundamental']
-                                elif 'valuation' in d and 'fundamental' not in d:
-                                    d['fundamental'] = d['valuation']
-                                    
-                            return parsed_response
-                    except Exception as je:
-                        logger.warning(f"[GeminiAdvisor] 無法解析模型 {model} 回覆的 JSON: {je}. 原始內容: {clean_res}")
-                        last_error = f"{model} JSON 解析錯誤"
-                else:
-                    logger.warning(f"[GeminiAdvisor] 模型 {model} 輸出不符合預期 JSON 格式。原始輸出: {stdout_decoded}")
-                    last_error = f"{model} 輸出格式錯誤"
-                    
-            except subprocess.TimeoutExpired:
-                logger.warning(f"[GeminiAdvisor] 呼叫 Gemini CLI ({model}) 超時 (120s)")
-                last_error = f"{model} 執行超時 (120s)"
-            except Exception as e:
-                logger.error(f"[GeminiAdvisor] 呼叫 Gemini CLI ({model}) 異常: {e}")
-                last_error = f"{model} 系統異常: {str(e)}"
-                
-        return self._default_advice(last_error)
+            return parsed_response
+        except Exception as e:
+            logger.error(f"[GeminiAdvisor] 雙軌生成建議異常: {e}")
+            return self._default_advice(f"建議生成異常: {str(e)[:50]}")
             
     def _default_advice(self, error_msg: str) -> dict:
         return {
