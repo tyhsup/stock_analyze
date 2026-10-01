@@ -1,0 +1,79 @@
+# ==========================================
+# Django 核心與 Web 框架依賴 (Core & Web)
+# ==========================================
+Django==5.1.1
+asgiref==3.8.1
+sqlparse==0.5.1
+
+# 資料庫連線驅動與 ORM
+PyMySQL==1.1.1
+mysqlclient==2.2.4
+mysql-connector-python==9.0.0
+SQLAlchemy==2.0.35
+peewee==3.17.9
+greenlet==3.3.1
+
+# 環境變數與驗證
+python-dotenv>=1.0.0
+pydantic==2.10.6
+pydantic_core==2.27.2
+annotated-types==0.7.0
+
+# 網路請求與傳輸
+requests==2.32.3
+requests-futures==1.0.2
+urllib3==2.6.3
+certifi==2026.1.4
+charset-normalizer==3.3.2
+idna==3.10
+
+# 日期與時區處理
+python-dateutil==2.9.0.post0
+pytz==2024.2
+tzdata==2024.1
+
+# 模板與渲染
+Jinja2==3.1.6
+MarkupSafe==2.1.5
+Markdown==3.7
+markdown-it-py==3.0.0
+mdurl==0.1.2
+Pygments==2.18.0
+
+# CLI 工具與日誌終端輸出
+rich==13.8.1
+click==8.1.8
+typer==0.15.2
+colorama==0.4.6
+shellingham==1.5.4
+tqdm==4.67.1
+
+# 系統安全與基礎庫
+cryptography==46.0.5
+cffi==2.0.0
+pycparser==3.0
+six==1.16.0
+packaging==24.1
+platformdirs==4.3.6
+typing_extensions==4.15.0
+zipp==3.23.0
+importlib_metadata==8.7.1
+attrs==25.4.0
+filelock>=3.13.0
+
+# Excel 檔案操作
+openpyxl>=3.1.0
+et-xmlfile>=2.0.0
+
+# 中文繁簡轉換
+zhconv>=1.4.0
+
+# SEC EDGAR 申報文件
+edgartools>=5.0.0
+
+# 非同步任務佇列與快取
+redis>=5.0.0
+celery>=5.4.0
+django-celery-beat>=2.6.0
+kombu>=5.3.0
+billiard>=4.2.0

@@ -1,0 +1,9 @@
+# ==========================================
+# 生產環境專用依賴 (Production WSGI/ASGI Servers)
+# ==========================================
+
+# 生產級 WSGI 伺服器
+gunicorn>=23.0.0
+
+# 高效能 ASGI 伺服器 (包含 uvloop, httptools 等 C 加速模組)
+uvicorn[standard]>=0.31.0

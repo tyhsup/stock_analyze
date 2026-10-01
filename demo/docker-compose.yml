@@ -1,0 +1,173 @@
+# =================================================================
+# Docker Compose 開發環境編排 (Phase 3: Development Stack)
+# 支援：原始碼熱重載、Gemini_task 唯讀掛載、WSL2 GPU Passthrough、
+# 雙模 MySQL 連線 (容器 MySQL 或 host.docker.internal 直連本機 MySQL)
+# =================================================================
+
+services:
+  # -------------------------------------------------------------
+  # 1. Django Web 應用服務 (開發熱重載模式)
+  # -------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_web_dev
+    command: python manage.py runserver 0.0.0.0:8000
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # 本地原始碼即時同步 (熱重載)
+      - .:/app
+      # 外部排程/任務模組掛載 (含 scheduler.db)
+      - ../Gemini_task:/app/Gemini_task
+      # 靜態與媒體資源持久化卷
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=True
+      - COLLECT_STATIC=0
+    # 相容非 Windows Docker Desktop (如原生 Linux) 的 host.docker.internal 解析
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stock_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+        required: false
+    # WSL2 / NVIDIA GPU 直通硬體加速
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # -------------------------------------------------------------
+  # 2. MySQL 8.0 關聯式資料庫服務
+  # -------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: stock_mysql_dev
+    restart: unless-stopped
+    ports:
+      - "3307:3306"  # 避免與本機 MySQL 3306 Port 衝突
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stock_tw_analyse}
+      MYSQL_USER: ${MYSQL_USER:-stockuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stockpassword}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - stock_network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD:-rootpassword} > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------------------------
+  # 3. Redis 7 快取與 Celery 訊息 Broker 服務
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: stock_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - stock_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # 4. Celery Worker 非同步任務工作進程 (支援 GPU 模型推理)
+  # -------------------------------------------------------------
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_celery_worker_dev
+    command: celery -A demo worker -l info
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ../Gemini_task:/app/Gemini_task
+      - media_volume:/app/media
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stock_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+        required: false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # -------------------------------------------------------------
+  # 5. Celery Beat 定時任務排程器 (全系統嚴格單一實例)
+  # -------------------------------------------------------------
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_celery_beat_dev
+    command: celery -A demo beat -l info
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ../Gemini_task:/app/Gemini_task
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stock_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+# =================================================================
+# 儲存卷 (Volumes) 與 網路 (Networks) 定義
+# =================================================================
+volumes:
+  mysql_data:
+    name: stock_mysql_data
+  redis_data:
+    name: stock_redis_data
+  static_volume:
+    name: stock_static_volume
+  media_volume:
+    name: stock_media_volume
+
+networks:
+  stock_network:
+    name: stock_network
+    driver: bridge

@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+.gitmodules
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & OS
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Large logs & temporary files
+*.log
+stock_batch_update.log
+stock_investor_final.log
+stock_investor_tpex.log
+stock_investor_us.log
+scratch/
+.tmp/
+temp.txt
+
+# Vector DB & AI artifacts
+chroma_db/
+results/
+photo/
+*.png
+*.jpg
+*.jpeg
+
+# Node & frontend build files
+node_modules/
+npm-debug.log*
+
+# Static & Media collected outputs (collected during build or via volume)
+staticfiles/
+media/

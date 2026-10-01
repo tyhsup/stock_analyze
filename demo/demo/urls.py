@@ -29,6 +29,7 @@ from stock_Django.scheduler_views import (
     scheduler_home, jobs_list_or_create, trigger_job_immediately,
     delete_job, update_job_heartbeat, llm_parse_prompt, get_llm_usage
 )
+from .health import health_check
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -56,4 +57,6 @@ urlpatterns = [
     path('macro/', macro_dashboard, name='macro_dashboard'),
     path('api/macro/data', macro_data_api, name='macro_data_api'),
     path('agents/', include('agents.urls')),
+    # 容器健康檢查端點 (Liveness & Readiness)
+    path('health/', health_check, name='health_check'),
 ]

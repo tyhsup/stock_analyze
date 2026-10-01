@@ -17,10 +17,12 @@ pymysql.install_as_MySQLdb()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+import os
 import sys
-# 取得 Gemini_task 專案目錄並加入 sys.path
-GEMINI_TASK_DIR = BASE_DIR.parent / "Gemini_task"
-if str(GEMINI_TASK_DIR) not in sys.path:
+# 取得 Gemini_task 專案目錄並加入 sys.path (支援容器唯讀掛載路徑配置)
+GEMINI_TASK_PATH = os.getenv('GEMINI_TASK_DIR', str(BASE_DIR.parent / "Gemini_task"))
+GEMINI_TASK_DIR = Path(GEMINI_TASK_PATH)
+if GEMINI_TASK_DIR.exists() and str(GEMINI_TASK_DIR) not in sys.path:
     sys.path.insert(0, str(GEMINI_TASK_DIR))
 
 
@@ -28,12 +30,14 @@ if str(GEMINI_TASK_DIR) not in sys.path:
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-&ylodbrn(rl81#fb*@h$vf55hbaw*!g%vf#92ffenc6rc1082('
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-&ylodbrn(rl81#fb*@h$vf55hbaw*!g%vf#92ffenc6rc1082(')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+# 網域白名單支援環境變數解析 (逗號分隔)
+_allowed_hosts_str = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,web')
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_str.split(',') if h.strip()]
 
 
 # Application definition
@@ -153,10 +157,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-STATICFILES_DIRS = [
-    ("scheduler", os.path.join(BASE_DIR.parent, "Gemini_task", "app", "static")),
-]
+STATICFILES_DIRS = []
+_scheduler_static = GEMINI_TASK_DIR / "app" / "static"
+if _scheduler_static.exists():
+    STATICFILES_DIRS.append(("scheduler", str(_scheduler_static)))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -185,3 +191,18 @@ CELERY_BEAT_SCHEDULE = {
         'args': ('US',),
     },
 }
+
+# ==========================================
+# 生產環境安全加固配置 (Security Hardening)
+# ==========================================
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'SAMEORIGIN'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+if not DEBUG:
+    # 生產環境啟用 Cookie 安全傳輸與 SSL 重定向控制
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1')
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'True').lower() in ('true', '1')
+    CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', 'True').lower() in ('true', '1')
+

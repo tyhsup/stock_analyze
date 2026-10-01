@@ -1,0 +1,204 @@
+# =================================================================
+# Docker Compose 生產環境編排 (Phase 4: Production Stack)
+# 核心規範：不可變映像檔 (Immutable Image)、單一職責、嚴格內部私有網路隔離
+# 僅 Nginx 暴露外部 80 埠，Django/MySQL/Redis 均禁止公網埠號映射
+# =================================================================
+
+services:
+  # -------------------------------------------------------------
+  # 1. Nginx 反向代理與高效靜態資源分發服務 (唯一對外公網入口)
+  # -------------------------------------------------------------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: stock_nginx_prod
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      # 唯讀共享靜態與媒體目錄
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    depends_on:
+      web:
+        condition: service_started
+    networks:
+      - stock_network_prod
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ > /dev/null 2>&1 || exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # -------------------------------------------------------------
+  # 2. Django Web 應用服務 (生產 WSGI/ASGI: Gunicorn + UvicornWorker)
+  # -------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_web_prod
+    restart: always
+    # 純內部私有網路暴露，禁止映射宿主機公網埠號
+    expose:
+      - "8000"
+    command: >
+      gunicorn demo.asgi:application
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --workers 4
+      --timeout 30
+      --graceful-timeout 30
+      --max-requests 1000
+      --max-requests-jitter 50
+      --access-logfile -
+      --error-logfile -
+    volumes:
+      # 不可變原則：禁止掛載本地源碼目錄 (.:/app 移除)
+      # 僅掛載共享靜態檔案、媒體庫與外部唯讀任務
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - ../Gemini_task:/app/Gemini_task:ro
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=False
+      - COLLECT_STATIC=0
+    networks:
+      - stock_network_prod
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # -------------------------------------------------------------
+  # 3. MySQL 8.0 資料庫服務 (內部安全網路隔離)
+  # -------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: stock_mysql_prod
+    restart: always
+    # 生產環境禁止向公網暴露 3306 埠，僅供內部網路存取
+    expose:
+      - "3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - stock_network_prod
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------------------------
+  # 4. Redis 7 快取與 Celery 訊息 Broker 服務
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: stock_redis_prod
+    restart: always
+    # 僅內部私有網路通訊，禁止向公網暴露 6379 埠
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - stock_network_prod
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # 5. Celery Worker 非同步任務工作進程 (生產環境 GPU 加速)
+  # -------------------------------------------------------------
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_celery_worker_prod
+    restart: always
+    command: celery -A demo worker -l info --concurrency=4
+    volumes:
+      - media_volume:/app/media
+      - ../Gemini_task:/app/Gemini_task:ro
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=False
+    networks:
+      - stock_network_prod
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # -------------------------------------------------------------
+  # 6. Celery Beat 定時任務排程器 (全系統嚴格單一實例)
+  # -------------------------------------------------------------
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock_celery_beat_prod
+    restart: always
+    command: celery -A demo beat -l info
+    volumes:
+      - ../Gemini_task:/app/Gemini_task:ro
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEBUG=False
+    networks:
+      - stock_network_prod
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+# =================================================================
+# 儲存卷 (Volumes) 與 網路 (Networks) 定義
+# =================================================================
+volumes:
+  mysql_data:
+    name: stock_mysql_data_prod
+  redis_data:
+    name: stock_redis_data_prod
+  static_volume:
+    name: stock_static_volume_prod
+  media_volume:
+    name: stock_media_volume_prod
+
+networks:
+  stock_network_prod:
+    name: stock_network_prod
+    driver: bridge

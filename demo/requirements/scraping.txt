@@ -1,0 +1,45 @@
+# ==========================================
+# 網路爬蟲與行情抓取依賴 (Scraping & Market Ingestion)
+# ==========================================
+
+# HTML 解析
+beautifulsoup4==4.13.3
+bs4==0.0.2
+soupsieve==2.6
+lxml==6.0.2
+html5lib==1.1
+webencodings==0.5.1
+
+# HTTP 模擬與反爬蟲防禦
+curl_cffi==0.13.0
+dukpy==0.5.0
+
+# 財經行情抓取
+yfinance==0.2.48
+yahooquery==2.4.1
+multitasking==0.0.11
+frozendict==2.4.6
+
+# 異步非同步網路與 WebSocket
+PySocks==1.7.1
+websocket-client==1.9.0
+websockets==16.0
+wsproto==1.3.2
+h11==0.16.0
+trio==0.33.0
+trio-typing==0.10.0
+trio-websocket==0.12.2
+outcome==1.3.0.post0
+sniffio==1.3.1
+sortedcontainers==2.4.0
+async-generator==1.10
+pyee==13.0.0
+
+# 媒體下載工具
+you-get==0.4.1743
+yt-dlp>=2024.1.0
+
+# 瀏覽器自動化爬蟲
+selenium>=4.20.0
+playwright>=1.40.0
+
