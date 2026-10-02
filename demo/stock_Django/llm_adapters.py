@@ -114,9 +114,10 @@ class GeminiNativeAdapter(AbstractLLMAdapter):
     不依賴宿主機外部 gemini CLI 執行檔，完全相容 Docker Linux 容器環境。
     """
     DEFAULT_MODELS = [
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
         "gemini-2.5-flash",
-        "gemini-flash-latest",
-        "gemini-2.5-pro",
+        "gemma-4-31b-it",
     ]
 
     def __init__(self, api_key: Optional[str] = None):

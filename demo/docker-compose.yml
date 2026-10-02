@@ -33,7 +33,9 @@ services:
       - COLLECT_STATIC=0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=gemma4:e4b
-      - GEMINI_ADVISOR_MODEL=gemini-2.5-flash
+      - GEMINI_ADVISOR_MODEL=gemini-3.1-pro-preview
+      - GEMINI_MACRO_MODEL=gemini-3.1-pro-preview
+      - GEMINI_NEWS_MODEL=gemini-3.1-pro-preview
     # 相容非 Windows Docker Desktop (如原生 Linux) 的 host.docker.internal 解析
     extra_hosts:
       - "host.docker.internal:host-gateway"

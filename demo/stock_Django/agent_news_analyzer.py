@@ -437,7 +437,8 @@ class AgentNewsAnalyzer:
                 try:
                     from .llm_adapters import DualTrackLLMClient
                     client = DualTrackLLMClient.get_instance()
-                    res_json, _ = client.generate_json(prompt, system_prompt=GEMINI_SYSTEM_PROMPT)
+                    news_model = os.getenv("GEMINI_NEWS_MODEL", "gemini-3.1-pro-preview")
+                    res_json, _ = client.generate_json(prompt, model=news_model, system_prompt=GEMINI_SYSTEM_PROMPT)
                     if res_json and isinstance(res_json, dict):
                         return res_json
                 except Exception as e:

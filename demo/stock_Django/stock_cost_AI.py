@@ -395,11 +395,12 @@ class IntegratedStockPredModel:
             f"並用 80 字以內的一段精煉中文給出具體的總體經濟觀點評語，不要有任何多餘的引言或格式標記。"
         )
         
-        # 呼叫雙軌 LLM 客戶端 (優先 Gemini 雲端 REST API，容錯回退至宿主機 Ollama)
+        # 呼叫雙軌 LLM 客戶端 (優先使用歷史指定總經模型 gemini-3.1-pro-preview，容錯回退至宿主機 Ollama)
         try:
             from .llm_adapters import get_llm_client
             client = get_llm_client()
-            res_text = client.generate_text(prompt)
+            macro_model = os.getenv("GEMINI_MACRO_MODEL", "gemini-3.1-pro-preview")
+            res_text = client.generate_text(prompt, model=macro_model)
             if res_text and len(res_text.strip()) > 5:
                 return res_text.strip()[:150]
         except Exception as e:
@@ -622,8 +623,20 @@ class IntegratedStockPredModel:
             if rec not in ['強力賣出', '賣出', '觀望', '買進', '強力買進']:
                 parsed_response['recommendation'] = '觀望'
 
-            model_name = parsed_response.get('_model_source', 'Gemini (gemini-2.5-flash)')
-            parsed_response['model_name'] = model_name
+            source_model = parsed_response.get('_model_source', '')
+            if "gemini-3.1" in source_model:
+                friendly_name = "Gemini 3.1 Pro"
+            elif "gemini-3.5" in source_model:
+                friendly_name = "Gemini 3.5 Flash"
+            elif "gemini-2.5" in source_model:
+                friendly_name = "Gemini 2.5 Flash"
+            elif "gemma-4-31b" in source_model:
+                friendly_name = "Gemma-4-31B"
+            elif "gemma4" in source_model:
+                friendly_name = "Gemma4 Local (Ollama)"
+            else:
+                friendly_name = source_model or "Gemini 3.1 Pro"
+            parsed_response['model_name'] = friendly_name
 
             # 雙鍵防禦相容支援 (fundamental / valuation)
             if 'details' in parsed_response and isinstance(parsed_response['details'], dict):

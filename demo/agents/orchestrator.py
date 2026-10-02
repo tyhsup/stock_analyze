@@ -20,8 +20,8 @@ class FinancialOrchestrator:
     三級備援推理機制：優先直連 API，次之 CLI，最後本地 Ollama。
     """
     def __init__(self, model_name: Optional[str] = None, max_depth: int = 3):
-        # 優先從環境變數讀取模型名稱，若無則預設 gemini-2.5-flash
-        self.model_name = model_name or os.getenv("GEMINI_ADVISOR_MODEL", "gemini-2.5-flash")
+        # 優先從環境變數讀取模型名稱，若無則預設 gemini-3.1-pro-preview
+        self.model_name = model_name or os.getenv("GEMINI_ADVISOR_MODEL", "gemini-3.1-pro-preview")
         self.max_depth = max_depth
         
         # 讀取與既有系統相同的 API Key
