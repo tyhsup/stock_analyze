@@ -19,8 +19,27 @@ import email.utils
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List, Dict, Optional
+import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _fetch_cnbc_api_xml(url: str, params: dict = None, timeout: tuple = (5, 15)) -> Optional[str]:
+    """使用原生 requests 抓取 CNBC 公開 API/RSS XML 內容，具備超時與例外保護。"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/xml, text/xml, */*;q=0.9',
+    }
+    try:
+        res = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if res.status_code == 200 and res.text:
+            return res.text
+        logger.warning(f"[CnbcCliScraper] CNBC API 狀態碼非 200 ({res.status_code}): {url}")
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"[CnbcCliScraper] CNBC API 網路請求失敗 ({url}): {e}")
+    except Exception as e:
+        logger.warning(f"[CnbcCliScraper] CNBC 擷取未知錯誤: {e}")
+    return None
 
 # 支援的 CNBC 新聞 RSS 分類 ID 清單
 CNBC_FEED_IDS = {
@@ -55,9 +74,30 @@ class CnbcCliScraper:
     def __init__(self, cli_path: Optional[str] = None):
         self.cli_bin = cli_path or _find_cnbc_cli_bin()
 
+    def _fetch_search_xml(self, keywords: str) -> Optional[str]:
+        """抓取關鍵字搜尋 XML：優先原生直連 search.cnbc.com，失敗則回退至 CLI。"""
+        url = "https://search.cnbc.com/rs/search/all/view.xml"
+        params = {"keywords": keywords, "partnerId": "wrss01"}
+        xml_text = _fetch_cnbc_api_xml(url, params=params)
+        if xml_text:
+            return xml_text
+        return self._execute_cli(["rs", "search-news", "--keywords", keywords])
+
+    def _fetch_feed_xml(self, feed_id: str) -> Optional[str]:
+        """抓取分類新聞 Feed XML：優先原生直連 cnbc.com RSS，失敗則回退至 CLI。"""
+        url = f"https://www.cnbc.com/id/{feed_id}/device/rss/rss.html"
+        xml_text = _fetch_cnbc_api_xml(url)
+        if xml_text:
+            return xml_text
+        alt_url = "https://search.cnbc.com/rs/search/combinedcms/view.xml"
+        alt_xml = _fetch_cnbc_api_xml(alt_url, params={"id": feed_id, "partnerId": "wrss01"})
+        if alt_xml:
+            return alt_xml
+        return self._execute_cli(["rs", "get-news-feed", "--id", feed_id])
+
     def _execute_cli(self, args: list, timeout: int = 15) -> Optional[str]:
         """
-        安全呼叫 cnbc-cli-pp-cli.exe 並提取 JSON 回傳內部的 XML/字串結果。
+        安全呼叫 cnbc-cli-pp-cli.exe 並提取 JSON 回傳內部的 XML/字串結果（備援機制）。
         - 嚴禁 shell=True
         - 顯式 UTF-8 編碼與錯誤替換
         - 超時與異常完整捕獲
@@ -92,7 +132,7 @@ class CnbcCliScraper:
             return envelope.get("results", "")
 
         except FileNotFoundError:
-            logger.error(f"[CnbcCliScraper] 找不到執行檔: {self.cli_bin}")
+            logger.debug(f"[CnbcCliScraper] 本地未安裝 CLI 執行檔: {self.cli_bin}")
             return None
         except subprocess.TimeoutExpired:
             logger.error(f"[CnbcCliScraper] 執行逾時 (>{timeout}s): {args}")
@@ -157,6 +197,10 @@ class CnbcCliScraper:
                     '連結': link,
                     '正負分析': '中性',
                     '來源': source_label,
+                    '市場': '美股',
+                    '信心度': 0.8,
+                    '影響範疇': '產業趨勢',
+                    '分析摘要': content[:150] if content else title,
                     '語言': 'en'
                 })
         except ET.ParseError as e:
@@ -223,6 +267,10 @@ class CnbcCliScraper:
                     '連結': link,
                     '正負分析': '中性',
                     '來源': f"CNBC-Search ({ticker})" if ticker else "CNBC-Search",
+                    '市場': '美股',
+                    '信心度': 0.8,
+                    '影響範疇': '個股營運',
+                    '分析摘要': content[:150] if content else title,
                     '語言': 'en'
                 })
         except ET.ParseError as e:
@@ -242,7 +290,7 @@ class CnbcCliScraper:
             days_back: 搜尋幾天前的新聞（相容性參數）
 
         Returns:
-            新聞字典陣列，包含：標題, 日期, 內容, 連結, 正負分析, 來源, 語言
+            新聞字典陣列，包含完整 11 個標準欄位
         """
         start_time = time.time()
         ticker = str(ticker).strip().upper().replace('.TWO', '').replace('.TW', '')
@@ -252,7 +300,7 @@ class CnbcCliScraper:
             logger.error(f"[CnbcCliScraper] 包含非法字元的查詢關鍵字: {ticker}")
             return []
 
-        logger.info(f"[CnbcCliScraper] 開始從 CNBC-CLI 抓取 {ticker} 英文新聞 (雙重來源模式), limit: {limit}")
+        logger.info(f"[CnbcCliScraper] 開始抓取 {ticker} 英文新聞 (原生直連與雙重來源模式), limit: {limit}")
 
         collected: List[Dict] = []
         seen_titles = set()
@@ -264,8 +312,8 @@ class CnbcCliScraper:
                     seen_titles.add(t_clean)
                     collected.append(it)
 
-        # 來源 1: 依關鍵字搜尋特定新聞
-        search_xml = self._execute_cli(["rs", "search-news", "--keywords", ticker])
+        # 來源 1: 依關鍵字搜尋特定新聞 (原生 HTTP + fallback)
+        search_xml = self._fetch_search_xml(ticker)
         if search_xml:
             search_items = self._parse_search_xml(search_xml, ticker=ticker)
             add_articles(search_items)
@@ -279,7 +327,7 @@ class CnbcCliScraper:
             if not feed_id:
                 continue
 
-            feed_xml = self._execute_cli(["rs", "get-news-feed", "--id", feed_id])
+            feed_xml = self._fetch_feed_xml(feed_id)
             if feed_xml:
                 # 優先抓取內容有提及 ticker 的新聞
                 feed_items = self._parse_rss_xml(feed_xml, ticker=ticker, filter_ticker=True)
@@ -292,7 +340,7 @@ class CnbcCliScraper:
                     break
                 feed_id = CNBC_FEED_IDS.get(cat)
                 if feed_id:
-                    feed_xml = self._execute_cli(["rs", "get-news-feed", "--id", feed_id])
+                    feed_xml = self._fetch_feed_xml(feed_id)
                     if feed_xml:
                         general_feed_items = self._parse_rss_xml(feed_xml, ticker=ticker, filter_ticker=False)
                         add_articles(general_feed_items)

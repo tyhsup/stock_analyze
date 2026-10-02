@@ -23,8 +23,26 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-# Absolute path to news data folder - FIXED as per user request
-NEWS_DATA_DIR = Path(r'E:\Infinity\mydjango\demo\newsapp\news_data')
+def _resolve_news_data_dir() -> Path:
+    """Dynamically resolve the news data directory for Docker Linux and Windows host compatibility."""
+    env_dir = os.getenv('NEWS_DATA_DIR')
+    if env_dir:
+        p = Path(env_dir).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    # Relative to current file: <project_root>/newsapp/news_data
+    # In container: /app/newsapp/news_data; on host: .../demo/newsapp/news_data
+    rel_dir = Path(__file__).resolve().parent.parent / 'newsapp' / 'news_data'
+    if rel_dir.exists():
+        return rel_dir
+    # Fallback for Windows if mounted/local
+    win_dir = Path(r'E:\Infinity\mydjango\demo\newsapp\news_data')
+    if win_dir.exists():
+        return win_dir
+    rel_dir.mkdir(parents=True, exist_ok=True)
+    return rel_dir
+
+NEWS_DATA_DIR = _resolve_news_data_dir()
 
 SCHEMA_COLUMNS = ['標題', '日期', '內容', '連結', '正負分析', '來源', '市場', '信心度', '影響範疇', '分析摘要', '語言']
 

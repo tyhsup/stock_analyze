@@ -41,6 +41,14 @@ class NLPService:
         self.bert_tokenizer_path = os.path.join(self.model_dir, 'final_tokenizer_stock_news_BERT_1k')
         self.bert_model_path = os.path.join(self.model_dir, 'final_model_stock_news_BERT_1k')
         
+        # 防禦性檢查：若本地模型目錄或權重檔不存在，則優雅切換為降級模式，不拋出 HuggingFace 例外
+        if not os.path.exists(self.model_dir) or not os.path.exists(self.bert_model_path):
+            logger.warning(f"本地 BERT 模型路徑不存在 ({self.bert_model_path})，NLP 服務已平穩切換為輕量級降級模式。")
+            self._initialized = False
+            self.has_ckip = False
+            self.stop_words = []
+            return
+
         try:
             logger.info(f"正在從 {self.bert_model_path} 載入 BERT 模型 (設備: {self.device})...")
             self.tokenizer = BertTokenizer.from_pretrained(self.bert_tokenizer_path)

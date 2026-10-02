@@ -15,6 +15,7 @@ import random
 import json
 import subprocess
 from datetime import datetime
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -103,8 +104,31 @@ def _to_cnyes_symbol(ticker: str, market: str = 'tw') -> str:
         return f"USS:{t}:STOCK"
 
 
+def _fetch_cnyes_api_direct(endpoint: str, params: dict = None, timeout: tuple = (5, 15)) -> dict:
+    """以原生 requests 直接請求鉅亨網公開 REST API，具備 User-Agent 輪替與超時保護。"""
+    clean_endpoint = endpoint.lstrip('/')
+    url = f"https://api.cnyes.com/media/api/v1/{clean_endpoint}"
+    headers = {
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://www.cnyes.com/',
+        'Origin': 'https://www.cnyes.com',
+    }
+    try:
+        time.sleep(random.uniform(0.1, 0.25))
+        res = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if res.status_code == 200:
+            return res.json()
+        logger.warning(f"[CnyesScraper] API 回傳狀態碼異常 ({res.status_code}): {url}")
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"[CnyesScraper] 直連 API 請求失敗 ({url}): {e}")
+    except Exception as e:
+        logger.warning(f"[CnyesScraper] 解析 API JSON 回傳異常: {e}")
+    return {}
+
+
 def _run_cnyes_cli(cmd_args: list) -> dict:
-    """呼叫 cnyes-cli 並回傳解析後的 JSON 物件。"""
+    """呼叫 cnyes-cli 並回傳解析後的 JSON 物件（備援機制）。"""
     cmd = ["cnyes-cli"] + cmd_args + ["--agent"]
     try:
         cmd_str = " ".join(cmd)
@@ -128,8 +152,8 @@ def _fetch_html_content(url: str) -> str:
     }
     try:
         # 加上隨機微小延遲防止觸發防爬機制
-        time.sleep(random.uniform(0.1, 0.3))
-        res = requests.get(url, headers=headers, timeout=10)
+        time.sleep(random.uniform(0.05, 0.15))
+        res = requests.get(url, headers=headers, timeout=(3, 5))
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             
@@ -160,11 +184,10 @@ def _fetch_html_content(url: str) -> str:
 
 class CnyesScraper:
     """
-    透過 cnyes-cli (API) 與輕量 HTTP 抓取技術重構的新一代鉅亨網新聞抓取器。
-    與原有 Selenium Scraper 介面 100% 相容。
+    透過原生 REST API 直連與輕量 HTTP 抓取技術重構的新一代鉅亨網新聞抓取器。
+    與原有 Scraper 介面 100% 相容，保留 CLI 作為備援。
     """
     def __init__(self, headless: bool = True):
-        # 為了向後相容保留 headless 參數，但不做任何 Selenium 啟動
         self.headless = headless
         self.min_articles = 10
 
@@ -178,57 +201,71 @@ class CnyesScraper:
             limit: 限制回傳的新聞筆數
             
         Returns:
-            新聞字典陣列，包含鍵值：標題, 日期, 內容, 連結, 正負分析, 來源
+            新聞字典陣列，包含完整 11 個標準欄位
         """
         start_time = time.time()
-        symbol = _to_cnyes_symbol(ticker, market)
-        logger.info(f"[CnyesScraper] 開始透過 cnyes-cli 獲取個股新聞: {symbol}, limit: {limit}")
+        ticker_str = str(ticker).strip()
+        if not ticker_str:
+            return []
+
+        # 安全防護：檢查非法字元
+        clean_ticker = re.sub(r'[^A-Za-z0-9\-_]', '', ticker_str.replace('.TWO', '').replace('.TW', ''))
+        if not clean_ticker:
+            logger.error(f"[CnyesScraper] 代碼不合法: {ticker_str}")
+            return []
+
+        symbol = _to_cnyes_symbol(clean_ticker, market)
+        logger.info(f"[CnyesScraper] 開始獲取個股新聞: {symbol}, limit: {limit}")
         
-        # 清除 symbol 尾端的市場標記以符合舊版來源名稱標記行為
-        clean_ticker = ticker.replace('.TWO', '').replace('.TW', '')
         source_label = f"鉅亨網-台股-{clean_ticker}" if market == 'tw' else f"鉅亨網-美股-{clean_ticker}"
+        market_label = '台股' if market == 'tw' else '美股'
+
+        # 1. 優先嘗試直連官方公開 REST API
+        fetch_limit = min(max(limit, 10), 100)
+        json_data = _fetch_cnyes_api_direct(f"newslist/{symbol}/symbolNews", params={"page": 1, "limit": fetch_limit})
+        articles_data = []
+
+        if json_data and isinstance(json_data, dict):
+            articles_data = json_data.get("items", {}).get("data", [])
         
-        # 1. 呼叫 cnyes-cli 獲取列表
-        cmd_args = ["media", "get-news-list-by-symbol", symbol, "--limit", str(limit)]
-        json_data = _run_cnyes_cli(cmd_args)
-        
-        # 區分 CLI 執行失敗（回傳空 dict）與成功查詢但無資料
-        if not json_data:
-            logger.error(f"[CnyesScraper] cnyes-cli 執行失敗，無法獲取 {symbol} 新聞列表")
-            return None  # None = CLI 失敗，與 [] (無結果) 區分
-        
-        # 解析列表數據
-        articles_data = json_data.get("results", {}).get("items", {}).get("data", [])
+        # 2. 備援：若原生 API 請求未獲資料，嘗試呼叫本地 cnyes-cli (若有安裝)
         if not articles_data:
-            logger.info(f"[CnyesScraper] {symbol} 新聞列表為空（API 回傳無資料）")
+            cmd_args = ["media", "get-news-list-by-symbol", symbol, "--limit", str(fetch_limit)]
+            cli_data = _run_cnyes_cli(cmd_args)
+            if cli_data:
+                articles_data = cli_data.get("results", {}).get("items", {}).get("data", []) or cli_data.get("items", {}).get("data", [])
+
+        if not articles_data:
+            logger.info(f"[CnyesScraper] {symbol} 新聞列表為空")
             return []
             
         articles = []
-        # 2. 迭代列表並透過輕量 HTTP GET 補全內文與情緒分析
+        # 3. 迭代列表並透過輕量 HTTP GET 補全內文與情緒分析
         for item in articles_data[:limit]:
             title = item.get("title", "").strip()
+            if not title:
+                continue
+
             publish_at = item.get("publishAt", 0)
-            
-            # 解析日期
             parsed_date = _parse_cnyes_timestamp(str(publish_at))
-            
-            # 拼接網址，鉅亨網新聞網址格式為 https://news.cnyes.com/news/id/{newsId}
             news_id = item.get("newsId")
             link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
-            
-            # 抓取內文（個股 API 預設無 content）
             content = _fetch_html_content(link) if link else ""
-            
-            # 進行情緒分析
             sentiment = _analyze_sentiment(title, content)
+            summary = content[:150] if content else title
             
             articles.append({
                 '標題': title,
                 '日期': parsed_date,
-                '連結': link,
                 '內容': content,
+                '連結': link,
                 '正負分析': sentiment,
                 '來源': source_label,
+                '市場': market_label,
+                '信心度': 0.8,
+                '影響範疇': '個股營運',
+                '分析摘要': summary,
+                '語言': 'zh-TW',
             })
             
         elapsed = time.time() - start_time
@@ -238,29 +275,43 @@ class CnyesScraper:
     def search_news(self, query: str, limit: int = 1000) -> list:
         """
         搜尋鉅亨網新聞（不限特定個股，支援關鍵字搜尋）。
-        為了高效獲取並獲取完整內文，我們呼叫分類新聞 API 並在其中帶入 keyword 參數。
-        由於分類新聞 API 直接包含 content 欄位，這使得我們可以直接解析，速度極快。
         """
         start_time = time.time()
-        logger.info(f"[CnyesScraper] 開始搜尋關鍵字: '{query}', limit: {limit}")
-        source_label = f"鉅亨網-搜尋-{query}"
+        query_str = str(query).strip()
+        if not query_str:
+            return []
+
+        # 安全防護：過濾潛在注入字元
+        clean_query = re.sub(r'[\x00-\x1f\x7f]', '', query_str)[:50]
+        logger.info(f"[CnyesScraper] 開始搜尋關鍵字: '{clean_query}', limit: {limit}")
+        source_label = f"鉅亨網-搜尋-{clean_query}"
         
-        # 我們主要在台股新聞中進行搜尋
-        cmd_args = ["media", "get-news-list-by-category", "tw_stock", "--keyword", query, "--limit", str(limit)]
-        json_data = _run_cnyes_cli(cmd_args)
+        fetch_limit = min(max(limit, 10), 100)
+        # 1. 優先嘗試直連官方分類搜尋 API
+        json_data = _fetch_cnyes_api_direct("newslist/category/tw_stock", params={"page": 1, "limit": fetch_limit, "keyword": clean_query})
+        articles_data = []
+
+        if json_data and isinstance(json_data, dict):
+            articles_data = json_data.get("items", {}).get("data", [])
+
+        # 2. 備援：若直連失敗，嘗試 CLI
+        if not articles_data:
+            cmd_args = ["media", "get-news-list-by-category", "tw_stock", "--keyword", clean_query, "--limit", str(fetch_limit)]
+            cli_data = _run_cnyes_cli(cmd_args)
+            if cli_data:
+                articles_data = cli_data.get("results", {}).get("items", {}).get("data", []) or cli_data.get("items", {}).get("data", [])
         
-        articles_data = json_data.get("results", {}).get("items", {}).get("data", [])
         articles = []
-        
         for item in articles_data[:limit]:
             title = item.get("title", "").strip()
+            if not title:
+                continue
+
             publish_at = item.get("publishAt", 0)
             parsed_date = _parse_cnyes_timestamp(str(publish_at))
-            
             news_id = item.get("newsId")
             link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
             
-            # 分類新聞直接含有 content（為 HTML 格式）
             content_html = item.get("content", "")
             content = ""
             if content_html:
@@ -269,20 +320,28 @@ class CnyesScraper:
                     content = " ".join(content.split())[:2000]
                 except Exception as e:
                     logger.warning(f"解析分類新聞 HTML 失敗: {e}")
+            if not content and link:
+                content = _fetch_html_content(link)
                     
             sentiment = _analyze_sentiment(title, content)
+            summary = content[:150] if content else title
             
             articles.append({
                 '標題': title,
                 '日期': parsed_date,
-                '連結': link,
                 '內容': content,
+                '連結': link,
                 '正負分析': sentiment,
                 '來源': source_label,
+                '市場': '台股',
+                '信心度': 0.8,
+                '影響範疇': '產業趨勢',
+                '分析摘要': summary,
+                '語言': 'zh-TW',
             })
             
         elapsed = time.time() - start_time
-        logger.info(f"[CnyesScraper] 搜尋 '{query}' 成功返回 {len(articles)} 筆結果，總耗時: {elapsed:.2f} 秒")
+        logger.info(f"[CnyesScraper] 搜尋 '{clean_query}' 成功返回 {len(articles)} 筆結果，總耗時: {elapsed:.2f} 秒")
         return articles
 
     def get_latest_news_url(self, ticker: str, market: str = 'tw') -> str:

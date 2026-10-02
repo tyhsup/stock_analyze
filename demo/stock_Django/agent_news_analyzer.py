@@ -85,11 +85,18 @@ class UnifiedSentimentAnalyzer:
         self.zh_model_name = zh_model_name
         self.en_model_name = en_model_name
 
-        logger.info(f"[UnifiedSentimentAnalyzer] 初始化中文模型，裝置: {self.device}，模型: {zh_model_name}")
-        self.tokenizer = AutoTokenizer.from_pretrained(zh_model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(zh_model_name)
-        self.model.to(self.device)
-        self.model.eval()
+        try:
+            logger.info(f"[UnifiedSentimentAnalyzer] 初始化中文模型，裝置: {self.device}，模型: {zh_model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(zh_model_name)
+            self.model = AutoModelForSequenceClassification.from_pretrained(zh_model_name)
+            self.model.to(self.device)
+            self.model.eval()
+            self._has_zh_model = True
+        except Exception as e:
+            logger.warning(f"[UnifiedSentimentAnalyzer] 載入中文模型失敗 ({e})，切換為本地規則防禦評分模式。")
+            self.tokenizer = None
+            self.model = None
+            self._has_zh_model = False
 
         self.en_tokenizer = None
         self.en_model = None
@@ -159,7 +166,27 @@ class UnifiedSentimentAnalyzer:
         return self._analyze_zh(cleaned_text)
 
     def _analyze_zh(self, text: str) -> SentimentResult:
-        """中文新聞情緒推論 (Erlangshen-Roberta-110M-Sentiment)"""
+        """中文新聞情緒推論 (Erlangshen-Roberta-110M-Sentiment，含規則降級保護)"""
+        if not getattr(self, '_has_zh_model', True) or self.model is None or self.tokenizer is None:
+            pos_keywords = ['上漲', '獲利', '成長', '突破', '創高', '買超', '增持', '營收創高', '利多', '優於預期']
+            neg_keywords = ['下跌', '虧損', '衰退', '破位', '下修', '賣超', '減持', '利空', '不如預期']
+            pos_cnt = sum(1 for kw in pos_keywords if kw in text)
+            neg_cnt = sum(1 for kw in neg_keywords if kw in text)
+            if pos_cnt > neg_cnt:
+                lbl, sc = "positive", 0.6
+            elif neg_cnt > pos_cnt:
+                lbl, sc = "negative", -0.6
+            else:
+                lbl, sc = "neutral", 0.0
+            return SentimentResult(
+                label=lbl,
+                score=sc,
+                confidence=0.75 if lbl != 'neutral' else 0.5,
+                probabilities={"positive": 0.6 if lbl == 'positive' else 0.2, "negative": 0.6 if lbl == 'negative' else 0.2, "neutral": 0.5 if lbl == 'neutral' else 0.2},
+                is_neutral_adjusted=False,
+                language="zh-TW"
+            )
+
         try:
             inputs = self.tokenizer(
                 text,
