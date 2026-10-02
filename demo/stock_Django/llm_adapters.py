@@ -114,6 +114,7 @@ class GeminiNativeAdapter(AbstractLLMAdapter):
     不依賴宿主機外部 gemini CLI 執行檔，完全相容 Docker Linux 容器環境。
     """
     DEFAULT_MODELS = [
+        "gemini-3.8-flash",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
         "gemini-2.5-flash",
@@ -360,7 +361,10 @@ class DualTrackLLMClient:
 
         # 2. 備援通道嘗試
         logger.info("[DualTrackClient] 主通道未回應，啟用本地 Ollama 備援通道...")
-        result = self.fallback.generate_text(prompt, **kwargs)
+        fallback_kwargs = dict(kwargs)
+        if "model" in fallback_kwargs and str(fallback_kwargs["model"]).startswith("gemini"):
+            fallback_kwargs.pop("model")
+        result = self.fallback.generate_text(prompt, **fallback_kwargs)
         if result:
             return result
 
@@ -374,7 +378,10 @@ class DualTrackLLMClient:
 
         # 2. 備援通道嘗試
         logger.info("[DualTrackClient] 主通道未取得有效結構，切換至本地 Ollama 備援...")
-        result = self.fallback.generate_json(prompt, **kwargs)
+        fallback_kwargs = dict(kwargs)
+        if "model" in fallback_kwargs and str(fallback_kwargs["model"]).startswith("gemini"):
+            fallback_kwargs.pop("model")
+        result = self.fallback.generate_json(prompt, **fallback_kwargs)
         if result and self._validate_keys(result, required_keys):
             return result
 
