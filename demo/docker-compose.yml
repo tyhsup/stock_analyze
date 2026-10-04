@@ -22,6 +22,8 @@ services:
       - .:/app
       # 外部排程/任務模組掛載 (含 scheduler.db)
       - ../Gemini_task:/app/Gemini_task
+      # 外部 Obsidian 全域知識庫掛載
+      - E:/Obsidian_knowledge/antigravity_knowledge/knowledge:/app/knowledge_vault
       # 靜態與媒體資源持久化卷
       - static_volume:/app/staticfiles
       - media_volume:/app/media
@@ -113,6 +115,7 @@ services:
     volumes:
       - .:/app
       - ../Gemini_task:/app/Gemini_task
+      - E:/Obsidian_knowledge/antigravity_knowledge/knowledge:/app/knowledge_vault
       - media_volume:/app/media
     env_file:
       - .env

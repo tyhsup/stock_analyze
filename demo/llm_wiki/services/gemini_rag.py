@@ -2,7 +2,7 @@ import os
 import faiss
 import numpy as np
 from dotenv import load_dotenv
-from .obsidian_sync import list_markdown_files, read_markdown_file
+from .obsidian_sync import list_markdown_files, read_markdown_file, get_vault_dir
 
 # Try importing the Google GenAI SDK (newer version)
 try:
@@ -106,6 +106,7 @@ class GeminiRAG:
         self.documents = []
         
         next_id = 1
+        current_vault = get_vault_dir()
         for file in files:
             try:
                 post = read_markdown_file(file)
@@ -115,6 +116,10 @@ class GeminiRAG:
                     
                 # Simple chunking
                 chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+                try:
+                    rel_path = os.path.relpath(file, current_vault)
+                except Exception:
+                    rel_path = os.path.basename(file)
                 
                 for idx, chunk in enumerate(chunks):
                     emb = self.get_embedding(chunk)
@@ -123,6 +128,7 @@ class GeminiRAG:
                         "chunk_id": next_id,
                         "file": os.path.basename(file),
                         "path": file,
+                        "rel_path": rel_path,
                         "chunk_index": idx,
                         "text": chunk
                     })
@@ -186,6 +192,8 @@ class GeminiRAG:
                     if modified:
                         np.save(self.metadata_path, self.documents)
                 
+                # 跨平台路徑動態轉譯 (Windows vs Docker Linux)
+                self._normalize_document_paths()
                 print("FAISS index loaded successfully.")
             except Exception as e:
                 print(f"載入 FAISS 索引失敗，將在下次執行時重建: {e}")
@@ -193,6 +201,42 @@ class GeminiRAG:
                 self.documents = []
         else:
             print("No FAISS index found. Please build index.")
+
+    def _normalize_document_paths(self):
+        """
+        跨平台路徑動態轉譯 (Windows vs Docker Linux)：
+        將 metadata 內部可能殘留的 Windows 實體絕對路徑轉換為當前環境可用的路徑。
+        """
+        current_vault = get_vault_dir()
+        needs_save = False
+
+        for doc in self.documents:
+            raw_path = str(doc.get("path", ""))
+            rel_path = doc.get("rel_path")
+
+            if not rel_path:
+                norm_raw = raw_path.replace("\\", "/")
+                # 尋找 /knowledge/ 關鍵錨點
+                k_idx = norm_raw.find("/knowledge/")
+                if k_idx != -1:
+                    rel_path = norm_raw[k_idx + len("/knowledge/"):].lstrip("/")
+                elif ":" in norm_raw:
+                    rel_path = norm_raw.split(":", 1)[1].lstrip("/")
+                else:
+                    rel_path = doc.get("file", os.path.basename(raw_path))
+
+                doc["rel_path"] = rel_path
+                needs_save = True
+
+            # 動態組裝為當前容器或本機環境之真實路徑
+            doc["path"] = os.path.normpath(os.path.join(current_vault, rel_path))
+
+        if needs_save:
+            try:
+                np.save(self.metadata_path, self.documents)
+                print(f"[GeminiRAG] 已成功正規化 {len(self.documents)} 筆 Chunks 之相對路徑。")
+            except Exception as e:
+                print(f"[GeminiRAG] 儲存正規化 metadata 異常 (非阻斷): {e}")
 
     def incremental_update(self, changed_files):
         """僅對變更的 Markdown 檔案更新向量索引。"""
@@ -228,33 +272,41 @@ class GeminiRAG:
         max_id = max([doc.get("chunk_id", 0) for doc in self.documents]) if self.documents else 0
         next_id = max_id + 1
         
+        current_vault = get_vault_dir()
         for file in changed_files:
+            resolved_file = os.path.normpath(os.path.join(current_vault, file)) if not os.path.isabs(file) else os.path.normpath(file)
             # 如果檔案在本地被刪除了（例如刪除 Source），我們就不新增它，此時已完成 remove_ids 即可
-            if not os.path.exists(file):
-                print(f"檔案已在本地刪除，僅清理其向量索引: {os.path.basename(file)}")
+            if not os.path.exists(resolved_file):
+                print(f"檔案已在本地刪除，僅清理其向量索引: {os.path.basename(resolved_file)}")
                 continue
                 
             try:
-                post = read_markdown_file(file)
+                post = read_markdown_file(resolved_file)
                 content = post.content
                 if not content.strip():
                     continue
                 
                 # 分塊 (Chunking)
                 chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+                try:
+                    rel_path = os.path.relpath(resolved_file, current_vault)
+                except Exception:
+                    rel_path = os.path.basename(resolved_file)
+
                 for idx, chunk in enumerate(chunks):
                     emb = self.get_embedding(chunk)
                     embeddings.append(emb)
                     new_docs.append({
                         "chunk_id": next_id,
-                        "file": os.path.basename(file),
-                        "path": file,
+                        "file": os.path.basename(resolved_file),
+                        "path": resolved_file,
+                        "rel_path": rel_path,
                         "chunk_index": idx,
                         "text": chunk
                     })
                     next_id += 1
             except Exception as e:
-                print(f"增量處理檔案失敗 {file}: {e}")
+                print(f"增量處理檔案失敗 {resolved_file}: {e}")
                 
         # 3. 追加新向量與 metadata 並存檔
         if embeddings:
