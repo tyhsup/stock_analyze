@@ -192,6 +192,45 @@ source: "Antigravity Session ({conv_id})"
         script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "annotate_wiki_relations.py")
         os.system(f"python {script_path}")
 
+    # 5. 自動觸發 LLM Wiki 容器內向量差異同步
+    print("\n執行 LLM Wiki 知識庫向量索引差異同步...")
+    try:
+        import subprocess
+        # 安全檢查 stock_web_dev 容器運行狀態 (shell=False 清單傳參防注入，指定 UTF-8 與錯誤替換)
+        inspect_res = subprocess.run(
+            ["docker", "inspect", "--format={{.State.Running}}", "stock_web_dev"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            shell=False
+        )
+        if inspect_res.returncode == 0 and (inspect_res.stdout or "").strip().lower() == "true":
+            print(" -> 容器 stock_web_dev 運行中，正在發起差異同步...")
+            sync_res = subprocess.run(
+                ["docker", "exec", "stock_web_dev", "python", "manage.py", "sync_wiki_index"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                shell=False
+            )
+            if sync_res.returncode == 0:
+                print(" -> [差異同步成功]")
+                stdout_str = sync_res.stdout or ""
+                lines = [ln for ln in stdout_str.strip().splitlines() if ln.strip()]
+                for l in lines[-6:]:
+                    print(f"    {l}")
+            else:
+                stderr_str = sync_res.stderr or ""
+                print(f" -> [差異同步警告] 執行異常 (回傳碼 {sync_res.returncode}): {stderr_str.strip()[:200]}")
+        else:
+            print(" -> [提示] stock_web_dev 容器目前未運行，跳過即時索引差異同步 (容器啟動時或 Celery Beat 排程將自動同步)。")
+    except Exception as e:
+        print(f" -> [差異同步異常 (非阻斷)]: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="同步本次對話歷程至全域知識庫")
     parser.add_argument("--request-name", required=True, help="本需求或工作的主題名稱")

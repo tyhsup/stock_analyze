@@ -95,10 +95,16 @@ def resolve_file_path(filepath: str) -> str:
 
 
 def read_markdown_file(filepath: str):
-    """讀取 Markdown 筆記並解析 Frontmatter 元數據"""
+    """讀取 Markdown 筆記並解析 Frontmatter 元數據 (具備 YAML 語法解析容錯 fallback)"""
     full_path = resolve_file_path(filepath)
     with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
-        post = frontmatter.load(f)
+        raw_text = f.read()
+    try:
+        post = frontmatter.loads(raw_text)
+    except Exception as e:
+        # 當 frontmatter 含有非法轉義字元時，降級為純文字 Post 物件
+        logger.warning(f"[ObsidianSync] Frontmatter 解析失敗，降級為純文字讀取 ({os.path.basename(full_path)}): {e}")
+        post = frontmatter.Post(raw_text)
     return post
 
 

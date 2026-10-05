@@ -178,7 +178,9 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 分鐘硬超時防禦
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/0')
 
-# Celery Beat 每日排程設定 (交易日收盤後自動觸發全市場批量重算)
+from celery.schedules import crontab
+
+# Celery Beat 每日排程設定 (交易日收盤後自動觸發全市場批量重算與每日凌晨知識庫差異同步)
 CELERY_BEAT_SCHEDULE = {
     'batch-valuation-tw-market-daily': {
         'task': 'valuation.tasks.batch_calculate_market_valuation',
@@ -189,6 +191,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'valuation.tasks.batch_calculate_market_valuation',
         'schedule': 86400.0,
         'args': ('US',),
+    },
+    'daily-sync-wiki-index': {
+        'task': 'llm_wiki.tasks.sync_wiki_index_task',
+        'schedule': crontab(hour=3, minute=0),
     },
 }
 

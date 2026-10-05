@@ -65,11 +65,23 @@
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">知識庫狀態</h5>
-                    <button id="btn-reindex" class="btn btn-sm btn-outline-light">重建索引</button>
+                    <div class="btn-group btn-group-sm">
+                        <button id="btn-sync" class="btn btn-sm btn-success" title="僅比對 SHA-256 變更檔案進行增量更新 (推薦)">差異同步</button>
+                        <button id="btn-reindex" class="btn btn-sm btn-outline-secondary text-light" title="全量重新計算向量 (高 Token 消耗)">全量重建</button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <p><strong>狀態:</strong> <span id="index-status">{{ index_status }}</span></p>
-                    <p><strong>區塊數量:</strong> <span id="chunk-count">{{ document_count }}</span></p>
+                    <p class="mb-1"><strong>狀態:</strong> <span id="index-status" class="badge bg-primary">{{ index_status }}</span></p>
+                    <p class="mb-2"><strong>已索引區塊:</strong> <span id="chunk-count" class="fw-bold">{{ document_count }}</span></p>
+                    
+                    <div id="pending-diff-container" class="p-2 rounded bg-light border {% if not has_pending %}d-none{% endif %}">
+                        <small class="text-muted d-block mb-1"><strong>偵測到待同步變更：</strong></small>
+                        <div class="d-flex flex-wrap gap-1">
+                            <span class="badge bg-warning text-dark" id="badge-added">新增: {{ pending_added }}</span>
+                            <span class="badge bg-info text-dark" id="badge-modified">修改: {{ pending_modified }}</span>
+                            <span class="badge bg-secondary" id="badge-deleted">刪除: {{ pending_deleted }}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -318,7 +330,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    const btnSync = document.getElementById('btn-sync');
+    const pendingContainer = document.getElementById('pending-diff-container');
+
+    if (btnSync) {
+        btnSync.addEventListener('click', async function() {
+            btnSync.disabled = true;
+            btnSync.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>同步中...';
+            try {
+                const response = await fetch('{% url "wiki_sync" %}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dry_run: false })
+                });
+                const data = await response.json();
+                if (data.error) {
+                    alert(`同步失敗: ${data.error}`);
+                } else {
+                    document.getElementById('index-status').textContent = '已載入';
+                    document.getElementById('chunk-count').textContent = data.indexed_chunks;
+                    if (pendingContainer) {
+                        pendingContainer.classList.add('d-none');
+                    }
+                    alert(`✅ 差異同步完成！\n新增檔案: ${data.added_count} 筆\n更新檔案: ${data.modified_count} 筆\n清理檔案: ${data.deleted_count} 筆\n新產生向量: ${data.chunks_added} chunks\n目前總計: ${data.indexed_chunks} chunks`);
+                }
+            } catch (e) {
+                alert(`系統通訊錯誤: ${e.message}`);
+            } finally {
+                btnSync.disabled = false;
+                btnSync.textContent = '差異同步';
+            }
+        });
+    }
+
     btnReindex.addEventListener('click', async function() {
+        if (!confirm('警告：全量重建將會對全部知識庫（超過 1000 檔）重新呼叫 Embedding API，將消耗大量配額與時間！\n\n建議優先使用「差異同步」。是否仍要繼續全量重建？')) {
+            return;
+        }
         btnReindex.disabled = true;
         btnReindex.textContent = '重建中...';
         try {
@@ -327,7 +375,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.status === 'success') {
                 document.getElementById('index-status').textContent = '已載入';
                 document.getElementById('chunk-count').textContent = data.chunks_indexed;
-                alert(`索引建立成功，共處理 ${data.chunks_indexed} 個段落！`);
+                if (pendingContainer) pendingContainer.classList.add('d-none');
+                alert(`索引全量建立成功，共處理 ${data.chunks_indexed} 個段落！`);
             } else {
                 alert(`錯誤: ${data.error}`);
             }
@@ -335,7 +384,7 @@ document.addEventListener('DOMContentLoaded', function() {
             alert(`系統錯誤: ${e.message}`);
         } finally {
             btnReindex.disabled = false;
-            btnReindex.textContent = '重建索引';
+            btnReindex.textContent = '全量重建';
         }
     });
 });
