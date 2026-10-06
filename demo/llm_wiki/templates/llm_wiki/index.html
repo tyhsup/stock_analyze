@@ -90,6 +90,14 @@
                     <h5 class="mb-0">Vault 檔案清單</h5>
                 </div>
                 <div class="card-body p-0">
+                    <!-- 即時搜尋過濾輸入框 -->
+                    <div class="p-2 border-bottom bg-light">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" id="tree-search" class="form-control border-start-0 ps-1" placeholder="過濾檔案 (如: 10-02, Gemini)...">
+                            <button class="btn btn-outline-secondary" type="button" id="tree-search-clear" title="清除搜尋"><i class="bi bi-x"></i></button>
+                        </div>
+                    </div>
                     <!-- 隱藏的原始清單，供 JS 讀取 -->
                     <ul id="vault-raw-list" class="d-none">
                         {% for f in files %}
@@ -216,6 +224,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (nodeA._is_file !== nodeB._is_file) {
                     return nodeA._is_file ? 1 : -1;
                 }
+                // 檔案節點採用降冪排序 (最新日期 2026-10 排在 2026-07 之前)
+                if (nodeA._is_file && nodeB._is_file) {
+                    return b.localeCompare(a);
+                }
                 return a.localeCompare(b);
             });
             
@@ -223,9 +235,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 childrenHtml += renderTree(node._children[key], key);
             });
             
-            // 預設將最頂層資料夾展開 (open)，子資料夾收合
+            // 預設將資料夾展開 (open)
             return `
-                <li class="mb-1">
+                <li class="mb-1 vault-folder-item">
                     <details class="vault-folder" open>
                         <summary class="d-flex align-items-center py-1">
                             <i class="chevron bi bi-chevron-right text-muted me-1 small"></i>
@@ -258,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         container.innerHTML = finalHtml;
 
-        // 綁定檔案點擊事件：將檔名或完整路徑填入輸入框，點擊後會貼心提示
+        // 綁定檔案點擊事件：將檔名或完整路徑填入輸入框
         document.querySelectorAll('.vault-file').forEach(item => {
             item.addEventListener('click', function() {
                 const fullPath = this.getAttribute('data-full-path');
@@ -267,6 +279,77 @@ document.addEventListener('DOMContentLoaded', function() {
                 chatInput.focus();
             });
         });
+
+        // 綁定即時搜尋過濾功能
+        const searchInput = document.getElementById('tree-search');
+        const clearBtn = document.getElementById('tree-search-clear');
+
+        if (searchInput) {
+            let debounceTimer = null;
+            function applyTreeFilter() {
+                const filterVal = searchInput.value.trim().toLowerCase();
+                const allFileItems = container.querySelectorAll('.vault-file');
+                const allFolders = container.querySelectorAll('.vault-folder');
+
+                if (!filterVal) {
+                    // 清空搜尋時：恢復所有檔案與資料夾顯示，頂層預設 open
+                    allFileItems.forEach(el => {
+                        el.closest('li').style.display = '';
+                    });
+                    allFolders.forEach(el => {
+                        el.closest('li').style.display = '';
+                    });
+                    return;
+                }
+
+                // 隱藏所有檔案與資料夾，再顯示命中的部分
+                allFileItems.forEach(el => {
+                    const li = el.closest('li');
+                    const text = el.textContent.toLowerCase();
+                    if (text.includes(filterVal)) {
+                        li.style.display = '';
+                        // 向上將所有父層 details 展開並設為顯示
+                        let parent = li.parentElement;
+                        while (parent && parent !== container) {
+                            if (parent.tagName === 'DETAILS' && parent.classList.contains('vault-folder')) {
+                                parent.open = true;
+                                parent.closest('li').style.display = '';
+                            }
+                            parent = parent.parentElement;
+                        }
+                    } else {
+                        li.style.display = 'none';
+                    }
+                });
+
+                // 檢查資料夾是否內部無任何可見檔案
+                allFolders.forEach(folder => {
+                    const visibleFiles = folder.querySelectorAll('.vault-file');
+                    let hasVisible = false;
+                    visibleFiles.forEach(f => {
+                        if (f.closest('li').style.display !== 'none') {
+                            hasVisible = true;
+                        }
+                    });
+                    if (!hasVisible) {
+                        folder.closest('li').style.display = 'none';
+                    }
+                });
+            }
+
+            searchInput.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(applyTreeFilter, 150);
+            });
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function() {
+                    searchInput.value = '';
+                    applyTreeFilter();
+                    searchInput.focus();
+                });
+            }
+        }
     }
 
     initVaultTree();

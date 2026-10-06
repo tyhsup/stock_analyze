@@ -735,70 +735,201 @@ class GeminiRAG:
             self._atomic_save(self.index, self.documents)
             logger.info(f"[GeminiRAG] 增量更新完成，變更 {len(target_rels)} 檔，新增 {len(new_docs)} chunks。")
 
+    def extract_query_intent(self, query: str) -> Dict[str, Any]:
+        """
+        智慧解析使用者提問中的時間與文檔類型意圖 (Hybrid Search Intent Parser)。
+        回傳:
+        {
+            "time_patterns": ['2026-10', ...],
+            "doc_types": ['plans', ...],
+            "is_recent": bool
+        }
+        """
+        import re
+        q = (query or "").strip().lower()
+        time_patterns = []
+        doc_types = []
+        is_recent = False
+
+        # 1. 時間解析
+        # 匹配具體年份+月份: 2026-10, 2026年10月, 2026/10, 2026.10
+        full_match = re.search(r'(20\d\d)[年\-_/\.](\d{1,2})月?', q)
+        if full_match:
+            year = full_match.group(1)
+            month = int(full_match.group(2))
+            if 1 <= month <= 12:
+                time_patterns.append(f"{year}-{month:02d}")
+        else:
+            # 匹配單純月份: 10月份, 10月, 9月份 (預設當前年份 2026)
+            month_match = re.search(r'(?<!\d)(\d{1,2})月份?', q)
+            if month_match:
+                month = int(month_match.group(1))
+                if 1 <= month <= 12:
+                    current_year = datetime.now().year if datetime.now().year >= 2026 else 2026
+                    time_patterns.append(f"{current_year}-{month:02d}")
+
+        # 匹配相對時間詞: 最近, 最新, 近期
+        if any(w in q for w in ["最近", "最新", "近期"]):
+            is_recent = True
+            current_year = datetime.now().year if datetime.now().year >= 2026 else 2026
+            time_patterns.extend([f"{current_year}-10", f"{current_year}-09"])
+
+        # 2. 文檔類型解析
+        type_keywords = {
+            "plans": ["計畫", "計劃", "規劃", "方案", "plan"],
+            "walkthroughs": ["成果", "紀錄", "記錄", "工作紀錄", "walkthrough", "完成", "總結"],
+            "errors": ["錯誤", "問題", "修復", "修正", "bug", "error", "異常", "失效"]
+        }
+        for dtype, kws in type_keywords.items():
+            if any(k in q for k in kws):
+                doc_types.append(dtype)
+
+        return {
+            "time_patterns": list(set(time_patterns)),
+            "doc_types": list(set(doc_types)),
+            "is_recent": is_recent
+        }
+
     def chat(self, query: str) -> Dict[str, Any]:
-        """問答檢索 (自動熱重載最新索引)"""
+        """
+        雙路混合檢索 (Dual-path Hybrid Metadata Search) 問答。
+        - 路徑 1: 結構化元數據過濾候選池 (時間/類型/特定檔名過濾優先注入)
+        - 路徑 2: 全域 FAISS Top-K 向量語意檢索
+        - 雙路融合: 路徑 1 置頂 + 路徑 2 補充去重 + 單檔上限 3 chunks + 總上限 10 chunks 防 context 膨脹。
+        """
         self.check_and_reload()
         if self.index is None or len(self.documents) == 0:
             return {"answer": "知識庫尚未建立索引，請先執行差異同步建立索引。", "citations": []}
 
         query_lower = query.lower()
-        mentioned_files = set()
-        matched_docs = []
+        intent = self.extract_query_intent(query)
+        time_patterns = intent.get("time_patterns", [])
+        doc_types = intent.get("doc_types", [])
 
+        # ==========================================
+        # 路徑 1: 結構化元數據與特定檔名過濾候選池
+        # ==========================================
+        path1_docs: List[Dict[str, Any]] = []
+
+        # 1-1. 檢查特定檔名提及
         unique_files = {}
         for doc in self.documents:
             unique_files[doc['file'].lower()] = doc['file']
 
+        mentioned_files = set()
         for fname_lower, fname_orig in unique_files.items():
             if fname_lower in query_lower:
                 mentioned_files.add(fname_orig)
 
         if mentioned_files:
+            logger.info(f"[HybridSearch] 偵測到提及特定檔案: {mentioned_files}")
             for doc in self.documents:
                 if doc['file'] in mentioned_files:
-                    if len([d for d in matched_docs if d['file'] == doc['file']]) < 8:
-                        matched_docs.append(doc)
+                    path1_docs.append(doc)
 
-        query_emb = np.array([self.get_embedding(query)]).astype('float32')
-        k = 5
-        distances, indices = self.index.search(query_emb, k)
+        # 1-2. 依時間與類型元數據過濾候選檔案
+        if time_patterns or doc_types:
+            logger.info(f"[HybridSearch] 偵測到時間/類型意圖: 時間={time_patterns}, 類型={doc_types}")
+            matched_by_intent: Dict[str, List[Dict[str, Any]]] = {}
 
+            for doc in self.documents:
+                rel_path = str(doc.get("rel_path") or doc.get("file", "")).replace("\\", "/")
+
+                # 時間比對
+                time_matched = True
+                if time_patterns:
+                    time_matched = any(tp in rel_path for tp in time_patterns)
+
+                # 類型比對 (plans, walkthroughs, errors)
+                type_matched = True
+                if doc_types:
+                    type_matched = any(f"{dt}/" in rel_path or dt in rel_path for dt in doc_types)
+
+                if time_matched and type_matched:
+                    fname = doc.get("file")
+                    matched_by_intent.setdefault(fname, []).append(doc)
+
+            # 針對過濾出的各個檔案，依 chunk_index 排序，每個檔案挑選前 2 塊 (標題與精華摘要)
+            for fname, dlist in matched_by_intent.items():
+                sorted_dlist = sorted(dlist, key=lambda x: x.get("chunk_index", 0))
+                # 取首 2 塊，若總候選池未滿 10 塊則追加
+                for d in sorted_dlist[:2]:
+                    if len(path1_docs) < 10 and d not in path1_docs:
+                        path1_docs.append(d)
+
+        # ==========================================
+        # 路徑 2: 全域 FAISS Top-K 向量語意檢索
+        # ==========================================
+        path2_docs: List[Dict[str, Any]] = []
+        try:
+            query_emb = np.array([self.get_embedding(query)]).astype('float32')
+            k = 5
+            distances, indices = self.index.search(query_emb, k)
+            for idx in indices[0]:
+                if 0 <= idx < len(self.documents):
+                    path2_docs.append(self.documents[idx])
+        except Exception as e:
+            logger.warning(f"[HybridSearch] 向量檢索異常: {e}")
+
+        # ==========================================
+        # 雙路融合 (Deduplicated Fusion & Budget Guard)
+        # ==========================================
         contexts = []
         citations = []
         seen_chunks = set()
+        file_chunk_counts: Dict[str, int] = {}
+        MAX_TOTAL_CHUNKS = 10
+        MAX_PER_FILE_CHUNKS = 3
 
-        for doc in matched_docs:
-            chunk_key = f"{doc['file']}_{doc['chunk_index']}"
+        # 優先排入路徑 1 (元數據與時間過濾結果)
+        for doc in path1_docs:
+            if len(contexts) >= MAX_TOTAL_CHUNKS:
+                break
+            fname = doc.get("file", "unknown")
+            if file_chunk_counts.get(fname, 0) >= MAX_PER_FILE_CHUNKS:
+                continue
+
+            chunk_key = f"{fname}_{doc.get('chunk_index', 0)}"
             if chunk_key not in seen_chunks:
-                contexts.append(f"來源: {doc['file']}\n內容:\n{doc['text']}")
-                citations.append(doc['file'])
+                contexts.append(f"【來源檔案: {fname} (區塊 {doc.get('chunk_index', 0)})】\n{doc.get('text', '')}")
+                citations.append(fname)
                 seen_chunks.add(chunk_key)
+                file_chunk_counts[fname] = file_chunk_counts.get(fname, 0) + 1
 
-        for idx in indices[0]:
-            if 0 <= idx < len(self.documents):
-                doc = self.documents[idx]
-                chunk_key = f"{doc['file']}_{doc['chunk_index']}"
-                if chunk_key not in seen_chunks:
-                    contexts.append(f"來源: {doc['file']}\n內容:\n{doc['text']}")
-                    citations.append(doc['file'])
-                    seen_chunks.add(chunk_key)
+        # 補充排入路徑 2 (向量語意相似結果)
+        for doc in path2_docs:
+            if len(contexts) >= MAX_TOTAL_CHUNKS:
+                break
+            fname = doc.get("file", "unknown")
+            if file_chunk_counts.get(fname, 0) >= MAX_PER_FILE_CHUNKS:
+                continue
 
-        context_str = "\n\n---\n\n".join(contexts)
+            chunk_key = f"{fname}_{doc.get('chunk_index', 0)}"
+            if chunk_key not in seen_chunks:
+                contexts.append(f"【來源檔案: {fname} (區塊 {doc.get('chunk_index', 0)})】\n{doc.get('text', '')}")
+                citations.append(fname)
+                seen_chunks.add(chunk_key)
+                file_chunk_counts[fname] = file_chunk_counts.get(fname, 0) + 1
+
+        context_str = "\n\n" + ("=" * 40) + "\n\n".join(contexts)
+
+        # 構造帶有清晰指引的 Prompt
         prompt = f"""
-你是一個知識庫問答機器人。請根據以下檢索到的參考內容，來回答使用者的問題。
-如果參考內容中無法找到答案，請明確告知「知識庫中無法確認」。
-在回答時，請引用來源檔案名稱。
+你是一個專業的專案知識庫 AI 助手。請根據以下檢索到的參考內容，精準、結構化地回答使用者的問題。
+若使用者詢問特定月份或類型的計畫/紀錄，請根據參考來源中的各檔案名稱與內文進行條列彙整說明。
+如果參考內容中確實無相關資料，請明確告知「知識庫中無法確認」。
+回答時請務必在各條目後標註或引用對應的來源檔案名稱。
 
 參考內容：
 {context_str}
 
-問題：
+使用者的問題：
 {query}
 """
         answer = self.generate_answer(prompt)
         return {
             "answer": answer,
-            "citations": list(set(citations))
+            "citations": list(dict.fromkeys(citations))  # 保持順序去重
         }
 
 
