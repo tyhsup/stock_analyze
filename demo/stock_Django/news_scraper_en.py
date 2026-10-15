@@ -102,6 +102,11 @@ class CnbcCliScraper:
         - 顯式 UTF-8 編碼與錯誤替換
         - 超時與異常完整捕獲
         """
+        import shutil
+        if not os.path.exists(self.cli_bin) and not shutil.which(self.cli_bin):
+            logger.warning(f"[CnbcCliScraper] CLI 執行檔不存在：{self.cli_bin}，跳過 CLI 備援。")
+            return None
+
         cmd = [self.cli_bin] + args + ["--agent"]
         try:
             res = subprocess.run(

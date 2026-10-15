@@ -117,96 +117,161 @@ class StockInvestorManager:
             logger.info("資料已是最新。")
             return
 
-        # --- 1. 瀏覽器效能參數與安全參數優化 ---
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless=new') 
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--blink-settings=imagesEnabled=false') # 禁圖提升 30% 速度
-        options.add_argument(f'user-agent={random.choice(USER_AGENTS)}') # User-Agent 輪替
-        
-        driver = None
+    def _fetch_via_twse_api(self, target_date: date) -> Optional[pd.DataFrame]:
+        """
+        透過證交所官方 T86 JSON API 快速抓取特定日期之三大法人買賣超資料。
+        免啟動瀏覽器，相容 Linux 容器環境與高效向量化解析。
+        """
+        import requests
+        d_str = target_date.strftime('%Y%m%d')
+        url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={d_str}&selectType=ALL&response=json"
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
         try:
-            driver = webdriver.Chrome(options=options)
-            wait = WebDriverWait(driver, 20)
-            current_date = start_date
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code != 200:
+                logger.warning(f"TWSE T86 API 回應狀態碼非 200 ({resp.status_code}) for {target_date}")
+                return None
+            res_json = resp.json()
+            stat = res_json.get('stat', '')
+            if 'OK' not in stat:
+                if any(k in stat for k in ['查詢無資料', '很抱歉', '無符合條件']):
+                    logger.info(f"{target_date} 證交所無資料 (非交易日/休市)，跳過。")
+                    return pd.DataFrame()
+                logger.warning(f"TWSE T86 API 回傳異常狀態 ({stat}) for {target_date}")
+                return None
             
-            while current_date <= now_date:
-                if current_date.weekday() >= 5: # 跳過週末
+            raw_data = res_json.get('data', [])
+            fields = [str(f).strip() for f in res_json.get('fields', [])]
+            if not raw_data or not fields:
+                return pd.DataFrame()
+                
+            df = pd.DataFrame(raw_data, columns=fields)
+            if len(df.columns) > 0:
+                df.rename(columns={df.columns[0]: 'number'}, inplace=True)
+            actual_date = target_date.strftime('%Y/%m/%d')
+            df.insert(0, 'date', actual_date)
+            
+            df.replace(['', 'None', '--'], 0, inplace=True)
+            num_cols = [c for c in df.columns if any(k in c for k in ['買', '賣', '超', '持股', '金額', '張數'])]
+            for c in num_cols:
+                df[c] = df[c].astype(str).str.replace(',', '').apply(pd.to_numeric, errors='coerce').fillna(0)
+                
+            return df
+        except Exception as e:
+            logger.warning(f"TWSE T86 API 抓取失敗 ({target_date}): {e}")
+            return None
+
+    def update_investor_data(self) -> None:
+        """
+        爬取缺失日期之上市三大法人數據。
+        採用雙模架構：優先以 TWSE 官方 JSON API 進行高速抓取，
+        若 API 異常則自動降級至 Selenium 網頁渲染模擬。
+        """
+        start_date = self.get_last_date() + timedelta(days=1)
+        now_date = datetime.today().date()
+        
+        if start_date > now_date:
+            logger.info("三大法人資料已是最新。")
+            return
+
+        current_date = start_date
+        while current_date <= now_date:
+            if current_date.weekday() >= 5: # 跳過週末
+                current_date += timedelta(days=1)
+                continue
+
+            # --- 模式 1: 優先嘗試高速官方 JSON API ---
+            df_api = self._fetch_via_twse_api(current_date)
+            if df_api is not None:
+                if not df_api.empty:
+                    self.sql.upload_investor_bulk(df_api, 'stock_investor')
+                    logger.info(f"✅ {current_date} [API 模式] 成功寫入 {len(df_api)} 筆。")
+                time.sleep(random.uniform(1.0, 2.5))
+                current_date += timedelta(days=1)
+                continue
+
+            # --- 模式 2: 降級使用 Selenium 瀏覽器自動化 ---
+            logger.info(f"官方 API 未取得數據，降級使用 Selenium 抓取 {current_date}...")
+            driver = None
+            try:
+                options = webdriver.ChromeOptions()
+                options.add_argument('--headless=new') 
+                options.add_argument('--disable-gpu')
+                options.add_argument('--no-sandbox')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--blink-settings=imagesEnabled=false')
+                options.add_argument(f'user-agent={random.choice(USER_AGENTS)}')
+
+                import shutil
+                if not shutil.which("google-chrome") and not shutil.which("chromium") and os.path.exists("/usr/bin/chromium"):
+                    options.binary_location = "/usr/bin/chromium"
+
+                driver = webdriver.Chrome(options=options)
+                wait = WebDriverWait(driver, 20)
+                driver.get(self.url)
+                
+                wait.until(EC.presence_of_element_located((By.NAME, 'yy')))
+                Select(driver.find_element(By.NAME, 'yy')).select_by_value(str(current_date.year))
+                Select(driver.find_element(By.NAME, 'mm')).select_by_value(str(current_date.month))
+                Select(driver.find_element(By.NAME, 'dd')).select_by_value(str(current_date.day))
+                Select(driver.find_element(By.NAME, 'selectType')).select_by_value('ALL')
+                driver.find_element(By.CLASS_NAME, 'submit').click()
+                
+                select_all_btn = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="reports"]/hgroup/div/div[1]/select/option[5]')))
+                select_all_btn.click()
+                
+                table_found = False
+                for _ in range(15):
+                    soup = BeautifulSoup(driver.page_source, "lxml")
+                    table = soup.find('table')
+                    if table and len(table.find_all('tr')) > 500:
+                        table_found = True
+                        break
+                    time.sleep(1)
+
+                if not table_found or "查詢無資料" in soup.text:
+                    logger.info(f"{current_date} 證交所無資料，跳過。")
                     current_date += timedelta(days=1)
                     continue
 
-                try:
-                    driver.get(self.url)
-                    
-                    # 填寫條件並查詢
-                    wait.until(EC.presence_of_element_located((By.NAME, 'yy')))
-                    Select(driver.find_element(By.NAME, 'yy')).select_by_value(str(current_date.year))
-                    Select(driver.find_element(By.NAME, 'mm')).select_by_value(str(current_date.month))
-                    Select(driver.find_element(By.NAME, 'dd')).select_by_value(str(current_date.day))
-                    Select(driver.find_element(By.NAME, 'selectType')).select_by_value('ALL')
-                    driver.find_element(By.CLASS_NAME, 'submit').click()
-                    
-                    # --- 2. 展開全部與彈性監測 ---
-                    select_all_btn = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="reports"]/hgroup/div/div[1]/select/option[5]')))
-                    select_all_btn.click()
-                    
-                    logger.info(f"正在展開 {current_date} 並偵測渲染...")
-                    
-                    # 每秒檢查一次表格行數，達成即跳出，不需固定等待
-                    table_found = False
-                    for i in range(15):
-                        soup = BeautifulSoup(driver.page_source, "lxml")
-                        table = soup.find('table')
-                        if table and len(table.find_all('tr')) > 500:
-                            table_found = True
-                            break
-                        time.sleep(1)
+                header_tr = table.find('thead').find_all('tr')[-1]
+                ths = [th.get_text().strip() for th in header_tr.find_all('th')]
+                ths.insert(0, 'date')
+                
+                rows = [[td.get_text().strip().replace(',', '') for td in tr.find_all('td')] 
+                        for tr in table.find('tbody').find_all('tr') if len(tr.find_all('td')) > 1]
 
-                    if not table_found or "查詢無資料" in soup.text:
-                        logger.info(f"{current_date} 證交所無資料，跳過。")
-                        current_date += timedelta(days=1)
-                        continue
+                df = pd.DataFrame(rows)
+                actual_date = self.get_twse_date(driver) or current_date.strftime('%Y/%m/%d')
+                df.insert(0, 'date_temp', actual_date)
+                df.columns = ths
+                df.rename(columns={'證券代號': 'number'}, inplace=True)
+                
+                df.replace(['', 'None'], 0, inplace=True)
+                num_cols = [c for c in df.columns if any(k in c for k in ['買', '賣', '超', '持股', '金額', '張數'])]
+                df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
 
-                    # --- 3. 高效解析與表頭對齊 ---
-                    header_tr = table.find('thead').find_all('tr')[-1]
-                    ths = [th.get_text().strip() for th in header_tr.find_all('th')]
-                    ths.insert(0, 'date')
-                    
-                    # 一次性提取所有資料列
-                    rows = [[td.get_text().strip().replace(',', '') for td in tr.find_all('td')] 
-                            for tr in table.find('tbody').find_all('tr') if len(tr.find_all('td')) > 1]
+                self.sql.upload_investor_bulk(df, 'stock_investor')
+                logger.info(f"✅ {actual_date} [Selenium 模式] 成功寫入 {len(df)} 筆。")
+                time.sleep(random.uniform(2.0, 4.0))
 
-                    # --- 4. Pandas 向量化清洗 ---
-                    df = pd.DataFrame(rows)
-                    actual_date = self.get_twse_date(driver) or current_date.strftime('%Y/%m/%d')
-                    df.insert(0, 'date_temp', actual_date)
-                    df.columns = ths
-                    df.rename(columns={'證券代號': 'number'}, inplace=True)
-                    
-                    # 向量化轉換數值，取代迴圈
-                    df.replace(['', 'None'], 0, inplace=True)
-                    num_cols = [c for c in df.columns if any(k in c for k in ['買', '賣', '超', '持股', '金額', '張數'])]
-                    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+            except Exception as e:
+                logger.error(f"❌ {current_date} Selenium 異常 (環境可能無瀏覽器): {e}")
+                time.sleep(3)
+            finally:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
 
-                    # --- 5. 執行優化後的批量寫入 ---
-                    self.sql.upload_investor_bulk(df, 'stock_investor')
-                    logger.info(f"✅ {actual_date} 成功寫入 {len(df)} 筆。")
-
-                    # 隨機延遲 2 至 4 秒以避免遭受封鎖
-                    time.sleep(random.uniform(2.0, 4.0))
-                    current_date += timedelta(days=1)
-
-                except Exception as e:
-                    logger.error(f"❌ {current_date} 異常: {e}")
-                    time.sleep(5)
-                    current_date += timedelta(days=1)
-        finally:
-            if driver:
-                driver.quit()
-                logger.info("WebDriver 資源已關閉釋放。")
-        logger.info("所有程序執行完畢。")
+            current_date += timedelta(days=1)
+            
+        logger.info("所有三大法人更新程序執行完畢。")
 
 if __name__ == "__main__":
     manager = StockInvestorManager()

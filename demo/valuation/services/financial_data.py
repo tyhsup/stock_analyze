@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 _CLI_BASE_DIR = Path(__file__).resolve().parents[3] / "twse-cli-v2" / "bin"
 _CLI_EXE = str(_CLI_BASE_DIR / ("twse-cli.exe" if platform.system() == "Windows" else "twse-cli"))
 if not Path(_CLI_EXE).exists():
-    # Fallback: 絕對路徑 (Windows 環境保底)
-    _CLI_EXE = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+    if platform.system() == "Windows" and Path(r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe").exists():
+        _CLI_EXE = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+    else:
+        _CLI_EXE = ""
 
 # In-process 記憶體快取：避免頻繁啟動 CLI 子進程
 _TWSE_CLI_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -34,7 +36,10 @@ _TWSE_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時
 _TPEX_CLI_BASE_DIR = Path(__file__).resolve().parents[3] / "tpex-cli" / "bin"
 _TPEX_CLI_EXE = str(_TPEX_CLI_BASE_DIR / ("tpex-pp-cli.exe" if platform.system() == "Windows" else "tpex-pp-cli"))
 if not Path(_TPEX_CLI_EXE).exists():
-    _TPEX_CLI_EXE = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+    if platform.system() == "Windows" and Path(r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe").exists():
+        _TPEX_CLI_EXE = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+    else:
+        _TPEX_CLI_EXE = ""
 
 _TPEX_CLI_CACHE: Dict[str, Dict[str, Any]] = {}
 _TPEX_CLI_CACHE_TTL_SECONDS = 3600  # 1 小時

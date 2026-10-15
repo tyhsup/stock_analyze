@@ -187,7 +187,14 @@ class StockService:
             cli_path = os.path.join(base_dir, "twse-cli-v2", "bin", f"twse-cli{cli_ext}")
             
             if not os.path.exists(cli_path):
-                cli_path = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+                if platform.system() == "Windows" and os.path.exists(r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"):
+                    cli_path = r"e:\Infinity\mydjango\twse-cli-v2\bin\twse-cli.exe"
+                else:
+                    cli_path = None
+                    
+            if not cli_path or not os.path.exists(cli_path):
+                logger.warning("twse-cli 在當前環境中未找到二進位執行檔，跳過 CLI 抓取。")
+                return {}
                 
             cmd = [cli_path, "exchange-report", "list-exchangereport-3", "--agent"]
             
@@ -236,7 +243,14 @@ class StockService:
             cli_path = os.path.join(base_dir, "tpex-cli", "bin", f"tpex-pp-cli{cli_ext}")
             
             if not os.path.exists(cli_path):
-                cli_path = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+                if platform.system() == "Windows" and os.path.exists(r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"):
+                    cli_path = r"e:\Infinity\mydjango\tpex-cli\bin\tpex-pp-cli.exe"
+                else:
+                    cli_path = None
+                    
+            if not cli_path or not os.path.exists(cli_path):
+                logger.warning("tpex-cli 在當前環境中未找到二進位執行檔，跳過 CLI 抓取。")
+                return {}
                 
             cmd = [cli_path, "tpex-mainboard-peratio-analysis", "list", "--agent"]
             

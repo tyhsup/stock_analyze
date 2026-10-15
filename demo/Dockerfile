@@ -69,11 +69,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# 安裝最小運行時依賴：MySQL Client 函式庫、OpenCV 執行庫 (libgl1, libglib) 與網路除錯工具
+# 安裝最小運行時依賴：MySQL Client 函式庫、OpenCV 執行庫 (libgl1, libglib)、Headless Chromium 與網路除錯工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
     default-mysql-client \
     libgl1 \
     libglib2.0-0 \
+    chromium \
+    chromium-driver \
     curl \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*

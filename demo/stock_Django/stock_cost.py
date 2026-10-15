@@ -277,13 +277,28 @@ class StockCostManager:
             logger.info("Fast Scraping 失敗，降級使用 Selenium 抓取上櫃清單...")
             otc_codes = self._scrape_stock_codes(otc_url)
             
-        logger.info(f"成功取得清單: 上市 {len(listed_codes)} 支, 上櫃 {len(otc_codes)} 支")
-        
         all_stocks = []
         for code, name in listed_codes:
-            all_stocks.append({"code": code, "name": name, "suffix": ".TW", "market": "sii"})
+            all_stocks.append({"code": str(code).strip(), "name": str(name).strip(), "suffix": ".TW", "market": "sii"})
         for code, name in otc_codes:
-            all_stocks.append({"code": code, "name": name, "suffix": ".TWO", "market": "otc"})
+            all_stocks.append({"code": str(code).strip(), "name": str(name).strip(), "suffix": ".TWO", "market": "otc"})
+            
+        # 若外部抓取皆為空 (如 ISIN 網路逾時或容器內無瀏覽器)，自動回退查詢本地 stocks_tw
+        if not all_stocks:
+            logger.warning("外部清單抓取皆無回傳，啟動資料庫本地 stocks_tw 回退機制...")
+            try:
+                db_query = "SELECT symbol, name, market FROM stocks_tw"
+                with self.sql.engine.connect() as conn:
+                    db_df = pd.read_sql(text(db_query), conn)
+                    for _, row in db_df.iterrows():
+                        sym = str(row['symbol']).strip()
+                        mkt = str(row['market']).strip()
+                        nm = str(row['name']).strip()
+                        suffix = ".TWO" if mkt.lower() in ("otc", "two") else ".TW"
+                        all_stocks.append({"code": sym, "name": nm, "suffix": suffix, "market": mkt})
+                logger.info(f"已從本地資料庫 stocks_tw 載入 {len(all_stocks)} 支股票清單")
+            except Exception as e_db:
+                logger.error(f"從本地資料庫載入股票清單失敗: {e_db}")
             
         return all_stocks
 
