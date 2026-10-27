@@ -1664,6 +1664,14 @@
         _mainChart.render();
 
         // Volume chart (with Reset Brush button area)
+        const volColorFn = function ({ dataPointIndex }) {
+            if (Array.isArray(volData) && volData[dataPointIndex] && volData[dataPointIndex].fillColor) {
+                const color = String(volData[dataPointIndex].fillColor).trim();
+                if (color.length > 0) return color;
+            }
+            return '#777';
+        };
+
         const volumeOptions = {
             series: [{ name: 'Volume', data: volData }],
             chart: {
@@ -1681,10 +1689,18 @@
                     }
                 }
             },
+            plotOptions: {
+                bar: {
+                    columnWidth: '100%'
+                }
+            },
+            stroke: {
+                show: true,
+                width: 1,
+                colors: [volColorFn]
+            },
             theme: { mode: chartThemeMode },
-            colors: [function ({ dataPointIndex }) {
-                return volData[dataPointIndex] ? volData[dataPointIndex].fillColor : '#777';
-            }],
+            colors: [volColorFn],
             xaxis: { type: 'datetime' },
             yaxis: { labels: { show: false } },
         };
