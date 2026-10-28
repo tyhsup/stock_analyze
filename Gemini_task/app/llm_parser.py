@@ -18,10 +18,10 @@ logger = logging.getLogger("scheduler.llm")
 DAILY_LIMIT = 50
 
 class TaskParseResult(BaseModel):
-    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (更新全台灣股價)、'us_stock_price_only' (更新全美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)、'tw_listed_list_update' (台灣上市公司清單更新)、'tw_otc_list_update' (台灣上櫃公司清單更新)、'us_stock_list_update' (美國上市公司清單更新)、'sync_notebooklm' (同步 NotebookLM 知識庫)、'update_macro_data_us' (更新美國總體經濟數據)、'update_macro_data_tw' (更新台灣總體經濟數據)")
-    name: str = Field(description="此任務的中文名稱，描述要執行的操作，例如：'手動更新台股 2330 股價'")
-    interval_days: Optional[int] = Field(None, description="週期天數（若是單次執行任務，請填 null 或 0；如果是定期任務如每 3 天更新一次，填 3）")
-    remarks: Optional[str] = Field(None, description="解析出的股票代碼清單，多個以半形逗號分隔，例如 '2330' 或 'AAPL,NVDA'。若無特定股票代碼則填 null")
+    task_type: str = Field(description="必須是以下其中之一：'tw_stock_cost' (台股股價更新)、'us_stock_cost' (美股股價更新)、'tw_stock_price_only' (更新全台灣股價)、'us_stock_price_only' (更新全美國股價)、'twse_investor' (台股上市三大法人)、'tpex_investor' (台股上櫃三大法人)、'us_investor' (美股三大法人持股)、'tw_listed_list_update' (台灣上市公司清單更新)、'tw_otc_list_update' (台灣上櫃公司清單更新)、'us_stock_list_update' (美國上市公司清單更新)、'sync_notebooklm' (同步 NotebookLM 知識庫)、'update_macro_data_us' (更新美國總體經濟數據)、'update_macro_data_tw' (更新台灣總體經濟數據)、'daily_news_update' (更新當日所有新聞並進行 AI 分析)、'tw_news_daily' (更新當日台股新聞並進行 AI 分析)、'us_news_daily' (更新當日美股新聞並進行 AI 分析)")
+    name: str = Field(description="此任務的中文名稱，描述要執行的操作，例如：'手動更新台股 2330 股價' 或 '每日定時更新當日新聞與 AI 分析'")
+    interval_days: Optional[int] = Field(None, description="週期天數（若是單次執行任務，請填 null 或 0；如果是每天定時更新填 1，每 3 天更新一次填 3）")
+    remarks: Optional[str] = Field(None, description="解析出的股票代碼清單，多個以半形逗號分隔，例如 '2330' 或 'AAPL,NVDA'。若為更新所有新聞或無特定股票代碼則填 null")
     trigger_time: Optional[str] = Field(None, description="預計觸發時間，格式必須為 YYYY-MM-DD HH:MM:SS。若是立刻執行或未指定時間，則填 null")
 
 def check_and_increment_quota() -> bool:
@@ -109,6 +109,10 @@ def parse_task_with_gemini(prompt: str, api_key: str) -> dict:
       11. 'sync_notebooklm' (同步 NotebookLM 知識庫，可確認有無新筆記內容並下載建立索引，備註中可指定篩選特定的筆記本標題或 ID)
       12. 'update_macro_data_us' (更新美國總體經濟數據)
       13. 'update_macro_data_tw' (更新台灣總體經濟數據)
+      14. 'daily_news_update' (定時或單次更新當天日期的所有台美股新聞並進行 AI 新聞分析)
+      15. 'tw_news_daily' (定時或單次更新當天日期的台股新聞並進行 AI 新聞分析)
+      16. 'us_news_daily' (定時或單次更新當天日期的美股新聞並進行 AI 新聞分析)
+    - 若使用者提到「每天/每日」特定時間執行（例如「每天晚上 8 點更新當天所有新聞」），請將 interval_days 設為 1，並計算下一個到達該時間點的 YYYY-MM-DD HH:MM:SS 作為 trigger_time。
     """
     
     response = client.models.generate_content(
@@ -141,7 +145,7 @@ def parse_task_with_ollama(prompt: str) -> dict:
 
     你必須回傳一個合法的 JSON 物件，格式如下，且不得包含額外的 Markdown 標籤或說明文字：
     {{
-      "task_type": "tw_stock_cost | us_stock_cost | tw_stock_price_only | us_stock_price_only | twse_investor | tpex_investor | us_investor | tw_listed_list_update | tw_otc_list_update | us_stock_list_update | sync_notebooklm | update_macro_data_us | update_macro_data_tw",
+      "task_type": "tw_stock_cost | us_stock_cost | tw_stock_price_only | us_stock_price_only | twse_investor | tpex_investor | us_investor | tw_listed_list_update | tw_otc_list_update | us_stock_list_update | sync_notebooklm | update_macro_data_us | update_macro_data_tw | daily_news_update | tw_news_daily | us_news_daily",
       "name": "任務描述名稱",
       "interval_days": 週期天數整數或 null,
       "remarks": "代號列表、篩選關鍵字或 null",
@@ -175,11 +179,24 @@ def parse_task_with_ollama(prompt: str) -> dict:
         if k not in valid_keys:
             result.pop(k)
             
-    # 預設補齊缺漏欄位
-    if "task_type" not in result:
-        result["task_type"] = "tw_stock_cost"
-    if "name" not in result:
+    allowed_task_types = {
+        "tw_stock_cost", "us_stock_cost", "tw_stock_price_only", "us_stock_price_only",
+        "twse_investor", "tpex_investor", "us_investor",
+        "tw_listed_list_update", "tw_otc_list_update", "us_stock_list_update",
+        "sync_notebooklm", "update_macro_data_us", "update_macro_data_tw",
+        "daily_news_update", "tw_news_daily", "us_news_daily"
+    }
+    # 預設補齊與白名單校驗缺漏欄位
+    if result.get("task_type") not in allowed_task_types:
+        result["task_type"] = "daily_news_update" if "新聞" in prompt or "news" in prompt.lower() else "tw_stock_cost"
+    if not result.get("name"):
         result["name"] = f"LLM 解析任務 - {result['task_type']}"
+    if result.get("interval_days") is not None:
+        try:
+            iv = int(result["interval_days"])
+            result["interval_days"] = iv if iv >= 1 else None
+        except (ValueError, TypeError):
+            result["interval_days"] = None
         
     return result
 

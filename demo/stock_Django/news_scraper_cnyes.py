@@ -191,7 +191,7 @@ class CnyesScraper:
         self.headless = headless
         self.min_articles = 10
 
-    def fetch_news(self, ticker: str, market: str = 'tw', limit: int = 1000) -> list:
+    def fetch_news(self, ticker: str, market: str = 'tw', limit: int = 1000, target_date: str = None) -> list:
         """
         獲取特定個股的新聞列表。
         
@@ -199,6 +199,7 @@ class CnyesScraper:
             ticker: 股票代碼 (例如 '2330', 'AAPL')
             market: 'tw' 代表台股，'us' 代表美股
             limit: 限制回傳的新聞筆數
+            target_date: 選填，若指定 'YYYY-MM-DD'，則在抓取內文前先過濾發布日期，大幅提升定時排程效率
             
         Returns:
             新聞字典陣列，包含完整 11 個標準欄位
@@ -248,6 +249,8 @@ class CnyesScraper:
 
             publish_at = item.get("publishAt", 0)
             parsed_date = _parse_cnyes_timestamp(str(publish_at))
+            if target_date and parsed_date != target_date:
+                continue
             news_id = item.get("newsId")
             link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
             content = _fetch_html_content(link) if link else ""
@@ -272,7 +275,7 @@ class CnyesScraper:
         logger.info(f"[CnyesScraper] 成功獲取 {len(articles)} 篇新聞，總耗時: {elapsed:.2f} 秒")
         return articles
 
-    def search_news(self, query: str, limit: int = 1000) -> list:
+    def search_news(self, query: str, limit: int = 1000, target_date: str = None) -> list:
         """
         搜尋鉅亨網新聞（不限特定個股，支援關鍵字搜尋）。
         """
@@ -309,6 +312,8 @@ class CnyesScraper:
 
             publish_at = item.get("publishAt", 0)
             parsed_date = _parse_cnyes_timestamp(str(publish_at))
+            if target_date and parsed_date != target_date:
+                continue
             news_id = item.get("newsId")
             link = f"https://news.cnyes.com/news/id/{news_id}" if news_id else ""
             

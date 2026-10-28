@@ -20,6 +20,11 @@ MUTEX_GROUPS = [
         "tw_stock_price_only", 
         "us_stock_cost", 
         "us_stock_price_only"
+    },
+    {
+        "daily_news_update",
+        "tw_news_daily",
+        "us_news_daily"
     }
 ]
 

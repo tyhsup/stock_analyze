@@ -177,6 +177,9 @@
                 <div class="mb-3">
                     <label for="task-type" class="form-label small fw-semibold">任務類型</label>
                     <select id="task-type" class="form-select" required>
+                        <option value="daily_news_update">當日新聞更新與 AI 分析 (全市場)</option>
+                        <option value="tw_news_daily">當日台股新聞更新與 AI 分析</option>
+                        <option value="us_news_daily">當日美股新聞更新與 AI 分析</option>
                         <option value="tw_stock_cost">台股股價更新</option>
                         <option value="us_stock_cost">美股股價更新</option>
                         <option value="tw_stock_price_only">更新全台灣股價</option>
@@ -187,6 +190,7 @@
                         <option value="tw_listed_list_update">台灣上市公司清單更新</option>
                         <option value="tw_otc_list_update">台灣上櫃公司清單更新</option>
                         <option value="us_stock_list_update">美國上市公司清單更新</option>
+                        <option value="sync_notebooklm">同步 NotebookLM 知識庫</option>
                         <option value="update_macro_data_us">更新美國總體經濟數據</option>
                         <option value="update_macro_data_tw">更新台灣總體經濟數據</option>
                     </select>
@@ -205,7 +209,15 @@
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label for="trigger-time" class="form-label small fw-semibold">執行時間 (預設立即)</label>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label for="trigger-time" class="form-label small fw-semibold mb-0">執行時間 (預設立即)</label>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="快速設定時間">
+                            <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" onclick="setPresetTriggerTime('08:30:00')">08:30</button>
+                            <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" onclick="setPresetTriggerTime('13:30:00')">13:30</button>
+                            <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" onclick="setPresetTriggerTime('18:00:00')">18:00</button>
+                            <button type="button" class="btn btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" onclick="setPresetTriggerTime('21:00:00')">21:00</button>
+                        </div>
+                    </div>
                     <input type="text" id="trigger-time" class="form-control" placeholder="YYYY-MM-DD HH:MM:SS">
                 </div>
                 <div class="mb-4">
@@ -285,6 +297,9 @@
                 <div class="mb-3">
                     <label for="modal-task-type" class="form-label small fw-semibold">任務類型</label>
                     <select id="modal-task-type" class="form-select">
+                        <option value="daily_news_update">當日新聞更新與 AI 分析 (全市場)</option>
+                        <option value="tw_news_daily">當日台股新聞更新與 AI 分析</option>
+                        <option value="us_news_daily">當日美股新聞更新與 AI 分析</option>
                         <option value="tw_stock_cost">台股股價更新</option>
                         <option value="us_stock_cost">美股股價更新</option>
                         <option value="tw_stock_price_only">更新全台灣股價</option>
@@ -295,6 +310,7 @@
                         <option value="tw_listed_list_update">台灣上市公司清單更新</option>
                         <option value="tw_otc_list_update">台灣上櫃公司清單更新</option>
                         <option value="us_stock_list_update">美國上市公司清單更新</option>
+                        <option value="sync_notebooklm">同步 NotebookLM 知識庫</option>
                         <option value="update_macro_data_us">更新美國總體經濟數據</option>
                         <option value="update_macro_data_tw">更新台灣總體經濟數據</option>
                     </select>
@@ -332,5 +348,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/scheduler/app.js?v=20260826"></script>
+<script src="/static/scheduler/app.js?v=20261029"></script>
 {% endblock %}

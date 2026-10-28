@@ -276,6 +276,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // 格式化任務類型顯示名稱
     function getTaskTypeName(type) {
         const typesMap = {
+            "daily_news_update": "當日新聞與 AI 分析 (全市場)",
+            "tw_news_daily": "當日台股新聞與 AI 分析",
+            "us_news_daily": "當日美股新聞與 AI 分析",
             "tw_stock_cost": "台股股價更新",
             "us_stock_cost": "美股股價更新",
             "tw_stock_price_only": "更新全台灣股價",
@@ -286,11 +289,31 @@ document.addEventListener("DOMContentLoaded", () => {
             "tw_listed_list_update": "台灣上市公司清單更新",
             "tw_otc_list_update": "台灣上櫃公司清單更新",
             "us_stock_list_update": "美國上市公司清單更新",
+            "sync_notebooklm": "同步 NotebookLM 知識庫",
             "update_macro_data_us": "更新美國總體經濟數據",
             "update_macro_data_tw": "更新台灣總體經濟數據"
         };
         return typesMap[type] || type;
     }
+
+    // 快速設定指定時間按鈕輔助函式 (若當日該時間已過，自動設為隔日同一時間)
+    window.setPresetTriggerTime = function(timeStr) {
+        const triggerTimeInput = document.getElementById("trigger-time");
+        if (!triggerTimeInput) return;
+        const now = new Date();
+        const parts = timeStr.split(":").map(Number);
+        const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parts[0] || 0, parts[1] || 0, parts[2] || 0);
+        if (target <= now) {
+            target.setDate(target.getDate() + 1);
+        }
+        const formatted = target.getFullYear() + "-" +
+            String(target.getMonth() + 1).padStart(2, "0") + "-" +
+            String(target.getDate()).padStart(2, "0") + " " +
+            String(target.getHours()).padStart(2, "0") + ":" +
+            String(target.getMinutes()).padStart(2, "0") + ":" +
+            String(target.getSeconds()).padStart(2, "0");
+        triggerTimeInput.value = formatted;
+    };
 
     // 格式化耗時
     function formatDuration(sec) {

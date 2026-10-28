@@ -146,6 +146,9 @@
                     <div class="form-group">
                         <label for="task-type">任務類型</label>
                         <select id="task-type" required>
+                            <option value="daily_news_update">當日新聞更新與 AI 分析 (全市場)</option>
+                            <option value="tw_news_daily">當日台股新聞更新與 AI 分析</option>
+                            <option value="us_news_daily">當日美股新聞更新與 AI 分析</option>
                             <option value="tw_stock_cost">台股股價更新</option>
                             <option value="us_stock_cost">美股股價更新</option>
                             <option value="tw_stock_price_only">更新全台灣股價</option>
@@ -245,6 +248,9 @@
                     <div class="form-group">
                         <label for="modal-task-type">任務類型</label>
                         <select id="modal-task-type">
+                            <option value="daily_news_update">當日新聞更新與 AI 分析 (全市場)</option>
+                            <option value="tw_news_daily">當日台股新聞更新與 AI 分析</option>
+                            <option value="us_news_daily">當日美股新聞更新與 AI 分析</option>
                             <option value="tw_stock_cost">台股股價更新</option>
                             <option value="us_stock_cost">美股股價更新</option>
                             <option value="tw_stock_price_only">更新全台灣股價</option>
@@ -255,6 +261,7 @@
                             <option value="tw_listed_list_update">台灣上市公司清單更新</option>
                             <option value="tw_otc_list_update">台灣上櫃公司清單更新</option>
                             <option value="us_stock_list_update">美國上市公司清單更新</option>
+                            <option value="sync_notebooklm">同步 NotebookLM 知識庫</option>
                             <option value="update_macro_data_us">更新美國總體經濟數據</option>
                             <option value="update_macro_data_tw">更新台灣總體經濟數據</option>
                         </select>
@@ -291,6 +298,6 @@
     </div>
 
     <!-- JS 腳本 -->
-    <script src="/static/scheduler/app.js?v=2026061901"></script>
+    <script src="/static/scheduler/app.js?v=20261029"></script>
 </body>
 </html>
